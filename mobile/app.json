@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "MedChain",
+    "slug": "medchain",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "medchain",
+    "platforms": ["android"],
+    "android": {
+      "package": "com.medchain.patient",
+      "softwareKeyboardLayoutMode": "pan",
+      "adaptiveIcon": {
+        "backgroundColor": "#2563EB"
+      }
+    },
+    "plugins": [
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableEdgeToEdge": false
+          }
+        }
+      ]
+    ]
+  }
+}

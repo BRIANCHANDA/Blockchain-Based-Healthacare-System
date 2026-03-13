@@ -1,0 +1,32 @@
+{
+  "name": "healthcare-backend",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "bun run --hot src/index.ts",
+    "start": "bun run src/index.ts",
+    "build": "bun build src/index.ts --outdir dist",
+    "seed": "bun run src/db/seed.ts"
+  },
+  "dependencies": {
+    "@grpc/grpc-js": "latest",
+    "@hono/zod-openapi": "latest",
+    "@hyperledger/fabric-gateway": "latest",
+    "@scalar/hono-api-reference": "latest",
+    "bcryptjs": "latest",
+    "drizzle-orm": "latest",
+    "fabric-network": "^2.2.20",
+    "hono": "latest",
+    "jsonwebtoken": "latest",
+    "postgres": "latest",
+    "stoker": "latest",
+    "zod": "latest"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "latest",
+    "@types/jsonwebtoken": "latest",
+    "@types/node": "latest",
+    "bun-types": "latest",
+    "drizzle-kit": "latest",
+    "typescript": "latest"
+  }
+}

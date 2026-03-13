@@ -1,0 +1,186 @@
+volumes:
+  orderer.healthcare.com:
+  peer0.hospital.healthcare.com:
+  peer0.practitioner.healthcare.com:
+  peer0.patient.healthcare.com:
+
+networks:
+  healthcare:
+    name: healthcare-network
+    ipam:
+      config:
+        - subnet: 172.20.0.0/24
+
+services:
+
+  orderer.healthcare.com:
+    container_name: orderer.healthcare.com
+    image: hyperledger/fabric-orderer:2.5
+    environment:
+      - FABRIC_LOGGING_SPEC=INFO
+      - ORDERER_GENERAL_LISTENADDRESS=0.0.0.0
+      - ORDERER_GENERAL_LISTENPORT=7050
+      - ORDERER_GENERAL_LOCALMSPID=OrdererMSP
+      - ORDERER_GENERAL_LOCALMSPDIR=/var/hyperledger/orderer/msp
+      - ORDERER_GENERAL_TLS_ENABLED=true
+      - ORDERER_GENERAL_TLS_PRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_GENERAL_TLS_CERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_GENERAL_TLS_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_GENERAL_CLUSTER_CLIENTCERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_GENERAL_CLUSTER_CLIENTPRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_GENERAL_CLUSTER_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_GENERAL_BOOTSTRAPMETHOD=none
+      - ORDERER_CHANNELPARTICIPATION_ENABLED=true
+      - ORDERER_ADMIN_TLS_ENABLED=true
+      - ORDERER_ADMIN_TLS_CERTIFICATE=/var/hyperledger/orderer/tls/server.crt
+      - ORDERER_ADMIN_TLS_PRIVATEKEY=/var/hyperledger/orderer/tls/server.key
+      - ORDERER_ADMIN_TLS_ROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_ADMIN_TLS_CLIENTROOTCAS=[/var/hyperledger/orderer/tls/ca.crt]
+      - ORDERER_ADMIN_LISTENADDRESS=0.0.0.0:7053
+      - ORDERER_OPERATIONS_LISTENADDRESS=0.0.0.0:9443
+    working_dir: /root
+    command: orderer
+    volumes:
+      - ./organizations/ordererOrganizations/healthcare.com/orderers/orderer.healthcare.com/msp:/var/hyperledger/orderer/msp
+      - ./organizations/ordererOrganizations/healthcare.com/orderers/orderer.healthcare.com/tls:/var/hyperledger/orderer/tls
+      - orderer.healthcare.com:/var/hyperledger/production/orderer
+    ports:
+      - 7050:7050
+      - 7053:7053
+      - 9443:9443
+    networks:
+      healthcare:
+        ipv4_address: 172.20.0.2
+
+  peer0.hospital.healthcare.com:
+    container_name: peer0.hospital.healthcare.com
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - FABRIC_CFG_PATH=/etc/hyperledger/fabric-config
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_ID=peer0.hospital.healthcare.com
+      - CORE_PEER_ADDRESS=peer0.hospital.healthcare.com:7051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:7051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.hospital.healthcare.com:7052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:7052
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.hospital.healthcare.com:7051
+      - CORE_PEER_LOCALMSPID=HospitalOrgMSP
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+      - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:9444
+      - CORE_VM_ENDPOINT=unix:///var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=healthcare-network
+      - CORE_CHAINCODE_EXECUTETIMEOUT=600s
+    volumes:
+      - ./organizations/peerOrganizations/hospital.healthcare.com/peers/peer0.hospital.healthcare.com:/etc/hyperledger/fabric
+      - peer0.hospital.healthcare.com:/var/hyperledger/production
+      - ../fabric-samples/config:/etc/hyperledger/fabric-config
+      - /var/run/docker.sock:/var/run/docker.sock
+    working_dir: /root
+    command: peer node start
+    ports:
+      - 7051:7051
+      - 9444:9444
+    networks:
+      healthcare:
+        ipv4_address: 172.20.0.3
+
+  peer0.practitioner.healthcare.com:
+    container_name: peer0.practitioner.healthcare.com
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - FABRIC_CFG_PATH=/etc/hyperledger/fabric-config
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_ID=peer0.practitioner.healthcare.com
+      - CORE_PEER_ADDRESS=peer0.practitioner.healthcare.com:9051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:9051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.practitioner.healthcare.com:9052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:9052
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.practitioner.healthcare.com:9051
+      - CORE_PEER_LOCALMSPID=PractitionerOrgMSP
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+      - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:9446
+      - CORE_VM_ENDPOINT=unix:///var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=healthcare-network
+      - CORE_CHAINCODE_EXECUTETIMEOUT=600s
+    volumes:
+      - ./organizations/peerOrganizations/practitioner.healthcare.com/peers/peer0.practitioner.healthcare.com:/etc/hyperledger/fabric
+      - peer0.practitioner.healthcare.com:/var/hyperledger/production
+      - ../fabric-samples/config:/etc/hyperledger/fabric-config
+      - /var/run/docker.sock:/var/run/docker.sock
+    working_dir: /root
+    command: peer node start
+    ports:
+      - 9051:9051
+      - 9446:9446
+    networks:
+      healthcare:
+        ipv4_address: 172.20.0.4
+
+  peer0.patient.healthcare.com:
+    container_name: peer0.patient.healthcare.com
+    image: hyperledger/fabric-peer:2.5
+    environment:
+      - FABRIC_CFG_PATH=/etc/hyperledger/fabric-config
+      - FABRIC_LOGGING_SPEC=INFO
+      - CORE_PEER_TLS_ENABLED=true
+      - CORE_PEER_TLS_CERT_FILE=/etc/hyperledger/fabric/tls/server.crt
+      - CORE_PEER_TLS_KEY_FILE=/etc/hyperledger/fabric/tls/server.key
+      - CORE_PEER_TLS_ROOTCERT_FILE=/etc/hyperledger/fabric/tls/ca.crt
+      - CORE_PEER_ID=peer0.patient.healthcare.com
+      - CORE_PEER_ADDRESS=peer0.patient.healthcare.com:11051
+      - CORE_PEER_LISTENADDRESS=0.0.0.0:11051
+      - CORE_PEER_CHAINCODEADDRESS=peer0.patient.healthcare.com:11052
+      - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:11052
+      - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.patient.healthcare.com:11051
+      - CORE_PEER_LOCALMSPID=PatientOrgMSP
+      - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
+      - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:9448
+      - CORE_VM_ENDPOINT=unix:///var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=healthcare-network
+      - CORE_CHAINCODE_EXECUTETIMEOUT=600s
+    volumes:
+      - ./organizations/peerOrganizations/patient.healthcare.com/peers/peer0.patient.healthcare.com:/etc/hyperledger/fabric
+      - peer0.patient.healthcare.com:/var/hyperledger/production
+      - ../fabric-samples/config:/etc/hyperledger/fabric-config
+      - /var/run/docker.sock:/var/run/docker.sock
+    working_dir: /root
+    command: peer node start
+    ports:
+      - 11051:11051
+      - 9448:9448
+    networks:
+      healthcare:
+        ipv4_address: 172.20.0.5
+
+  cli:
+    container_name: cli
+    image: hyperledger/fabric-tools:2.5
+    tty: true
+    stdin_open: true
+    environment:
+      - GOPATH=/opt/gopath
+      - FABRIC_LOGGING_SPEC=INFO
+      - FABRIC_CFG_PATH=/etc/hyperledger/fabric-config
+    working_dir: /opt/gopath/src/github.com/hyperledger/fabric/peer
+    command: /bin/bash
+    volumes:
+      - ./organizations:/opt/gopath/src/github.com/hyperledger/fabric/peer/organizations
+      - ./scripts:/opt/gopath/src/github.com/hyperledger/fabric/peer/scripts/
+      - ./channel-artifacts:/opt/gopath/src/github.com/hyperledger/fabric/peer/channel-artifacts
+      - ../fabric-samples/config:/etc/hyperledger/fabric-config
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - peer0.hospital.healthcare.com
+      - peer0.practitioner.healthcare.com
+      - peer0.patient.healthcare.com
+    networks:
+      healthcare:
+        ipv4_address: 172.20.0.6

@@ -1,0 +1,101 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f7f8f5;
+  --foreground: #0f1f0e;
+  --zambia-green: #1a6b2f;
+  --zambia-green-dark: #0f4a1f;
+  --zambia-green-light: #2d8f48;
+  --zambia-copper: #b87333;
+  --zambia-gold: #d4a017;
+  --zambia-gold-light: #f0c040;
+  --card: #ffffff;
+  --primary: #1a6b2f;
+  --primary-foreground: #ffffff;
+  --secondary: #d4a017;
+  --muted: #e8ede9;
+  --muted-foreground: #4a6741;
+  --border: #d0dbd1;
+  --input: #e8ede9;
+  --ring: #1a6b2f;
+  --radius: 0.5rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3, .font-display {
+  font-family: 'Playfair Display', serif;
+}
+
+/* ── Zambia branded background ─────────────────────────── */
+.zambia-pattern {
+  background-color: #0f4a1f;
+  background-image:
+    radial-gradient(circle at 20% 50%, rgba(212, 160, 23, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(45, 143, 72, 0.2) 0%, transparent 40%),
+    radial-gradient(circle at 60% 80%, rgba(184, 115, 51, 0.1) 0%, transparent 40%);
+}
+
+/* ── Copper shimmer button/badge ───────────────────────── */
+.copper-shimmer {
+  background: linear-gradient(135deg, #b87333 0%, #d4a017 40%, #f0c040 60%, #b87333 100%);
+  background-size: 200% 200%;
+  animation: shimmer 3s ease infinite;
+}
+
+@keyframes shimmer {
+  0%   { background-position: 0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* ── Shadows ───────────────────────────────────────────── */
+.card-shadow {
+  box-shadow: 0 4px 6px -1px rgba(26, 107, 47, 0.1),
+              0 2px 4px -1px rgba(26, 107, 47, 0.06);
+}
+
+.card-shadow-lg {
+  box-shadow: 0 20px 60px -10px rgba(15, 74, 31, 0.25),
+              0 8px 20px -5px rgba(15, 74, 31, 0.15);
+}
+
+/* ── Gold divider line ─────────────────────────────────── */
+.gold-divider {
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #d4a017, transparent);
+}
+
+/* ── Animations ────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.5s ease forwards;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease forwards;
+}
+
+.delay-100 { animation-delay: 0.1s; opacity: 0; }
+.delay-200 { animation-delay: 0.2s; opacity: 0; }
+.delay-300 { animation-delay: 0.3s; opacity: 0; }
+.delay-400 { animation-delay: 0.4s; opacity: 0; }

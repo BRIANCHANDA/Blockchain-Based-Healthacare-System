@@ -1,0 +1,30 @@
+OrdererOrgs:
+  - Name: Orderer
+    Domain: healthcare.com
+    Specs:
+      - Hostname: orderer
+
+PeerOrgs:
+  - Name: HospitalOrg
+    Domain: hospital.healthcare.com
+    EnableNodeOUs: true
+    Template:
+      Count: 1
+    Users:
+      Count: 1
+
+  - Name: PractitionerOrg
+    Domain: practitioner.healthcare.com
+    EnableNodeOUs: true
+    Template:
+      Count: 1
+    Users:
+      Count: 1
+
+  - Name: PatientOrg
+    Domain: patient.healthcare.com
+    EnableNodeOUs: true
+    Template:
+      Count: 1
+    Users:
+      Count: 1
