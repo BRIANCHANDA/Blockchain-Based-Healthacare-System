@@ -6,6 +6,7 @@ export interface User {
     blockchainAddress: string;
     firstName: string;
     lastName: string;
+    institutionName?: string;
 }
 
 interface AuthState {

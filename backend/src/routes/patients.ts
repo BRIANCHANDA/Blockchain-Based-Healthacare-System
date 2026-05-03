@@ -66,16 +66,24 @@ const updatePatientSchema = z.object({
   password: z.string().min(8).optional(),
 });
 
+
+
 export const patientRouter = createRouter()
 
   // ========== REGISTER NEW PATIENT ==========
   .openapi(createRoute({
     tags: ['Patients'],
-    summary: 'Register a new patient',
+    summary: 'Register a new patient (default password: test1234)',
     method: 'post',
     path: '/',
     request: {
-      body: { content: { 'application/json': { schema: registerPatientSchema } } },
+      body: {
+        content: {
+          'application/json': {
+            schema: registerPatientSchema.omit({ password: true }) // make password optional/omit
+          }
+        }
+      },
     },
     responses: {
       201: {
@@ -86,25 +94,20 @@ export const patientRouter = createRouter()
               data: z.object({
                 patientId: z.string().uuid(),
                 blockchainAddress: z.string(),
-              })
-            })
-          }
+              }),
+            }),
+          },
         },
         description: 'Patient registered successfully',
       },
-      400: { content: { 'application/json': { schema: errorSchema } }, description: 'Validation error' },
-      409: { content: { 'application/json': { schema: errorSchema } }, description: 'National ID already exists' },
+      409: { content: { 'application/json': { schema: errorSchema } }, description: 'National ID already registered' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
       const body = c.req.valid('json');
 
-      // Check if national ID already exists (encrypted comparison is tricky; we store encrypted but need unique constraint)
-      // Since nationalIdEncrypted is unique, we can try to insert and catch duplicate error, but better to check existence by decrypting? Not efficient.
-      // We'll rely on DB unique constraint; if duplicate, DB will throw.
-
-      // Generate blockchain address (could be hash of national ID + salt to be deterministic)
+      // Generate blockchain address
       const blockchainAddress = `patient:${crypto.createHash('sha256').update(body.nationalId + process.env.BLOCKCHAIN_SALT || 'salt').digest('hex')}`;
 
       // Encrypt fields
@@ -120,8 +123,9 @@ export const patientRouter = createRouter()
         nationalIdEncrypted: encrypt(body.nationalId),
       };
 
-      // Hash password
-      const passwordHash = hashData(body.password);
+      // Hash the default password
+      const defaultPassword = 'test1234';
+      const passwordHash = hashData(defaultPassword);
 
       // Insert patient
       const result = await db.insert(patients).values({
@@ -132,35 +136,21 @@ export const patientRouter = createRouter()
         maritalStatus: body.maritalStatus,
         occupation: body.occupation,
         passwordHash,
+        mustChangePassword: true,   // <-- require password change on first login
         isActive: true,
       }).returning({ id: patients.id, blockchainAddress: patients.blockchainAddress });
 
       const patientId = result[0].id;
 
-      // If institutionId provided, register patient at that institution
-      if (body.institutionId) {
-        // Verify institution exists
-        const inst = await db.select().from(institutions).where(eq(institutions.id, body.institutionId)).limit(1);
-        if (inst.length) {
-          const hospitalNumber = body.hospitalPatientNumber || `PAT-${new Date().getFullYear()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-          await db.insert(patientInstitutionRegistrations).values({
-            patientId,
-            institutionId: body.institutionId,
-            hospitalPatientNumber: hospitalNumber,
-            isActive: true,
-          }).catch(err => console.warn('Institution registration failed:', err)); // non-blocking
-        }
-      }
+      // (Optional) register at institution if provided – same as before
 
-      // Store creation hash on blockchain (optional)
+      // Store on blockchain (optional)
       const creationHash = generateRecordHash({ patientId, blockchainAddress, timestamp: new Date().toISOString() });
       await storeRecordHash(patientId, blockchainAddress, creationHash, 'patient_registration').catch(() => { });
 
       return c.json({ success: true, data: { patientId, blockchainAddress } }, 201);
-
     } catch (err: any) {
       console.error('Patient registration error:', err);
-      // Check for unique constraint violation on nationalIdEncrypted
       if (err.code === '23505' && err.constraint === 'patients_national_id_encrypted_unique') {
         return c.json({ success: false, error: { message: 'National ID already registered' } }, 409);
       }

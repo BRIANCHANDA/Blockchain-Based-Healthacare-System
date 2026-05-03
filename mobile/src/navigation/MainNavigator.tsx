@@ -1,11 +1,18 @@
-import React from "react";
-import { View, Text, StyleSheet, Platform } from "react-native";
+import React, { useCallback } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Platform,
+  TouchableOpacity,
+} from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { MaterialIcons as Icon } from "@expo/vector-icons";
+import { MaterialIcons } from "@expo/vector-icons";
+import type { BottomTabBarProps } from "@react-navigation/bottom-tabs";
 
-import {
+import type {
   MainTabParamList,
   RecordsStackParamList,
   AccessStackParamList,
@@ -22,14 +29,51 @@ import ProfileScreen from "../screens/profile/ProfileScreen";
 const PRIMARY = "#0A6640";
 const TAB_HEIGHT = 64;
 
+type TabConfig = {
+  route: keyof MainTabParamList;
+  icon: keyof typeof MaterialIcons.glyphMap;
+  label: string;
+  accessibilityLabel: string;
+};
+
+const TAB_CONFIG: TabConfig[] = [
+  {
+    route: "Records",
+    icon: "folder-open",
+    label: "Records",
+    accessibilityLabel: "Medical records",
+  },
+  {
+    route: "Access",
+    icon: "security",
+    label: "Access",
+    accessibilityLabel: "Access management",
+  },
+  {
+    route: "Visits",
+    icon: "history",
+    label: "History",
+    accessibilityLabel: "Visit history",
+  },
+  {
+    route: "Profile",
+    icon: "person",
+    label: "Profile",
+    accessibilityLabel: "Your profile",
+  },
+];
+
+// ─── Stack Navigators ────────────────────────────────────────────────────────
+
 const RecordsStack = createNativeStackNavigator<RecordsStackParamList>();
+
 function RecordsNavigator() {
   return (
     <RecordsStack.Navigator
       screenOptions={{
         headerStyle: { backgroundColor: PRIMARY },
         headerTintColor: "#fff",
-        headerTitleStyle: { fontWeight: "700", fontSize: 17 },
+        headerTitleStyle: styles.headerTitle,
         headerBackTitleVisible: false,
       }}
     >
@@ -45,7 +89,7 @@ function RecordsNavigator() {
           title: route.params.visitNumber,
           headerStyle: { backgroundColor: "#fff" },
           headerTintColor: PRIMARY,
-          headerTitleStyle: { fontWeight: "700", color: "#0D1F17" },
+          headerTitleStyle: [styles.headerTitle, { color: "#0D1F17" }],
         })}
       />
     </RecordsStack.Navigator>
@@ -53,13 +97,14 @@ function RecordsNavigator() {
 }
 
 const AccessStack = createNativeStackNavigator<AccessStackParamList>();
+
 function AccessNavigator() {
   return (
     <AccessStack.Navigator
       screenOptions={{
         headerStyle: { backgroundColor: "#fff" },
         headerTintColor: PRIMARY,
-        headerTitleStyle: { fontWeight: "700", color: "#0D1F17" },
+        headerTitleStyle: [styles.headerTitle, { color: "#0D1F17" }],
         headerBackTitleVisible: false,
       }}
     >
@@ -82,67 +127,69 @@ function AccessNavigator() {
   );
 }
 
-// Custom Tab Bar
-function CustomTabBar({ state, descriptors, navigation }: any) {
-  const insets = useSafeAreaInsets();
-  const bottomPad = insets.bottom;
+// ─── Tab Bar ─────────────────────────────────────────────────────────────────
 
-  const tabs = [
-    { name: "Records", icon: "folder-open", label: "Records" },
-    { name: "Access", icon: "security", label: "Access" },
-    { name: "Visits", icon: "history", label: "History" },
-    { name: "Profile", icon: "person", label: "Profile" },
-  ];
+function CustomTabBar({ state, navigation }: BottomTabBarProps) {
+  const insets = useSafeAreaInsets();
+
+  const handlePress = useCallback(
+    (routeName: string, routeKey: string, isFocused: boolean) => {
+      const event = navigation.emit({
+        type: "tabPress",
+        target: routeKey,
+        canPreventDefault: true,
+      });
+      if (!isFocused && !event.defaultPrevented) {
+        navigation.navigate(routeName);
+      }
+    },
+    [navigation],
+  );
 
   return (
     <View
       style={[
         styles.tabBar,
-        { paddingBottom: bottomPad, height: TAB_HEIGHT + bottomPad },
+        { paddingBottom: insets.bottom, height: TAB_HEIGHT + insets.bottom },
       ]}
     >
-      {state.routes.map((route: any, index: number) => {
+      {state.routes.map((route, index) => {
         const isFocused = state.index === index;
-        const tab = tabs[index];
-
-        const onPress = () => {
-          const event = navigation.emit({
-            type: "tabPress",
-            target: route.key,
-            canPreventDefault: true,
-          });
-          if (!isFocused && !event.defaultPrevented) {
-            navigation.navigate(route.name);
-          }
-        };
+        const tab = TAB_CONFIG[index];
 
         return (
-          <View
+          <TouchableOpacity
             key={route.key}
             style={styles.tabItem}
-            // @ts-ignore
-            onStartShouldSetResponder={() => true}
-            onResponderRelease={onPress}
+            onPress={() => handlePress(route.name, route.key, isFocused)}
+            activeOpacity={0.7}
+            accessibilityRole="tab"
+            accessibilityLabel={tab.accessibilityLabel}
+            accessibilityState={{ selected: isFocused }}
           >
             <View
               style={[styles.tabIconWrap, isFocused && styles.tabIconActive]}
             >
-              <Icon
-                // @ts-ignore
+              <MaterialIcons
                 name={tab.icon}
                 size={22}
                 color={isFocused ? "#fff" : "#8AA89C"}
               />
             </View>
-            <Text style={[styles.tabLabel, isFocused && styles.tabLabelActive]}>
+            <Text
+              style={[styles.tabLabel, isFocused && styles.tabLabelActive]}
+              numberOfLines={1}
+            >
               {tab.label}
             </Text>
-          </View>
+          </TouchableOpacity>
         );
       })}
     </View>
   );
 }
+
+// ─── Root Navigator ───────────────────────────────────────────────────────────
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -160,19 +207,31 @@ export default function MainNavigator() {
   );
 }
 
+// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const styles = StyleSheet.create({
+  headerTitle: {
+    fontWeight: "700",
+    fontSize: 17,
+  },
   tabBar: {
     flexDirection: "row",
     backgroundColor: "#FFFFFF",
-    borderTopWidth: 1,
+    borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: "#EEF4F1",
     paddingHorizontal: 8,
     paddingTop: 10,
-    shadowColor: "#0A6640",
-    shadowOffset: { width: 0, height: -3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#0A6640",
+        shadowOffset: { width: 0, height: -3 },
+        shadowOpacity: 0.08,
+        shadowRadius: 12,
+      },
+      android: {
+        elevation: 12,
+      },
+    }),
   },
   tabItem: {
     flex: 1,
@@ -188,7 +247,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   tabIconActive: {
-    backgroundColor: "#0A6640",
+    backgroundColor: PRIMARY,
   },
   tabLabel: {
     fontSize: 10,
@@ -197,7 +256,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   tabLabelActive: {
-    color: "#0A6640",
+    color: PRIMARY,
     fontWeight: "700",
   },
 });

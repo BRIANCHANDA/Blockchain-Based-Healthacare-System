@@ -1,0 +1,7 @@
+try/
+mobile/node_modules/
+node_modules/
+mobile/android/app/build/
+mobile/android/.gradle/
+backend/uploads/
+fabric-network/fabric-samples/

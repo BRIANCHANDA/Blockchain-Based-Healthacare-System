@@ -1,17 +1,106 @@
 "use client";
-import { useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { patientApi, permissionApi } from "@/lib/api";
+import { useAuthStore } from "@/lib/store";
+import { api } from "@/lib/api";
 import {
-  Shield,
-  Search,
-  AlertCircle,
-  CheckCircle2,
-  Loader2,
-  Info,
-  Lock,
+  Activity,
+  ClipboardList,
   ChevronRight,
+  Clock,
+  AlertTriangle,
+  Users,
+  FileText,
+  Stethoscope,
+  TrendingUp,
+  ArrowRight,
+  Calendar,
+  FlaskConical,
+  Microscope,
+  Pill,
+  RefreshCw,
 } from "lucide-react";
+import { format, formatDistanceToNow } from "date-fns";
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+interface TodayStats {
+  total: number;
+  triaged: number;
+  completed: number;
+  critical: number;
+  urgent: number;
+}
+interface ActivityStats {
+  consultations: number;
+  labOrders: number;
+  imagingOrders: number;
+  prescriptions: number;
+}
+interface RecentPatient {
+  visitId: string;
+  visitNumber: string;
+  priority: string;
+  status: string;
+  chiefComplaint: string;
+  consultedAt: string;
+  patient: {
+    firstName: string;
+    lastName: string;
+    gender: string;
+    bloodType: string;
+  } | null;
+}
+interface QueueVisit {
+  id: string;
+  visitNumber: string;
+  chiefComplaint: string;
+  priority: string;
+  status: string;
+  admissionDate: string;
+  hasConsultation: boolean;
+  patient: {
+    firstName: string;
+    lastName: string;
+    gender: string;
+    bloodType: string;
+  } | null;
+}
+
+// ── Priority config ────────────────────────────────────────────────────────────
+const PC: Record<
+  string,
+  { color: string; bg: string; border: string; dot: string; label: string }
+> = {
+  critical: {
+    color: "#dc2626",
+    bg: "#fef2f2",
+    border: "#fecaca",
+    dot: "#ef4444",
+    label: "Critical",
+  },
+  emergency: {
+    color: "#ea580c",
+    bg: "#fff7ed",
+    border: "#fed7aa",
+    dot: "#f97316",
+    label: "Emergency",
+  },
+  urgent: {
+    color: "#d97706",
+    bg: "#fffbeb",
+    border: "#fde68a",
+    dot: "#f59e0b",
+    label: "Urgent",
+  },
+  routine: {
+    color: "#166534",
+    bg: "#f0fdf4",
+    border: "#bbf7d0",
+    dot: "#16a34a",
+    label: "Routine",
+  },
+};
+const getP = (p: string) => PC[p] ?? PC.routine;
 
 const bloodTypeColor: Record<string, string> = {
   "A+": "#3b82f6",
@@ -22,494 +111,606 @@ const bloodTypeColor: Record<string, string> = {
   "AB-": "#ef4444",
   "O+": "#10b981",
   "O-": "#14b8a6",
-  unknown: "#9ca3af",
 };
 
-const PERMISSION_OPTIONS = [
-  {
-    value: "read",
-    label: "View Records",
-    desc: "Read consultations, diagnoses, vitals",
-  },
-  {
-    value: "write",
-    label: "Write Records",
-    desc: "Add consultations, orders, prescriptions",
-  },
-  {
-    value: "lab_results",
-    label: "Lab Results",
-    desc: "View and receive lab test results",
-  },
-  {
-    value: "imaging",
-    label: "Imaging Reports",
-    desc: "View radiology orders and reports",
-  },
-  {
-    value: "prescriptions",
-    label: "Prescriptions",
-    desc: "View and create prescriptions",
-  },
-];
-
-function FieldGroup({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div>
-      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
-        {label}
-      </label>
-      {children}
-    </div>
-  );
+function getGreeting() {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
 }
 
-export default function DoctorPermissionsPage() {
+// ── Component ──────────────────────────────────────────────────────────────────
+export default function DoctorOverview() {
   const router = useRouter();
+  const { user } = useAuthStore();
 
-  // Patient search state
-  const [query, setQuery] = useState("");
-  const [searching, setSearching] = useState(false);
-  const [searchError, setSearchError] = useState("");
-  const [results, setResults] = useState<any[]>([]);
-  const [patient, setPatient] = useState<any>(null);
+  const [stats, setStats] = useState<TodayStats | null>(null);
+  const [activity, setActivity] = useState<ActivityStats | null>(null);
+  const [recentPatients, setRecent] = useState<RecentPatient[]>([]);
+  const [queue, setQueue] = useState<QueueVisit[]>([]);
+  const [loadingStats, setLoadingStats] = useState(true);
+  const [loadingQueue, setLoadingQueue] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  // Form state
-  const [reason, setReason] = useState("");
-  const [selectedPerms, setSelectedPerms] = useState<string[]>([
-    "read",
-    "write",
-  ]);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState("");
-  const [submitted, setSubmitted] = useState(false);
-  const [requestId, setRequestId] = useState("");
-
-  const handleSearch = useCallback(async () => {
-    const q = query.trim();
-    if (!q) return;
-    setSearching(true);
-    setSearchError("");
-    setResults([]);
-    setPatient(null);
-    setSubmitted(false);
+  const fetchStats = async () => {
     try {
-      const res = await patientApi.search(q);
-      const list = res.data.data?.patients ?? [];
-      if (!list.length) {
-        setSearchError(`No patients found for "${q}".`);
-      } else if (list.length === 1) {
-        setPatient(list[0]);
-      } else {
-        setResults(list);
-      }
-    } catch (err: any) {
-      setSearchError(err.response?.data?.error?.message ?? "Search failed.");
+      const res = await api.get("/api/doctor/stats");
+      const d = res.data.data;
+      setStats(d.today);
+      setActivity(d.activity);
+      setRecent(d.recentPatients ?? []);
+    } catch (_) {
     } finally {
-      setSearching(false);
+      setLoadingStats(false);
     }
-  }, [query]);
+  };
 
-  const togglePerm = (value: string) => {
-    setSelectedPerms((prev) =>
-      prev.includes(value) ? prev.filter((p) => p !== value) : [...prev, value],
+  const fetchQueue = async (silent = false) => {
+    if (silent) setRefreshing(true);
+    try {
+      const res = await api.get("/api/doctor/today-queue");
+      setQueue(res.data.data.visits ?? []);
+    } catch (_) {
+    } finally {
+      setLoadingQueue(false);
+      setRefreshing(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchStats();
+    fetchQueue();
+    const i = setInterval(() => fetchQueue(true), 30_000);
+    return () => clearInterval(i);
+  }, []);
+
+  const skeletonVal = (v: number | undefined, color: string) =>
+    loadingStats ? (
+      <span
+        className="inline-block w-8 h-7 rounded-lg animate-pulse"
+        style={{ background: `${color}18` }}
+      />
+    ) : (
+      <>{v ?? 0}</>
     );
-  };
-
-  const handleSubmit = async () => {
-    if (!patient) return;
-    if (!reason.trim() || reason.trim().length < 10) {
-      setSubmitError("Please provide a reason (minimum 10 characters).");
-      return;
-    }
-    if (!selectedPerms.length) {
-      setSubmitError("Select at least one permission type.");
-      return;
-    }
-    setSubmitting(true);
-    setSubmitError("");
-    try {
-      const res = await permissionApi.requestAccess({
-        patientId: patient.id,
-        reason: reason.trim(),
-        requestedPermissions: selectedPerms,
-      });
-      setRequestId(res.data.data?.requestId ?? "");
-      setSubmitted(true);
-    } catch (err: any) {
-      setSubmitError(
-        err.response?.data?.error?.message ??
-          "Request failed. Please try again.",
-      );
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const reset = () => {
-    setPatient(null);
-    setResults([]);
-    setQuery("");
-    setReason("");
-    setSelectedPerms(["read", "write"]);
-    setSubmitted(false);
-    setRequestId("");
-    setSubmitError("");
-  };
 
   return (
-    <div
-      className="max-w-2xl mx-auto"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
-    >
-      {/* Header */}
-      <div className="mb-6">
-        <h1
-          className="text-2xl font-bold text-gray-900"
-          style={{ fontFamily: "'Playfair Display', serif" }}
-        >
-          Permissions
-        </h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Request access to a patient's records — the patient approves via their
-          mobile app
-        </p>
-      </div>
+    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
+      {/* ── Hero banner ── */}
+      <div
+        className="relative rounded-3xl overflow-hidden mb-6 px-7 py-6"
+        style={{
+          background:
+            "linear-gradient(130deg, #0d4a1f 0%, #166534 55%, #15803d 100%)",
+        }}
+      >
+        <div
+          className="absolute -right-10 -top-10 w-48 h-48 rounded-full opacity-[0.07]"
+          style={{ background: "radial-gradient(circle,#bbf7d0,transparent)" }}
+        />
+        <div
+          className="absolute right-28 bottom-0 w-32 h-32 rounded-full opacity-[0.05]"
+          style={{ background: "radial-gradient(circle,#dcfce7,transparent)" }}
+        />
 
-      {/* How it works banner */}
-      <div className="flex items-start gap-3 p-4 rounded-2xl border border-blue-100 bg-blue-50 mb-6">
-        <Info size={16} className="text-blue-500 mt-0.5 flex-shrink-0" />
-        <div className="text-sm text-blue-800 space-y-1">
-          <p className="font-semibold">How patient consent works</p>
-          <p className="text-blue-700">
-            Submit a request below with your reason for needing access. The
-            patient receives a notification on their HealthChain app and can
-            approve or reject it. Once approved, access is recorded on the
-            Hyperledger Fabric blockchain and automatically expires at
-            discharge.
-          </p>
-        </div>
-      </div>
-
-      {/* ── Success state ── */}
-      {submitted ? (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center">
-          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-            <CheckCircle2 size={32} className="text-green-600" />
-          </div>
-          <h2 className="text-lg font-bold text-gray-900 mb-2">
-            Access Request Sent
-          </h2>
-          <p className="text-gray-500 text-sm mb-1">
-            Your request has been sent to{" "}
-            <strong>
-              {patient?.firstName} {patient?.lastName}
-            </strong>
-            .
-          </p>
-          <p className="text-gray-400 text-xs mb-1">
-            They will receive a notification on their HealthChain app.
-          </p>
-          {requestId && (
-            <p className="text-xs text-gray-400 font-mono mt-2">
-              Request ID: {requestId}
+        <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <p className="text-green-300/70 text-sm font-medium mb-1">
+              {getGreeting()}, Dr.
             </p>
-          )}
-
-          <div className="flex gap-3 justify-center mt-6">
-            <button
-              onClick={reset}
-              className="px-5 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+            <h1
+              className="text-white text-2xl font-bold leading-tight"
+              style={{ fontFamily: "'Playfair Display', serif" }}
             >
-              Request for another patient
-            </button>
+              {user?.firstName} {user?.lastName}
+            </h1>
+            <p className="text-green-200/50 text-sm mt-1.5">
+              {format(new Date(), "EEEE, d MMMM yyyy")}
+              {stats && stats.total > 0 && (
+                <>
+                  {" · "}
+                  <span className="text-green-200/80">
+                    {stats.total} patient{stats.total !== 1 ? "s" : ""} today
+                  </span>
+                  {stats.critical > 0 && (
+                    <>
+                      {" "}
+                      ·{" "}
+                      <span className="text-red-300">
+                        {stats.critical} critical
+                      </span>
+                    </>
+                  )}
+                </>
+              )}
+            </p>
+          </div>
+          <div className="flex gap-2.5 flex-wrap">
             <button
-              onClick={() =>
-                router.push(
-                  `/dashboard/doctor/patients?highlight=${patient?.id}`,
-                )
-              }
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md"
+              onClick={() => router.push("/dashboard/doctor/queue")}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.02]"
               style={{
-                background: "linear-gradient(135deg, #166534, #15803d)",
+                background: "rgba(255,255,255,0.15)",
+                border: "1px solid rgba(255,255,255,0.2)",
               }}
             >
-              View Patient <ChevronRight size={14} />
+              <ClipboardList className="w-4 h-4" /> Today's Queue
+            </button>
+            <button
+              onClick={() => router.push("/dashboard/doctor/patients")}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
+              style={{
+                background: "rgba(0,0,0,0.2)",
+                color: "#bbf7d0",
+                border: "1px solid rgba(0,0,0,0.1)",
+              }}
+            >
+              <Users className="w-4 h-4" /> Patient Search
             </button>
           </div>
         </div>
-      ) : (
-        <div className="space-y-4">
-          {/* ── Step 1: Find patient ── */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">
-              Step 1 — Find Patient
-            </p>
+      </div>
 
-            {patient ? (
-              // Patient selected
-              <div className="flex items-center gap-3 p-3.5 rounded-xl bg-green-50 border border-green-200">
-                <div
-                  className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
-                  style={{ background: "#166534" }}
-                >
-                  {patient.firstName?.[0]}
-                  {patient.lastName?.[0]}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-bold text-gray-900">
-                    {patient.firstName} {patient.lastName}
-                  </p>
-                  <p className="text-xs text-gray-500 capitalize">
-                    {patient.gender} · {patient.dateOfBirth}
-                  </p>
-                </div>
-                {patient.bloodType && patient.bloodType !== "unknown" && (
-                  <span
-                    className="text-xs font-bold px-2 py-1 rounded-full text-white flex-shrink-0"
-                    style={{
-                      background:
-                        bloodTypeColor[patient.bloodType] ?? "#6b7280",
-                    }}
-                  >
-                    {patient.bloodType}
-                  </span>
-                )}
-                <button
-                  onClick={() => {
-                    setPatient(null);
-                    setResults([]);
-                  }}
-                  className="text-xs text-gray-400 hover:text-gray-600 underline flex-shrink-0"
-                >
-                  Change
-                </button>
-              </div>
-            ) : (
-              // Search input
-              <div className="space-y-3">
-                <div className="flex gap-2">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-                      placeholder="Search by name or National ID…"
-                      className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-900
-                        outline-none focus:border-green-600 focus:ring-2 focus:ring-green-600/10 focus:bg-white
-                        placeholder:text-gray-400 transition-all"
-                    />
-                  </div>
-                  <button
-                    onClick={handleSearch}
-                    disabled={searching || !query.trim()}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition-all"
-                    style={{
-                      background: "linear-gradient(135deg, #166534, #15803d)",
-                    }}
-                  >
-                    {searching ? (
-                      <Loader2 size={15} className="animate-spin" />
-                    ) : (
-                      <Search size={15} />
-                    )}
-                    Search
-                  </button>
-                </div>
-
-                {searchError && (
-                  <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 border border-red-100 text-sm text-red-700">
-                    <AlertCircle size={14} className="flex-shrink-0" />{" "}
-                    {searchError}
-                  </div>
-                )}
-
-                {results.length > 0 && (
-                  <div className="border border-gray-200 rounded-xl overflow-hidden">
-                    <p className="px-4 py-2 text-xs font-semibold text-gray-400 bg-gray-50 border-b border-gray-200">
-                      {results.length} patients found — select one
-                    </p>
-                    {results.map((p) => (
-                      <button
-                        key={p.id}
-                        onClick={() => {
-                          setPatient(p);
-                          setResults([]);
-                        }}
-                        className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors text-left border-b border-gray-100 last:border-0 group"
-                      >
-                        <div
-                          className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                          style={{ background: "#166534" }}
-                        >
-                          {p.firstName?.[0]}
-                          {p.lastName?.[0]}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-900">
-                            {p.firstName} {p.lastName}
-                          </p>
-                          <p className="text-xs text-gray-400 capitalize">
-                            {p.gender} · {p.dateOfBirth}
-                          </p>
-                        </div>
-                        <ChevronRight
-                          size={14}
-                          className="text-gray-300 group-hover:text-gray-500 flex-shrink-0 transition-colors"
-                        />
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* ── Step 2 & 3: Permissions + Reason ── */}
+      {/* ── Stat cards ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+        {(
+          [
+            {
+              label: "Total Today",
+              value: stats?.total,
+              sub: "registered visits",
+              color: "#166534",
+              bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
+              border: "#bbf7d0",
+              icon: Calendar,
+            },
+            {
+              label: "Awaiting Me",
+              value: stats?.triaged,
+              sub: "triaged · ready for consult",
+              color: "#1d4ed8",
+              bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
+              border: "#bfdbfe",
+              icon: Clock,
+            },
+            {
+              label: "Completed",
+              value: stats?.completed,
+              sub: "discharged today",
+              color: "#7c3aed",
+              bg: "linear-gradient(135deg,#faf5ff,#ede9fe)",
+              border: "#ddd6fe",
+              icon: TrendingUp,
+            },
+            {
+              label: "Critical/Urgent",
+              value: (stats?.critical ?? 0) + (stats?.urgent ?? 0),
+              sub: `${stats?.critical ?? 0} critical · ${stats?.urgent ?? 0} urgent`,
+              color: "#dc2626",
+              bg: "linear-gradient(135deg,#fef2f2,#fee2e2)",
+              border: "#fecaca",
+              icon: AlertTriangle,
+            },
+          ] as const
+        ).map(({ label, value, sub, color, bg, border, icon: Icon }) => (
           <div
-            className={`bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-5 transition-opacity ${!patient ? "opacity-40 pointer-events-none" : ""}`}
+            key={label}
+            className="relative rounded-2xl border overflow-hidden p-4"
+            style={{ background: bg, borderColor: border }}
           >
+            <div
+              className="absolute -right-2 -bottom-2 w-16 h-16 rounded-full opacity-10"
+              style={{ background: color }}
+            />
+            <div
+              className="w-8 h-8 rounded-xl flex items-center justify-center mb-3"
+              style={{ background: `${color}15` }}
+            >
+              <Icon className="w-4 h-4" style={{ color }} />
+            </div>
+            <p
+              className="text-3xl font-extrabold leading-none mb-1"
+              style={{ color }}
+            >
+              {skeletonVal(value, color)}
+            </p>
+            <p className="text-xs font-bold" style={{ color, opacity: 0.75 }}>
+              {label}
+            </p>
+            <p className="text-xs mt-0.5" style={{ color, opacity: 0.45 }}>
+              {sub}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      {/* ── My Activity strip ── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        {(
+          [
+            {
+              label: "Consultations",
+              value: activity?.consultations,
+              color: "#166534",
+              icon: Stethoscope,
+            },
+            {
+              label: "Lab Orders",
+              value: activity?.labOrders,
+              color: "#0369a1",
+              icon: Microscope,
+            },
+            {
+              label: "Imaging Orders",
+              value: activity?.imagingOrders,
+              color: "#7c3aed",
+              icon: FlaskConical,
+            },
+            {
+              label: "Prescriptions",
+              value: activity?.prescriptions,
+              color: "#d97706",
+              icon: Pill,
+            },
+          ] as const
+        ).map(({ label, value, color, icon: Icon }) => (
+          <div
+            key={label}
+            className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex items-center gap-3"
+          >
+            <div
+              className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+              style={{ background: `${color}10` }}
+            >
+              <Icon className="w-4 h-4" style={{ color }} />
+            </div>
             <div>
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">
-                Step 2 — Permissions Needed
-              </p>
-              <div className="space-y-2">
-                {PERMISSION_OPTIONS.map(({ value, label, desc }) => {
-                  const checked = selectedPerms.includes(value);
-                  return (
-                    <button
-                      key={value}
-                      onClick={() => togglePerm(value)}
-                      className="w-full flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all"
-                      style={
-                        checked
-                          ? { background: "#f0fdf4", borderColor: "#86efac" }
-                          : { background: "#fafafa", borderColor: "#e5e7eb" }
-                      }
-                    >
-                      <div
-                        className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border-2 transition-all"
-                        style={
-                          checked
-                            ? { background: "#166534", borderColor: "#166534" }
-                            : { background: "#fff", borderColor: "#d1d5db" }
-                        }
-                      >
-                        {checked && (
-                          <svg
-                            viewBox="0 0 10 8"
-                            className="w-2.5 h-2 fill-white"
-                          >
-                            <path
-                              d="M1 4l2.5 2.5L9 1"
-                              stroke="white"
-                              strokeWidth="1.5"
-                              fill="none"
-                              strokeLinecap="round"
-                            />
-                          </svg>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <p className="text-sm font-semibold text-gray-900">
-                          {label}
-                        </p>
-                        <p className="text-xs text-gray-400">{desc}</p>
-                      </div>
-                      <Lock size={13} className="text-gray-300 flex-shrink-0" />
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div>
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">
-                Step 3 — Reason for Access
-              </p>
-              <FieldGroup label="Clinical reason (shown to patient)">
-                <textarea
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  placeholder="e.g. Attending physician for admission — requires access to review full medical history and manage ongoing treatment…"
-                  rows={4}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-900
-                    outline-none focus:border-green-600 focus:ring-2 focus:ring-green-600/10 focus:bg-white
-                    resize-none placeholder:text-gray-400 transition-all"
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  {reason.trim().length}/10 characters minimum ·{" "}
-                  <span
-                    style={{
-                      color: reason.trim().length >= 10 ? "#15803d" : "#9ca3af",
-                    }}
-                  >
-                    {reason.trim().length >= 10
-                      ? "✓ Sufficient"
-                      : `${10 - reason.trim().length} more needed`}
-                  </span>
-                </p>
-              </FieldGroup>
-            </div>
-
-            {/* Blockchain note */}
-            <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-gray-50 border border-gray-200">
-              <Shield
-                size={14}
-                className="text-gray-400 mt-0.5 flex-shrink-0"
-              />
-              <p className="text-xs text-gray-500">
-                This request will be sent to the patient for approval. Once
-                approved, access is recorded on{" "}
-                <strong>Hyperledger Fabric</strong> and is automatically revoked
-                when the visit ends.
-              </p>
-            </div>
-
-            {submitError && (
-              <div className="flex items-start gap-2 p-3.5 rounded-xl bg-red-50 border border-red-100 text-sm text-red-700">
-                <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />{" "}
-                {submitError}
-              </div>
-            )}
-
-            <div className="flex justify-end pt-1 border-t border-gray-100">
-              <button
-                onClick={handleSubmit}
-                disabled={
-                  submitting ||
-                  !patient ||
-                  !reason.trim() ||
-                  reason.trim().length < 10 ||
-                  !selectedPerms.length
-                }
-                className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md disabled:opacity-50"
-                style={{
-                  background: "linear-gradient(135deg, #166534, #15803d)",
-                }}
-              >
-                {submitting ? (
-                  <>
-                    <Loader2 size={15} className="animate-spin" /> Sending
-                    request…
-                  </>
+              <p className="text-xl font-extrabold leading-none text-gray-900">
+                {loadingStats ? (
+                  <span className="inline-block w-5 h-5 rounded bg-gray-100 animate-pulse" />
                 ) : (
-                  <>
-                    <Shield size={15} /> Send Access Request
-                  </>
+                  (value ?? 0)
                 )}
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">{label} today</p>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Bottom grid ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        {/* Quick actions */}
+        <div className="space-y-3">
+          <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
+            Quick Actions
+          </p>
+          {(
+            [
+              {
+                label: "Today's Queue",
+                desc: "Triaged patients ready for consult",
+                href: "/dashboard/doctor/queue",
+                icon: ClipboardList,
+                color: "#166534",
+                bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
+                border: "#bbf7d0",
+              },
+              {
+                label: "Patient Search",
+                desc: "Look up any registered patient",
+                href: "/dashboard/doctor/patients",
+                icon: Users,
+                color: "#1d4ed8",
+                bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
+                border: "#bfdbfe",
+              },
+              {
+                label: "Request Permissions",
+                desc: "Blockchain consent from patient",
+                href: "/dashboard/doctor/permissions",
+                icon: Activity,
+                color: "#7c3aed",
+                bg: "linear-gradient(135deg,#faf5ff,#ede9fe)",
+                border: "#ddd6fe",
+              },
+              {
+                label: "New Visit",
+                desc: "Register an emergency visit",
+                href: "/dashboard/doctor/visit/new",
+                icon: FileText,
+                color: "#d97706",
+                bg: "linear-gradient(135deg,#fffbeb,#fef3c7)",
+                border: "#fde68a",
+              },
+            ] as const
+          ).map(({ label, desc, href, icon: Icon, color, bg, border }) => (
+            <button
+              key={href}
+              onClick={() => router.push(href)}
+              className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border text-left transition-all hover:shadow-md hover:-translate-y-px group"
+              style={{ background: bg, borderColor: border }}
+            >
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: `${color}15` }}
+              >
+                <Icon className="w-4 h-4" style={{ color }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900">{label}</p>
+                <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
+              </div>
+              <ArrowRight
+                className="w-4 h-4 flex-shrink-0 transition-transform group-hover:translate-x-0.5"
+                style={{ color }}
+              />
+            </button>
+          ))}
+        </div>
+
+        {/* Live queue — 2 cols */}
+        <div className="lg:col-span-2">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
+                Live Queue
+              </p>
+              {!loadingQueue &&
+                queue.filter((v) => !v.hasConsultation).length > 0 && (
+                  <span
+                    className="px-1.5 py-0.5 rounded-full text-xs font-bold"
+                    style={{ background: "#fef2f2", color: "#dc2626" }}
+                  >
+                    {queue.filter((v) => !v.hasConsultation).length} pending
+                  </span>
+                )}
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => fetchQueue(true)}
+                disabled={refreshing}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all disabled:opacity-40"
+              >
+                <RefreshCw
+                  className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`}
+                />
+              </button>
+              <button
+                onClick={() => router.push("/dashboard/doctor/queue")}
+                className="text-xs font-semibold flex items-center gap-1 transition-colors"
+                style={{ color: "#166534" }}
+              >
+                See all <ChevronRight className="w-3.5 h-3.5" />
               </button>
             </div>
           </div>
+
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            {loadingQueue ? (
+              <div className="divide-y divide-gray-50">
+                {[...Array(5)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-4 px-5 py-4 animate-pulse"
+                  >
+                    <div className="w-10 h-10 rounded-xl bg-gray-100 flex-shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3.5 w-32 bg-gray-100 rounded" />
+                      <div className="h-3 w-52 bg-gray-100 rounded" />
+                    </div>
+                    <div className="w-16 h-6 bg-gray-100 rounded-full" />
+                  </div>
+                ))}
+              </div>
+            ) : queue.length === 0 ? (
+              <div className="py-16 text-center">
+                <div
+                  className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
+                  style={{ background: "#f0fdf4" }}
+                >
+                  <TrendingUp className="w-6 h-6 text-green-400" />
+                </div>
+                <p className="text-sm font-semibold text-gray-500">
+                  No patients ready for consultation
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  Patients will appear after nurse triage is complete
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-50">
+                {queue.slice(0, 7).map((v, i) => {
+                  const p = getP(v.priority);
+                  const isCrit = ["critical", "emergency"].includes(v.priority);
+                  const needsReview = !v.hasConsultation;
+                  return (
+                    <button
+                      key={v.id}
+                      onClick={() =>
+                        router.push(`/dashboard/doctor/visit/${v.id}`)
+                      }
+                      className="w-full flex items-center gap-4 px-5 py-3.5 text-left transition-all group"
+                      style={{
+                        background:
+                          isCrit && i === 0 ? `${p.dot}08` : undefined,
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!(isCrit && i === 0))
+                          e.currentTarget.style.background = "#f9fafb";
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!(isCrit && i === 0))
+                          e.currentTarget.style.background = "transparent";
+                      }}
+                    >
+                      {/* Avatar */}
+                      <div className="relative flex-shrink-0">
+                        <div
+                          className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold"
+                          style={{
+                            background: isCrit ? p.color : "#e2e8f0",
+                            color: isCrit ? "#fff" : "#64748b",
+                          }}
+                        >
+                          {v.patient
+                            ? `${v.patient.firstName?.[0]}${v.patient.lastName?.[0]}`
+                            : "?"}
+                        </div>
+                        <span
+                          className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white"
+                          style={{
+                            background: needsReview
+                              ? isCrit
+                                ? p.dot
+                                : "#f59e0b"
+                              : "#16a34a",
+                          }}
+                        />
+                      </div>
+
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-semibold text-gray-900 leading-tight">
+                            {v.patient
+                              ? `${v.patient.firstName} ${v.patient.lastName}`
+                              : "Unknown"}
+                          </p>
+                          {v.patient?.bloodType &&
+                            v.patient.bloodType !== "unknown" && (
+                              <span
+                                className="text-xs font-bold px-1.5 py-0.5 rounded-full text-white"
+                                style={{
+                                  background:
+                                    bloodTypeColor[v.patient.bloodType] ??
+                                    "#6b7280",
+                                  fontSize: "10px",
+                                }}
+                              >
+                                {v.patient.bloodType}
+                              </span>
+                            )}
+                          <span className="font-mono text-xs text-gray-400">
+                            {v.visitNumber}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-400 truncate mt-0.5 max-w-xs">
+                          {v.chiefComplaint}
+                        </p>
+                      </div>
+
+                      {/* Right side */}
+                      <div className="hidden sm:flex flex-col items-end gap-1.5 flex-shrink-0">
+                        <span
+                          className="text-xs font-semibold px-2.5 py-1 rounded-full"
+                          style={{
+                            background: p.bg,
+                            color: p.color,
+                            border: `1px solid ${p.border}`,
+                          }}
+                        >
+                          {p.label}
+                        </span>
+                        <span
+                          className="text-xs flex items-center gap-1"
+                          style={{ color: needsReview ? "#d97706" : "#16a34a" }}
+                        >
+                          {needsReview ? (
+                            <>
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />{" "}
+                              Needs review
+                            </>
+                          ) : (
+                            <>
+                              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />{" "}
+                              Consulted
+                            </>
+                          )}
+                        </span>
+                      </div>
+
+                      <ChevronRight className="w-4 h-4 text-gray-200 group-hover:text-green-600 transition-colors flex-shrink-0" />
+                    </button>
+                  );
+                })}
+
+                {queue.length > 7 && (
+                  <button
+                    onClick={() => router.push("/dashboard/doctor/queue")}
+                    className="w-full flex items-center justify-center gap-2 px-5 py-3.5 text-sm font-semibold transition-colors hover:bg-gray-50"
+                    style={{ color: "#166534" }}
+                  >
+                    View {queue.length - 7} more{" "}
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Recently consulted */}
+          {recentPatients.length > 0 && (
+            <div className="mt-4">
+              <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">
+                Recently Consulted
+              </p>
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <div className="divide-y divide-gray-50">
+                  {recentPatients.map((r) => {
+                    const p = getP(r.priority);
+                    return (
+                      <button
+                        key={r.visitId}
+                        onClick={() =>
+                          router.push(`/dashboard/doctor/visit/${r.visitId}`)
+                        }
+                        className="w-full flex items-center gap-4 px-5 py-3 text-left hover:bg-gray-50 transition-colors group"
+                      >
+                        <div
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
+                          style={{ background: `${p.color}15`, color: p.color }}
+                        >
+                          {r.patient
+                            ? `${r.patient.firstName?.[0]}${r.patient.lastName?.[0]}`
+                            : "?"}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-gray-900">
+                            {r.patient
+                              ? `${r.patient.firstName} ${r.patient.lastName}`
+                              : "Unknown"}
+                          </p>
+                          <p className="text-xs text-gray-400 truncate">
+                            {r.chiefComplaint}
+                          </p>
+                        </div>
+                        <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                          <span
+                            className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.status === "completed" ? "" : ""}`}
+                            style={
+                              r.status === "completed"
+                                ? { background: "#f0fdf4", color: "#166534" }
+                                : { background: "#eff6ff", color: "#1d4ed8" }
+                            }
+                          >
+                            {r.status === "completed" ? "Discharged" : "Active"}
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            {formatDistanceToNow(new Date(r.consultedAt), {
+                              addSuffix: true,
+                            })}
+                          </span>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-gray-200 group-hover:text-green-600 transition-colors" />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

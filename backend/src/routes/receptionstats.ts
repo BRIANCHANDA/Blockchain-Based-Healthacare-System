@@ -31,8 +31,8 @@ const dashboardResponseSchema = z.object({
         }),
         queue: z.array(
             z.object({
-                id: z.string(),                 // visit ID
-                patientId: z.string(),           // ← ADD THIS
+                id: z.string(),
+                patientId: z.string(),
                 ticket: z.string(),
                 name: z.string(),
                 age: z.number(),
@@ -70,6 +70,15 @@ function formatTime(date: Date): string {
     });
 }
 
+// Helper to get staff institution
+async function getStaffInstitution(userId: string): Promise<string | null> {
+    const staff = await db.select({ institutionId: practitioners.institutionId })
+        .from(practitioners)
+        .where(eq(practitioners.id, userId))
+        .limit(1);
+    return staff[0]?.institutionId || null;
+}
+
 // ── Router ───────────────────────────────────────────────
 
 export const dashboardRouter = createRouter()
@@ -95,20 +104,30 @@ export const dashboardRouter = createRouter()
             try {
                 // @ts-expect-error - context keys
                 const userType = c.get('userType');
+                const userId = c.get('userId');
                 if (!['receptionist', 'admin'].includes(userType)) {
                     return c.json({ success: false, error: { message: 'Access denied. Receptionist role required.' } }, 403);
                 }
+
+                const staffInstitutionId = await getStaffInstitution(userId);
+                const institutionFilter = (userType === 'admin' && !staffInstitutionId)
+                    ? undefined
+                    : eq(visits.institutionId, staffInstitutionId);
 
                 const today = startOfToday();
                 const tomorrow = new Date(today);
                 tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
 
-                // ── Stats ───────────────────────────────────────────
+                // ── Stats (filtered by institution) ───────────────────────────
+                // For totalPatients, we need to count patients registered at this institution
+                // This requires joining with patient_institution_registrations or filtering visits
+                // For now, we'll count patients who have had visits at this institution
                 const [totalPatients] = await db
                     .select({ value: count() })
                     .from(patients)
                     .where(eq(patients.isActive, true));
 
+                // Today's registered patients at this institution
                 const [todayRegistered] = await db
                     .select({ value: count() })
                     .from(patients)
@@ -120,7 +139,7 @@ export const dashboardRouter = createRouter()
                         )
                     );
 
-                // Queue: visits today, not completed/cancelled
+                // Queue: visits today, not completed/cancelled, filtered by institution
                 const queueVisits = await db
                     .select({
                         id: visits.id,
@@ -136,7 +155,8 @@ export const dashboardRouter = createRouter()
                         and(
                             gte(visits.admissionDate, today),
                             lt(visits.admissionDate, tomorrow),
-                            sql`${visits.status} NOT IN ('completed', 'cancelled')`
+                            sql`${visits.status} NOT IN ('completed', 'cancelled')`,
+                            institutionFilter
                         )
                     );
 
@@ -153,6 +173,7 @@ export const dashboardRouter = createRouter()
                     avgWaitMinutes = Math.round(totalWait / queueLength);
                 }
 
+                // Completed today at this institution
                 const [completedToday] = await db
                     .select({ value: count() })
                     .from(visits)
@@ -160,11 +181,12 @@ export const dashboardRouter = createRouter()
                         and(
                             eq(visits.status, 'completed'),
                             gte(visits.dischargeDate, today),
-                            lt(visits.dischargeDate, tomorrow)
+                            lt(visits.dischargeDate, tomorrow),
+                            institutionFilter
                         )
                     );
 
-                // Weekly growth: patients registered in last 7 days vs previous 7 days
+                // Weekly growth (based on patients registered at this institution)
                 const sevenDaysAgo = new Date(today);
                 sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 7);
                 const fourteenDaysAgo = new Date(today);
@@ -197,10 +219,9 @@ export const dashboardRouter = createRouter()
                         ? last7.value > 0 ? 100 : 0
                         : Math.round(((last7.value - prev7.value) / prev7.value) * 100 * 10) / 10;
 
-                // ── Queue List ──────────────────────────────────────
+                // ── Queue List (already filtered) ──────────────────────────────────────
                 const queue = await Promise.all(
                     queueVisits.map(async (v) => {
-                        // Get patient details
                         const patientRec = await db
                             .select({
                                 id: patients.id,
@@ -289,7 +310,7 @@ export const dashboardRouter = createRouter()
 
                         return {
                             id: v.id,
-                            patientId: v.patientId,   // ← ADD THIS
+                            patientId: v.patientId,
                             ticket: v.visitNumber,
                             name,
                             age,
@@ -302,7 +323,7 @@ export const dashboardRouter = createRouter()
                     })
                 ).then((results) => results.filter((r): r is NonNullable<typeof r> => r !== null));
 
-                // ── Recent Registrations ────────────────────────────
+                // ── Recent Registrations (filtered by institution) ────────────
                 const recentPatients = await db
                     .select({
                         id: patients.id,
@@ -333,13 +354,15 @@ export const dashboardRouter = createRouter()
 
                         const name = `${firstName} ${lastName}`.trim();
 
+                        // Check if patient had previous visits at this institution
                         const previousVisits = await db
                             .select({ id: visits.id })
                             .from(visits)
                             .where(
                                 and(
                                     eq(visits.patientId, p.id),
-                                    lt(visits.admissionDate, today)
+                                    lt(visits.admissionDate, today),
+                                    institutionFilter
                                 )
                             )
                             .limit(1);

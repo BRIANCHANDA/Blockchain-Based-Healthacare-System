@@ -6,7 +6,6 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  TouchableOpacity,
 } from "react-native";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
@@ -45,7 +44,8 @@ export default function LoginScreen({ navigation }: Props) {
     try {
       const res = await loginPatient(data.nationalId, data.password);
       if (res.success) {
-        await setAuth(res.data.token, res.data.user);
+        const user = { ...res.data.user, type: "patient" as const };
+        await setAuth(res.data.token, user);
       }
     } catch (err: any) {
       const msg =
@@ -71,8 +71,8 @@ export default function LoginScreen({ navigation }: Props) {
           <View style={styles.iconCircle}>
             <Text style={styles.iconText}>🏥</Text>
           </View>
-          <Text style={styles.title}>MedChain</Text>
-          <Text style={styles.subtitle}>Secure Patient Portal</Text>
+          <Text style={styles.title}>HealthChain</Text>
+          <Text style={styles.subtitle}>Zambia's Secure Patient Portal</Text>
         </View>
 
         {/* Form */}
@@ -118,14 +118,6 @@ export default function LoginScreen({ navigation }: Props) {
             style={{ marginTop: 8 }}
           />
         </View>
-
-        {/* Footer */}
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Don't have an account? </Text>
-          <TouchableOpacity onPress={() => navigation.navigate("Register")}>
-            <Text style={styles.footerLink}>Register here</Text>
-          </TouchableOpacity>
-        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -143,7 +135,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: "#16A34A",
+    backgroundColor: "rgb(2, 77, 36)",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 12,
@@ -167,7 +159,4 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   formSub: { fontSize: 13, color: "#6B7280", marginBottom: 24 },
-  footer: { flexDirection: "row", justifyContent: "center", marginTop: 28 },
-  footerText: { color: "#6B7280", fontSize: 14 },
-  footerLink: { color: "#16A34A", fontSize: 14, fontWeight: "600" },
 });

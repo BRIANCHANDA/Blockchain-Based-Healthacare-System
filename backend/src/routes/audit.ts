@@ -143,4 +143,92 @@ export const auditRouter = createRouter()
       console.error('Audit log fetch error:', err);
       return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
     }
+  })
+
+
+
+  // ADD THIS ROUTE to audit.ts, before the closing of the router
+
+  // ── GET ALL AUDIT LOGS (Admin only) ───────────────────
+  .openapi(createRoute({
+    tags: ['Audit'],
+    summary: 'Admin views all system audit logs with filtering and pagination',
+    method: 'get',
+    path: '/',
+    security: [{ bearerAuth: [] }],
+    middleware: [authMiddleware],
+    request: {
+      query: z.object({
+        page: z.string().optional(),
+        limit: z.string().optional(),
+        actionType: z.string().optional(),
+        userType: z.string().optional(),
+      }),
+    },
+    responses: {
+      200: {
+        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ logs: z.array(z.any()), total: z.number(), page: z.number(), totalPages: z.number() }) }) } },
+        description: 'All audit logs',
+      },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Admin only' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+    },
+    // @ts-expect-error
+  }), async (c) => {
+    try {
+      // @ts-expect-error
+      const userType = c.get('userType');
+      if (userType !== 'admin') {
+        return c.json({ success: false, error: { message: 'Only admins can view all audit logs' } }, 403);
+      }
+
+      const query = c.req.valid('query');
+      const page = Math.max(1, parseInt(query.page ?? '1'));
+      const limit = Math.min(100, Math.max(1, parseInt(query.limit ?? '20')));
+      const offset = (page - 1) * limit;
+
+      // Build filters
+      const { and, eq, desc, count } = await import('drizzle-orm');
+
+      const conditions: any[] = [];
+      if (query.actionType) conditions.push(eq(auditLogs.actionType, query.actionType as any));
+      if (query.userType) conditions.push(eq(auditLogs.userType, query.userType as any));
+
+      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+      const [logs, [{ total }]] = await Promise.all([
+        db.select().from(auditLogs)
+          .where(whereClause)
+          .orderBy(desc(auditLogs.timestamp))
+          .limit(limit)
+          .offset(offset),
+        db.select({ total: count() }).from(auditLogs).where(whereClause),
+      ]);
+
+      return c.json({
+        success: true,
+        data: {
+          logs,
+          total: Number(total),
+          page,
+          totalPages: Math.ceil(Number(total) / limit),
+        }
+      });
+
+    } catch (err: unknown) {
+      console.error('Admin audit log error:', err);
+      return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+    }
   });
+
+
+
+
+
+
+
+
+
+
+
+;

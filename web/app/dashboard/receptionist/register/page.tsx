@@ -11,42 +11,34 @@ import {
   ChevronLeft,
   User,
   Phone,
-  Lock,
 } from "lucide-react";
 
-const schema = z
-  .object({
-    firstName: z.string().min(2, "Required"),
-    lastName: z.string().min(2, "Required"),
-    middleName: z.string().optional(),
-    dateOfBirth: z.string().min(1, "Required"),
-    gender: z.enum(["male", "female", "other"]),
-    bloodType: z
-      .enum(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "unknown"])
-      .optional(),
-    phoneNumber: z.string().min(10, "Valid phone required"),
-    email: z.string().email("Invalid email").optional().or(z.literal("")),
-    address: z.string().min(5, "Full address required"),
-    nationalId: z.string().min(1, "Required"),
-    emergencyContact: z.string().min(5, "Required"),
-    maritalStatus: z
-      .enum(["single", "married", "divorced", "widowed"])
-      .optional(),
-    occupation: z.string().optional(),
-    password: z.string().min(8, "Min 8 characters"),
-    confirmPassword: z.string(),
-  })
-  .refine((d) => d.password === d.confirmPassword, {
-    message: "Passwords do not match",
-    path: ["confirmPassword"],
-  });
+// ── Schema: no password fields ─────────────────────────────
+const schema = z.object({
+  firstName: z.string().min(2, "Required"),
+  lastName: z.string().min(2, "Required"),
+  middleName: z.string().optional(),
+  dateOfBirth: z.string().min(1, "Required"),
+  gender: z.enum(["male", "female", "other"]),
+  bloodType: z
+    .enum(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "unknown"])
+    .optional(),
+  phoneNumber: z.string().min(10, "Valid phone required"),
+  email: z.string().email("Invalid email").optional().or(z.literal("")),
+  address: z.string().min(5, "Full address required"),
+  nationalId: z.string().min(1, "Required"),
+  emergencyContact: z.string().min(5, "Required"),
+  maritalStatus: z
+    .enum(["single", "married", "divorced", "widowed"])
+    .optional(),
+  occupation: z.string().optional(),
+});
 
 type FormData = z.infer<typeof schema>;
 
 const steps = [
   { title: "Personal Info", icon: User },
   { title: "Contact Details", icon: Phone },
-  { title: "Account Setup", icon: Lock },
 ];
 
 export default function RegisterPatientPage() {
@@ -85,8 +77,8 @@ export default function RegisterPatientPage() {
       "emergencyContact",
       "maritalStatus",
       "occupation",
+      "nationalId",
     ],
-    ["nationalId", "password", "confirmPassword"],
   ];
 
   const next = async () => {
@@ -98,14 +90,16 @@ export default function RegisterPatientPage() {
     setLoading(true);
     setError("");
     try {
-      const { confirmPassword, ...payload } = data;
+      // Remove empty email
+      const payload = { ...data };
       if (!payload.email) delete payload.email;
+      // No password field is sent – backend will use default "test1234"
       const res = await patientApi.register(payload);
       setSuccess(res.data.data);
     } catch (err: any) {
       const msg = err.response?.data?.error?.message;
       setError(msg || "Registration failed. Please try again.");
-      setStep(2); // Jump to last step to show error
+      setStep(stepFields.length - 1); // jump to last step to show error
     } finally {
       setLoading(false);
     }
@@ -192,7 +186,9 @@ export default function RegisterPatientPage() {
           Register New Patient
         </h1>
         <p className="text-gray-500 text-sm mt-1">
-          Create a new patient account in the system
+          Create a new patient account – the default password is{" "}
+          <strong className="font-mono">test1234</strong>. The patient will be
+          asked to change it on first login.
         </p>
       </div>
 
@@ -294,22 +290,10 @@ export default function RegisterPatientPage() {
                     </select>
                   </Field>
                 </div>
-                <Field label="Blood Type" error={errors.bloodType?.message}>
-                  <select {...register("bloodType")} className={cls}>
-                    <option value="unknown">Unknown</option>
-                    {["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map(
-                      (b) => (
-                        <option key={b} value={b}>
-                          {b}
-                        </option>
-                      ),
-                    )}
-                  </select>
-                </Field>
               </>
             )}
 
-            {/* ── Step 1: Contact Details ── */}
+            {/* ── Step 1: Contact Details & National ID ── */}
             {step === 1 && (
               <>
                 <Field
@@ -369,12 +353,7 @@ export default function RegisterPatientPage() {
                     />
                   </Field>
                 </div>
-              </>
-            )}
 
-            {/* ── Step 2: Account Setup ── */}
-            {step === 2 && (
-              <>
                 <Field label="National ID *" error={errors.nationalId?.message}>
                   <input
                     {...register("nationalId")}
@@ -382,37 +361,19 @@ export default function RegisterPatientPage() {
                     className={cls}
                   />
                 </Field>
-                <Field label="Password *" error={errors.password?.message}>
-                  <input
-                    {...register("password")}
-                    type="password"
-                    placeholder="Min 8 characters"
-                    className={cls}
-                  />
-                </Field>
-                <Field
-                  label="Confirm Password *"
-                  error={errors.confirmPassword?.message}
-                >
-                  <input
-                    {...register("confirmPassword")}
-                    type="password"
-                    placeholder="Repeat password"
-                    className={cls}
-                  />
-                </Field>
 
+                {/* Info note about default password */}
                 <div
                   className="p-3.5 rounded-xl text-sm"
                   style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}
                 >
                   <p className="font-medium text-green-800 text-xs mb-1">
-                    📋 What happens next?
+                    📋 Default password
                   </p>
                   <p className="text-green-700 text-xs leading-relaxed">
-                    The patient will receive a unique Patient ID and blockchain
-                    address. They can use their National ID + password to log in
-                    on the mobile app.
+                    The patient will use <strong>test1234</strong> as their
+                    initial password. They will be required to change it the
+                    first time they log in.
                   </p>
                 </div>
 
@@ -426,7 +387,7 @@ export default function RegisterPatientPage() {
             )}
           </div>
 
-          {/* Navigation */}
+          {/* Navigation buttons */}
           <div className="px-6 pb-6 flex gap-3">
             {step > 0 && (
               <button

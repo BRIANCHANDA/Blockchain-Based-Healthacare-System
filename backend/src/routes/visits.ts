@@ -1,5 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq, desc, and, sql } from 'drizzle-orm';
+import { eq, desc, and, sql, ne } from 'drizzle-orm';
 import { db } from '../db';
 import {
   visits, vitalSigns, consultations,
@@ -12,6 +12,9 @@ import { authMiddleware } from '../middleware/auth';
 import { storeRecordHash, logAccess, checkPermission } from '../services/fabric';
 import { generateRecordHash } from '../services/crypto';
 import crypto from 'crypto';
+import path from 'path';
+import { mkdir, writeFile } from 'fs/promises';
+import { createHash } from 'crypto';
 
 // Extend Hono context with custom variables
 type AppContext = {
@@ -675,10 +678,10 @@ export const visitRouter = createRouter<AppContext>()
         content: {
           'application/json': {
             schema: z.object({
-              resultsData: z.any(),                     // JSON object
+              resultsData: z.any(),
               interpretation: z.string().optional(),
               abnormalFindings: z.string().optional(),
-              referenceRanges: z.any().optional(),      // JSON
+              referenceRanges: z.any().optional(),
               attachmentUrls: z.array(z.string()).optional(),
             }),
           },
@@ -709,9 +712,11 @@ export const visitRouter = createRouter<AppContext>()
       const patient = await db.select({ blockchainAddress: patients.blockchainAddress })
         .from(patients).where(eq(patients.id, order[0].patientId)).limit(1);
 
-      // Permission check
-      const hasPermission = await checkPermission(patient[0].blockchainAddress, c.get('blockchainAddress'));
-      if (!hasPermission) {
+      // Permission check – allow lab technicians without explicit permission
+      const hasBlockchainPermission = await checkPermission(patient[0].blockchainAddress, c.get('blockchainAddress'));
+      const isLabTech = userType === 'lab_technician';
+
+      if (!hasBlockchainPermission && !isLabTech) {
         await auditAction(userId, userType, order[0].patientId, patient[0].blockchainAddress, 'view', 'lab_result', orderId, ip);
         return c.json({ success: false, error: { message: 'No blockchain permission' } }, 403);
       }
@@ -793,9 +798,19 @@ export const visitRouter = createRouter<AppContext>()
         .from(patients).where(eq(patients.id, visit[0].patientId)).limit(1);
 
       // Permission check
-      const hasPermission = await checkPermission(patient[0].blockchainAddress, c.get('blockchainAddress'));
+      // Check blockchain permission OR if practitioner has a consultation on this visit (creator bypass)
+      const [blockchainOk, hasConsultation] = await Promise.all([
+        checkPermission(patient[0].blockchainAddress, c.get('blockchainAddress')),
+        db.select({ id: consultations.id })
+          .from(consultations)
+          .where(and(eq(consultations.visitId, visitId), eq(consultations.practitionerId, userId)))
+          .limit(1),
+      ]);
+
+      const hasPermission = blockchainOk || hasConsultation.length > 0 || userType === 'admin' || userType === 'receptionist';
+
       if (!hasPermission) {
-        await auditAction(userId, userType, visit[0].patientId, patient[0].blockchainAddress, 'view', 'imaging_order', visitId, ip);
+        await auditAction(userId, userType, visit[0].patientId, patient[0].blockchainAddress, 'view', 'visit_summary', visitId, ip);
         return c.json({ success: false, error: { message: 'No blockchain permission' } }, 403);
       }
 
@@ -826,30 +841,243 @@ export const visitRouter = createRouter<AppContext>()
     }
   })
 
+
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // ADD THIS BLOCK to src/routes/visits.ts
+  // Place it after the "LAB TECHNICIAN: Get all resulted orders" block
+  // and before the "GET FULL VISIT SUMMARY" block.
+  //
+  // Also add `ne` to your drizzle-orm imports if not already present:
+  //   import { eq, desc, and, sql, ne } from 'drizzle-orm';
+  // ─────────────────────────────────────────────────────────────────────────────
+
   // ════════════════════════════════════════
-  // STEP 5B: RADIOLOGY - Submit Report
+  // RADIOLOGIST: Get all pending imaging orders
   // ════════════════════════════════════════
   .openapi(createRoute({
     tags: ['Visits'],
-    summary: 'Submit radiology report (Radiologist)',
+    summary: 'Get all pending imaging orders (Radiologist)',
+    method: 'get',
+    path: '/imaging-orders/pending',   // ← keep original path
+    security: [{ bearerAuth: [] }],
+    middleware: [authMiddleware],
+    responses: {
+      200: { content: { 'application/json': { schema: successData } }, description: 'Pending imaging orders' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Access denied' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+    },
+  }), async (c) => {
+    try {
+      const userType = c.get('userType');
+      if (userType !== 'radiologist' && userType !== 'admin') {
+        return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+      }
+
+      const { decrypt } = await import('../services/crypto');
+
+      const orders = await db
+        .select({
+          id: imagingOrders.id,
+          orderNumber: imagingOrders.orderNumber,
+          visitId: imagingOrders.visitId,
+          patientId: imagingOrders.patientId,
+          modality: imagingOrders.modality,
+          bodyPart: imagingOrders.bodyPart,
+          indication: imagingOrders.indication,
+          urgency: imagingOrders.urgency,
+          status: imagingOrders.status,
+          orderedAt: imagingOrders.orderedAt,
+          visitNumber: visits.visitNumber,
+          chiefComplaint: visits.chiefComplaint,
+          patientFirstNameEncrypted: patients.firstNameEncrypted,
+          patientLastNameEncrypted: patients.lastNameEncrypted,
+        })
+        .from(imagingOrders)
+        .leftJoin(visits, eq(visits.id, imagingOrders.visitId))
+        .leftJoin(patients, eq(patients.id, imagingOrders.patientId))
+        .where(
+          and(
+            ne(imagingOrders.status, 'reported'),
+            ne(imagingOrders.status, 'cancelled'),
+          )
+        )
+        .orderBy(desc(imagingOrders.orderedAt));
+
+      // Decrypt names (handle async if needed)
+      const ordersWithNames = await Promise.all(orders.map(async (order) => ({
+        ...order,
+        patientName: order.patientFirstNameEncrypted && order.patientLastNameEncrypted
+          ? `${await decrypt(order.patientFirstNameEncrypted)} ${await decrypt(order.patientLastNameEncrypted)}`
+          : 'Unknown',
+      })));
+
+      return c.json({ success: true, data: { orders: ordersWithNames } });
+    } catch (err: any) {
+      console.error('Pending imaging orders error:', err);
+      return c.json({ success: false, error: { message: err.message } }, 500);
+    }
+  })
+
+  // ════════════════════════════════════════
+  // RADIOLOGY - Upload Images (Radiologist)
+  // ════════════════════════════════════════
+  .openapi(createRoute({
+    tags: ['Visits'],
+    summary: 'Upload images for an imaging order (Radiologist)',
+    method: 'post',
+    path: '/:visitId/imaging-orders/:orderId/images',
+    security: [{ bearerAuth: [] }],
+    middleware: [authMiddleware],
+    request: {
+      params: z.object({ visitId: z.string().uuid(), orderId: z.string().uuid() }),
+      // No schema for body – it's multipart file upload
+    },
+    responses: {
+      201: { content: { 'application/json': { schema: successData } }, description: 'Images uploaded' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Order not found' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+    },
+  }), async (c) => {
+    try {
+      const userType = c.get('userType');
+      if (userType !== 'radiologist') {
+        return c.json({ success: false, error: { message: 'Only radiologists can upload images' } }, 403);
+      }
+
+      const { visitId, orderId } = c.req.valid('param');
+      const userId = c.get('userId');
+      const ip = c.req.header('x-forwarded-for');
+
+      // Verify order exists
+      const order = await db.select().from(imagingOrders).where(eq(imagingOrders.id, orderId)).limit(1);
+      if (!order.length) {
+        return c.json({ success: false, error: { message: 'Imaging order not found' } }, 404);
+      }
+
+      const patient = await db.select({ blockchainAddress: patients.blockchainAddress })
+        .from(patients).where(eq(patients.id, order[0].patientId)).limit(1);
+
+      // Permission check – allow radiologist
+      const hasPermission = await checkPermission(patient[0].blockchainAddress, c.get('blockchainAddress'));
+      if (!hasPermission) {
+        await auditAction(userId, userType, order[0].patientId, patient[0].blockchainAddress, 'view', 'imaging_image', orderId, ip);
+        return c.json({ success: false, error: { message: 'No blockchain permission' } }, 403);
+      }
+
+      // Parse multipart form
+      const body = await c.req.parseBody();
+      const files = body['images']; // Expect field name 'images'
+      let fileArray: File[] = [];
+      if (files && typeof files !== 'string') {
+        fileArray = Array.isArray(files) ? files : [files];
+      }
+
+      if (fileArray.length === 0) {
+        return c.json({ success: false, error: { message: 'No image files uploaded' } }, 400);
+      }
+
+      // Ensure upload directory exists
+      const uploadDir = path.join(process.cwd(), 'uploads', 'radiology');
+      await mkdir(uploadDir, { recursive: true });
+
+      const imageUrls: string[] = [];
+      const hashes: string[] = [];
+
+      for (const file of fileArray) {
+        // Generate unique filename
+        const ext = path.extname(file.name);
+        const filename = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`;
+        const filePath = path.join(uploadDir, filename);
+        const buffer = Buffer.from(await file.arrayBuffer());
+        await writeFile(filePath, buffer);
+
+        // Compute hash for blockchain
+        const hash = createHash('sha256').update(buffer).digest('hex');
+        hashes.push(hash);
+
+        // Construct URL (adjust base URL as needed)
+        const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+        const url = `${baseUrl}/uploads/radiology/${filename}`;
+        imageUrls.push(url);
+      }
+
+      // Update imaging_reports record (if exists, otherwise create)
+      const existingReport = await db.select().from(imagingReports)
+        .where(eq(imagingReports.imagingOrderId, orderId)).limit(1);
+
+      let reportId: string;
+      if (existingReport.length) {
+        // Append to existing imageUrls
+        const currentUrls = existingReport[0].imageUrls || [];
+        const newUrls = [...currentUrls, ...imageUrls];
+        await db.update(imagingReports)
+          .set({ imageUrls: newUrls, updatedAt: new Date() })
+          .where(eq(imagingReports.imagingOrderId, orderId));
+        reportId = existingReport[0].id;
+      } else {
+        // Create a placeholder report (no findings yet) – but normally report is submitted separately.
+        // For simplicity, we create a minimal report with just images.
+        const reportHash = generateRecordHash({ orderId, imageUrls, uploadedBy: userId, timestamp: new Date().toISOString() });
+        const result = await db.insert(imagingReports).values({
+          imagingOrderId: orderId,
+          performedByRadiologistId: userId,
+          findings: '',
+          impression: '',
+          imageUrls: imageUrls,
+          blockchainHash: reportHash,
+        }).returning();
+        reportId = result[0].id;
+      }
+
+      // Store each image hash on blockchain (optional: store combined hash)
+      for (const hash of hashes) {
+        await storeRecordHash(`${orderId}:image:${hash.slice(0, 8)}`, patient[0].blockchainAddress, hash, 'imaging_image');
+      }
+
+      await auditAction(userId, userType, order[0].patientId, patient[0].blockchainAddress, 'create', 'imaging_image', reportId, ip);
+
+      return c.json({ success: true, data: { imageUrls, reportId } }, 201);
+    } catch (err: any) {
+      console.error('Image upload error:', err);
+      return c.json({ success: false, error: { message: err.message } }, 500);
+    }
+  })
+
+
+  // ════════════════════════════════════════
+  // RADIOLOGY - Get report for an order
+  // ════════════════════════════════════════
+  .openapi(createRoute({
+    tags: ['Visits'],
+    summary: 'Get imaging report for an order',
+    method: 'get',
+    path: '/imaging-orders/:orderId/report',
+    security: [{ bearerAuth: [] }],
+    middleware: [authMiddleware],
+    request: { params: z.object({ orderId: z.string().uuid() }) },
+    responses: { 200: { content: { 'application/json': { schema: successData } }, description: 'Report' } },
+  }), async (c) => {
+    const { orderId } = c.req.valid('param');
+    const report = await db.select().from(imagingReports).where(eq(imagingReports.imagingOrderId, orderId)).limit(1);
+    return c.json({ success: true, data: report[0] || null });
+  })
+
+
+
+  // ════════════════════════════════════════
+  // STEP 5B: RADIOLOGY - Submit Report (with optional images)
+  // ════════════════════════════════════════
+  .openapi(createRoute({
+    tags: ['Visits'],
+    summary: 'Submit radiology report with images',
     method: 'post',
     path: '/:visitId/imaging-report/:orderId',
     security: [{ bearerAuth: [] }],
     middleware: [authMiddleware],
     request: {
       params: z.object({ visitId: z.string().uuid(), orderId: z.string().uuid() }),
-      body: {
-        content: {
-          'application/json': {
-            schema: z.object({
-              findings: z.string(),
-              impression: z.string(),
-              recommendations: z.string().optional(),
-              imageUrls: z.array(z.string()).default([]),
-            }),
-          },
-        },
-      },
     },
     responses: {
       201: { content: { 'application/json': { schema: successData } }, description: 'Report submitted' },
@@ -861,51 +1089,109 @@ export const visitRouter = createRouter<AppContext>()
     try {
       const userType = c.get('userType');
       if (userType !== 'radiologist') {
-        return c.json({ success: false, error: { message: 'Only radiologists can submit imaging reports' } }, 403);
+        return c.json({ success: false, error: { message: 'Only radiologists can submit reports' } }, 403);
       }
 
-      const { orderId } = c.req.valid('param');
-      const body = c.req.valid('json');
+      const { visitId, orderId } = c.req.valid('param');
       const userId = c.get('userId');
       const ip = c.req.header('x-forwarded-for');
 
       const order = await db.select().from(imagingOrders).where(eq(imagingOrders.id, orderId)).limit(1);
-      if (!order.length) return c.json({ success: false, error: { message: 'Imaging order not found' } }, 404);
+      if (!order.length) {
+        return c.json({ success: false, error: { message: 'Imaging order not found' } }, 404);
+      }
 
       const patient = await db.select({ blockchainAddress: patients.blockchainAddress })
         .from(patients).where(eq(patients.id, order[0].patientId)).limit(1);
 
-      // Permission check
       const hasPermission = await checkPermission(patient[0].blockchainAddress, c.get('blockchainAddress'));
       if (!hasPermission) {
         await auditAction(userId, userType, order[0].patientId, patient[0].blockchainAddress, 'view', 'imaging_report', orderId, ip);
         return c.json({ success: false, error: { message: 'No blockchain permission' } }, 403);
       }
 
-      const reportHash = generateRecordHash({ orderId, ...body, radiologistId: userId, timestamp: new Date().toISOString() });
+      // Parse multipart form
+      const body = await c.req.parseBody();
+      const findings = body['findings']?.toString() || '';
+      const impression = body['impression']?.toString() || '';
+      const recommendations = body['recommendations']?.toString() || '';
+      const files = body['images'];
+      let fileArray: File[] = [];
+      if (files && typeof files !== 'string') {
+        fileArray = Array.isArray(files) ? files : [files];
+      }
 
+      // Upload images if any
+      const imageUrls: string[] = [];
+      const imageHashes: string[] = [];
+      if (fileArray.length > 0) {
+        const uploadDir = path.join(process.cwd(), 'uploads', 'radiology');
+        await mkdir(uploadDir, { recursive: true });
+        for (const file of fileArray) {
+          const ext = path.extname(file.name);
+          const filename = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`;
+          const filePath = path.join(uploadDir, filename);
+          const buffer = Buffer.from(await file.arrayBuffer());
+          await writeFile(filePath, buffer);
+          const hash = createHash('sha256').update(buffer).digest('hex');
+          imageHashes.push(hash);
+          const baseUrl = (process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '');
+          const url = `${baseUrl}/uploads/radiology/${filename}`;
+          imageUrls.push(url);
+        }
+      }
+
+      // Check if report already exists
+      const existingReport = await db.select().from(imagingReports)
+        .where(eq(imagingReports.imagingOrderId, orderId)).limit(1);
+
+      let reportId: string;
+      if (existingReport.length) {
+        const currentUrls = existingReport[0].imageUrls || [];
+        const newUrls = [...currentUrls, ...imageUrls];
+        const reportHash = generateRecordHash({ orderId, findings, impression, imageUrls: newUrls, updatedBy: userId, timestamp: new Date().toISOString() });
+        await db.update(imagingReports)
+          .set({
+            findings,
+            impression,
+            recommendations: recommendations || null,
+            imageUrls: newUrls,
+            blockchainHash: reportHash,
+            updatedAt: new Date(),
+          })
+          .where(eq(imagingReports.imagingOrderId, orderId));
+        reportId = existingReport[0].id;
+      } else {
+        const reportHash = generateRecordHash({ orderId, findings, impression, imageUrls, radiologistId: userId, timestamp: new Date().toISOString() });
+        const result = await db.insert(imagingReports).values({
+          imagingOrderId: orderId,
+          performedByRadiologistId: userId,
+          findings,
+          impression,
+          recommendations: recommendations || null,
+          imageUrls,
+          blockchainHash: reportHash,
+        }).returning();
+        reportId = result[0].id;
+      }
+
+      // Store each image hash on blockchain
+      for (const hash of imageHashes) {
+        await storeRecordHash(`${orderId}:image:${hash.slice(0, 8)}`, patient[0].blockchainAddress, hash, 'imaging_image');
+      }
+
+      // Mark order as reported
       await db.update(imagingOrders).set({ status: 'reported' }).where(eq(imagingOrders.id, orderId));
 
-      const result = await db.insert(imagingReports).values({
-        imagingOrderId: orderId,
-        performedByRadiologistId: userId,
-        findings: body.findings,
-        impression: body.impression,
-        recommendations: body.recommendations ?? null,
-        imageUrls: body.imageUrls,
-        blockchainHash: reportHash,
-      }).returning();
+      await auditAction(userId, userType, order[0].patientId, patient[0].blockchainAddress, 'create', 'imaging_report', reportId, ip);
 
-      await storeRecordHash(result[0].id, patient[0].blockchainAddress, reportHash, 'imaging_report');
-      await auditAction(userId, userType, order[0].patientId, patient[0].blockchainAddress, 'create', 'imaging_report', result[0].id, ip);
-
-      return c.json({ success: true, data: { report: result[0], blockchainHash: reportHash } }, 201);
-
+      return c.json({ success: true, data: { reportId, imageUrls } }, 201);
     } catch (err: any) {
-      console.error(err);
-      return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+      console.error('Report submission error:', err);
+      return c.json({ success: false, error: { message: err.message } }, 500);
     }
   })
+
 
   // ════════════════════════════════════════
   // STEP 6: PHARMACY - Create Prescription
@@ -1187,7 +1473,8 @@ export const visitRouter = createRouter<AppContext>()
         dischargeBlockchainHash: dischargeHash,   // new column
       }).where(eq(visits.id, visitId)).returning();
 
-      await storeRecordHash(visitId, patient[0].blockchainAddress, dischargeHash, 'discharge');
+      const dischargeKey = `${visitId}:discharge`;
+      await storeRecordHash(dischargeKey, patient[0].blockchainAddress, dischargeHash, 'discharge');
       await auditAction(userId, 'practitioner', visit[0].patientId, patient[0].blockchainAddress, 'update', 'discharge', visitId, ip);
 
       return c.json({ success: true, data: { message: 'Patient discharged successfully', visit: result[0], blockchainHash: dischargeHash } });
@@ -1256,6 +1543,166 @@ export const visitRouter = createRouter<AppContext>()
   })
 
 
+  .openapi(createRoute({
+    tags: ['Visits'],
+    summary: 'Get basic visit info (no blockchain permission required)',
+    method: 'get',
+    path: '/:visitId/info',
+    security: [{ bearerAuth: [] }],
+    middleware: [authMiddleware],
+    request: { params: z.object({ visitId: z.string().uuid() }) },
+    responses: {
+      200: { content: { 'application/json': { schema: successData } }, description: 'Visit info' },
+      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' },
+    },
+    // @ts-expect-error
+  }), async (c) => {
+    const { visitId } = c.req.valid('param');
+
+    const visit = await db.select()
+      .from(visits)
+      .where(eq(visits.id, visitId))
+      .limit(1);
+
+    if (!visit.length) {
+      return c.json({ success: false, error: { message: 'Visit not found' } }, 404);
+    }
+
+    const patient = await db.select()
+      .from(patients)
+      .where(eq(patients.id, visit[0].patientId))
+      .limit(1);
+
+    return c.json({
+      success: true, data: {
+        patientId: visit[0].patientId,
+        visitNumber: visit[0].visitNumber,
+        patientName: patient.length
+          ? `${patient[0].firstName} ${patient[0].lastName}`
+          : 'Unknown',
+      }
+    });
+  })
+
+
+  // ════════════════════════════════════════
+  // LAB TECHNICIAN: Get all pending lab orders
+  // ════════════════════════════════════════
+  .openapi(createRoute({
+    tags: ['Visits'],
+    summary: 'Get all pending lab orders (Lab Technician)',
+    method: 'get',
+    path: '/lab-orders/pending',
+    security: [{ bearerAuth: [] }],
+    middleware: [authMiddleware],
+    responses: {
+      200: { content: { 'application/json': { schema: successData } }, description: 'Pending lab orders' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+    },
+  }), async (c) => {
+    try {
+      const userType = c.get('userType');
+      if (userType !== 'lab_technician' && userType !== 'admin') {
+        return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+      }
+
+      const orders = await db
+        .select({
+          id: labTestOrders.id,
+          orderNumber: labTestOrders.orderNumber,
+          visitId: labTestOrders.visitId,
+          patientId: labTestOrders.patientId,
+          testName: labTestOrders.testName,
+          testCode: labTestOrders.testCode,
+          specimenType: labTestOrders.specimenType,
+          urgency: labTestOrders.urgency,
+          clinicalNotes: labTestOrders.clinicalNotes,
+          status: labTestOrders.status,
+          orderedAt: labTestOrders.orderedAt,
+          visitNumber: visits.visitNumber,
+          chiefComplaint: visits.chiefComplaint,
+        })
+        .from(labTestOrders)
+        .leftJoin(visits, eq(visits.id, labTestOrders.visitId))
+        .where(
+          and(
+            ne(labTestOrders.status, 'resulted'),
+            ne(labTestOrders.status, 'cancelled')
+          )
+        )
+        .orderBy(
+          sql`CASE ${labTestOrders.urgency}
+          WHEN 'critical' THEN 1
+          WHEN 'emergency' THEN 2
+          WHEN 'urgent' THEN 3
+          ELSE 4
+        END`,
+          labTestOrders.orderedAt
+        );
+
+      return c.json({ success: true, data: { orders } });
+    } catch (err: any) {
+      console.error('Pending lab orders error:', err);
+      return c.json({ success: false, error: { message: err.message } }, 500);
+    }
+  })
+
+  // ════════════════════════════════════════
+  // LAB TECHNICIAN: Get all resulted orders (history)
+  // ════════════════════════════════════════
+  .openapi(createRoute({
+    tags: ['Visits'],
+    summary: 'Get resulted lab orders history (Lab Technician)',
+    method: 'get',
+    path: '/lab-orders/resulted',
+    security: [{ bearerAuth: [] }],
+    middleware: [authMiddleware],
+    responses: {
+      200: { content: { 'application/json': { schema: successData } }, description: 'Resulted orders' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+    },
+    // @ts-expect-error
+  }), async (c) => {
+    try {
+      const userType = c.get('userType');
+      if (userType !== 'lab_technician' && userType !== 'admin') {
+        return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+      }
+
+      const orders = await db.execute(
+        sql`SELECT
+            lo.id,
+            lo.order_number,
+            lo.visit_id,
+            lo.patient_id,
+            lo.test_name,
+            lo.test_code,
+            lo.specimen_type,
+            lo.urgency,
+            lo.status,
+            lo.ordered_at,
+            v.visit_number,
+            lr.interpretation,
+            lr.abnormal_findings,
+            lr.performed_at
+          FROM lab_test_orders lo
+          JOIN visits v ON v.id = lo.visit_id
+          LEFT JOIN lab_test_results lr ON lr.lab_test_order_id = lo.id
+          WHERE lo.status = 'resulted'
+          ORDER BY lr.performed_at DESC
+          LIMIT 50`
+      );
+
+      return c.json({ success: true, data: { orders: orders.rows } });
+
+    } catch (err: any) {
+      console.error(err);
+      return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+    }
+  })
+
   // ════════════════════════════════════════
   // GET FULL VISIT SUMMARY
   // ════════════════════════════════════════
@@ -1323,4 +1770,183 @@ export const visitRouter = createRouter<AppContext>()
       console.error(err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
-  });
+  })
+
+
+
+
+
+
+
+
+
+  // ════════════════════════════════════════
+  // PHARMACY: Get all pending prescriptions
+  // Add BEFORE /:visitId/prescriptions route
+  // ════════════════════════════════════════
+  .openapi(createRoute({
+    tags: ['Visits'],
+    summary: 'Get all pending prescriptions (Pharmacist)',
+    method: 'get',
+    path: '/prescriptions/pending',
+    security: [{ bearerAuth: [] }],
+    middleware: [authMiddleware],
+    responses: {
+      200: { content: { 'application/json': { schema: successData } }, description: 'Pending prescriptions' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+    },
+    // @ts-expect-error
+  }), async (c) => {
+    try {
+      const userType = c.get('userType');
+      if (userType !== 'pharmacist' && userType !== 'admin') {
+        return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+      }
+
+      const result = await db.execute(
+        sql`SELECT
+            p.id,
+            p.prescription_number,
+            p.visit_id,
+            p.patient_id,
+            p.status,
+            p.prescribed_at,
+            v.visit_number,
+            v.chief_complaint,
+            COUNT(pi.id) as total_items,
+            COUNT(CASE WHEN pi.is_dispensed = false THEN 1 END) as pending_items
+          FROM prescriptions p
+          JOIN visits v ON v.id = p.visit_id
+          LEFT JOIN prescription_items pi ON pi.prescription_id = p.id
+          WHERE p.status IN ('prescribed', 'dispensing')
+          GROUP BY p.id, v.visit_number, v.chief_complaint
+          ORDER BY p.prescribed_at ASC`
+      );
+
+      return c.json({ success: true, data: { prescriptions: result.rows } });
+    } catch (err: any) {
+      console.error(err);
+      return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+    }
+  })
+
+  // ════════════════════════════════════════
+  // PHARMACY: Get a single prescription with all items
+  // ════════════════════════════════════════
+  .openapi(createRoute({
+    tags: ['Visits'],
+    summary: 'Get prescription detail with all items (Pharmacist)',
+    method: 'get',
+    path: '/prescriptions/:prescriptionId/detail',
+    security: [{ bearerAuth: [] }],
+    middleware: [authMiddleware],
+    request: { params: z.object({ prescriptionId: z.string().uuid() }) },
+    responses: {
+      200: { content: { 'application/json': { schema: successData } }, description: 'Prescription detail' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+    },
+    // @ts-expect-error
+  }), async (c) => {
+    try {
+      const userType = c.get('userType');
+      if (userType !== 'pharmacist' && userType !== 'admin') {
+        return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+      }
+
+      const { prescriptionId } = c.req.valid('param');
+
+      const [prescriptionResult, itemsResult] = await Promise.all([
+        db.execute(
+          sql`SELECT
+              p.id, p.prescription_number, p.visit_id, p.patient_id,
+              p.status, p.prescribed_at,
+              v.visit_number, v.chief_complaint
+            FROM prescriptions p
+            JOIN visits v ON v.id = p.visit_id
+            WHERE p.id = ${prescriptionId}
+            LIMIT 1`
+        ),
+        db.execute(
+          sql`SELECT
+              id, prescription_id, medication_name, generic_name,
+              strength, dosage_form, dose, frequency, route,
+              duration, quantity, refills_allowed, instructions,
+              is_dispensed, dispensed_at, dispensed_quantity
+            FROM prescription_items
+            WHERE prescription_id = ${prescriptionId}
+            ORDER BY created_at ASC`
+        ),
+      ]);
+
+      if (!prescriptionResult.rows.length) {
+        return c.json({ success: false, error: { message: 'Prescription not found' } }, 404);
+      }
+
+      return c.json({
+        success: true,
+        data: {
+          prescription: prescriptionResult.rows[0],
+          items: itemsResult.rows,
+        },
+      });
+    } catch (err: any) {
+      console.error(err);
+      return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+    }
+  })
+
+  // ════════════════════════════════════════
+  // PHARMACY: Get dispensed history
+  // ════════════════════════════════════════
+  .openapi(createRoute({
+    tags: ['Visits'],
+    summary: 'Get dispensed prescriptions history (Pharmacist)',
+    method: 'get',
+    path: '/prescriptions/dispensed',
+    security: [{ bearerAuth: [] }],
+    middleware: [authMiddleware],
+    responses: {
+      200: { content: { 'application/json': { schema: successData } }, description: 'Dispensed history' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+    },
+    // @ts-expect-error
+  }), async (c) => {
+    try {
+      const userType = c.get('userType');
+      if (userType !== 'pharmacist' && userType !== 'admin') {
+        return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+      }
+
+      const result = await db.execute(
+        sql`SELECT
+            p.id,
+            p.prescription_number,
+            p.visit_id,
+            p.status,
+            p.prescribed_at,
+            p.updated_at as dispensed_at,
+            v.visit_number,
+            COUNT(pi.id) as total_items
+          FROM prescriptions p
+          JOIN visits v ON v.id = p.visit_id
+          LEFT JOIN prescription_items pi ON pi.prescription_id = p.id
+          WHERE p.status = 'dispensed'
+          GROUP BY p.id, v.visit_number
+          ORDER BY p.updated_at DESC
+          LIMIT 50`
+      );
+
+      return c.json({ success: true, data: { prescriptions: result.rows } });
+    } catch (err: any) {
+      console.error(err);
+      return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+    }
+  })
+
+
+
+  ;

@@ -57,28 +57,27 @@ export const patientApi = {
 
 // ── Visits ───────────────────────────────────────────────
 export const visitApi = {
-    // Queue
     getTodayQueue: () => api.get('/api/visits/today'),
     getByVisitNumber: (visitNumber: string) =>
         api.get(`/api/visits/number/${encodeURIComponent(visitNumber)}`),
-
-    // Check if the current logged-in nurse has permission for a visit's patient
+    getVisitInfo: (visitId: string) =>
+        api.get(`/api/visits/${visitId}/info`),
     checkMyPermission: (visitId: string) =>
         api.get(`/api/visits/${visitId}/my-permission`),
-
     create: (data: any) => api.post('/api/visits', data),
+    createVisit: (data: any) => api.post('/api/visits', data),
     getSummary: (visitId: string) => api.get(`/api/visits/${visitId}/summary`),
-
-    // Nurse triage
     recordVitals: (visitId: string, data: any) =>
         api.post(`/api/visits/${visitId}/vitals`, data),
     nursingAssessment: (visitId: string, data: any) =>
         api.post(`/api/visits/${visitId}/nursing-assessment`, data),
-
-    // Doctor
     consult: (visitId: string, data: any) =>
         api.post(`/api/visits/${visitId}/consultation`, data),
+    addConsultation: (visitId: string, data: any) =>
+        api.post(`/api/visits/${visitId}/consultation`, data),
     diagnose: (visitId: string, data: any) =>
+        api.post(`/api/visits/${visitId}/diagnosis`, data),
+    addDiagnosis: (visitId: string, data: any) =>
         api.post(`/api/visits/${visitId}/diagnosis`, data),
     orderLabs: (visitId: string, data: any) =>
         api.post(`/api/visits/${visitId}/lab-orders`, data),
@@ -86,34 +85,42 @@ export const visitApi = {
         api.post(`/api/visits/${visitId}/imaging-orders`, data),
     prescribe: (visitId: string, data: any) =>
         api.post(`/api/visits/${visitId}/prescriptions`, data),
+    addPrescription: (visitId: string, data: any) =>
+        api.post(`/api/visits/${visitId}/prescriptions`, data),
     discharge: (visitId: string, data: any) =>
         api.patch(`/api/visits/${visitId}/discharge`, data),
+    getPendingLabOrders: () =>
+        api.get('/api/visits/lab-orders/pending'),
+    getResultedLabOrders: () =>
+        api.get('/api/visits/lab-orders/resulted'),
+    enterLabResult: (visitId: string, orderId: string, data: any) =>
+        api.post(`/api/visits/${visitId}/lab-results/${orderId}`, data),
+    getPendingPrescriptions: () => api.get('/api/visits/prescriptions/pending'),
+    getPendingImagingOrders: () => api.get('/api/visits/imaging-orders/pending'),
+    getPrescriptionDetail: (id: string) => api.get(`/api/visits/prescriptions/${id}/detail`),
+    getDispensedPrescriptions: () => api.get('/api/visits/prescriptions/dispensed'),
+    dispensePrescription: (visitId: string, prescriptionId: string, data: any) =>
+        api.patch(`/api/visits/${visitId}/prescriptions/${prescriptionId}/dispense`, data),
+    // Radiology methods
+    getImagingReport: (orderId: string) =>
+        api.get(`/api/visits/imaging-orders/${orderId}/report`),
+    // The submit method now uses FormData (see the page component)
+
 };
 
 // ── Permissions ──────────────────────────────────────────
 export const permissionApi = {
-    // Patient grants access to a practitioner/nurse
     grant: (data: { practitionerId: string; durationHours: number; permissionType?: string; allowedRecordTypes?: string[] }) =>
         api.post('/api/permissions/grant', data),
-
-    // Patient revokes access
     revoke: (data: { practitionerId: string }) =>
         api.post('/api/permissions/revoke', data),
-
-    // Clinical staff requests access from a patient
-    requestAccess: (data: {
-        patientId: string;
-        visitId?: string;
-        reason: string;
-        requestedPermissions: string[];
-    }) => api.post('/api/permissions/request', data),
-
-    // Patient views who has access
+    requestAccess: (data: { patientId: string; visitId?: string; reason: string; requestedPermissions: string[] }) =>
+        api.post('/api/permissions/request', data),
     getMine: () => api.get('/api/permissions/mine'),
-
-    // Check permission by blockchain addresses
     check: (patientBlockchainAddress: string, staffBlockchainAddress: string) =>
         api.get(`/api/permissions/check/${patientBlockchainAddress}/${staffBlockchainAddress}`),
+    getRequestStatus: (requestId: string) =>
+        api.get(`/api/permissions/requests/${requestId}`),
 };
 
 // ── Audit ────────────────────────────────────────────────
@@ -126,4 +133,24 @@ export const auditApi = {
 export const institutionApi = {
     list: () => api.get('/api/institutions'),
     create: (data: any) => api.post('/api/institutions', data),
+};
+
+export const labStatsApi = {
+    getOverview: () => api.get('/api/lab-stats'),
+    getMyStats: () => api.get('/api/lab-stats/my-stats'),
+    getPendingOrders: () => api.get('/api/lab-stats/pending'),
+};
+
+export const radiologyStatsApi = {
+    getOverview: () => api.get('/api/radiology-stats/overview'),
+    getMyStats: () => api.get('/api/radiology-stats/my-stats'),
+};
+
+export const pharmacyStatsApi = {
+    getOverview: () => api.get('/api/pharmacy-stats/overview'),
+    getMyStats: () => api.get('/api/pharmacy-stats/my-stats'),
+};
+
+export const adminStatsApi = {
+    getOverview: () => api.get('/api/dashboard/admin'),
 };

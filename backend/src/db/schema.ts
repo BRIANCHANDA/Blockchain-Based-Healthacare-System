@@ -736,3 +736,52 @@ export const referrals = pgTable('referrals', {
     receivingInstIdx: index('idx_referrals_receiving_inst').on(table.receivingInstitutionId),
     statusIdx: index('idx_referrals_status').on(table.status),
 }));
+
+
+
+
+
+
+
+
+
+// Cross-institution access grants
+export const crossInstitutionAccess = pgTable('cross_institution_access', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    patientId: uuid('patient_id').notNull().references(() => patients.id),
+    sourceInstitutionId: uuid('source_institution_id').notNull().references(() => institutions.id),
+    targetInstitutionId: uuid('target_institution_id').notNull().references(() => institutions.id),
+    accessType: text('access_type').notNull(), // 'referral', 'transfer', 'emergency', 'patient_consent'
+    grantedBy: uuid('granted_by').notNull(),
+    grantedAt: timestamp('granted_at').defaultNow().notNull(),
+    expiresAt: timestamp('expires_at'),
+    reason: text('reason').notNull(),
+    status: text('status').default('active').notNull(), // 'active', 'expired', 'revoked'
+    blockchainHash: text('blockchain_hash').notNull(),
+    blockchainTransactionId: text('blockchain_transaction_id'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+    patientIdx: index('idx_cross_access_patient').on(table.patientId),
+    sourceIdx: index('idx_cross_access_source').on(table.sourceInstitutionId),
+    targetIdx: index('idx_cross_access_target').on(table.targetInstitutionId),
+    statusIdx: index('idx_cross_access_status').on(table.status),
+    uniqueAccess: unique('unique_cross_access').on(table.patientId, table.sourceInstitutionId, table.targetInstitutionId),
+}));
+
+// Emergency access logs
+export const emergencyAccessLogs = pgTable('emergency_access_logs', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    patientId: uuid('patient_id').notNull().references(() => patients.id),
+    accessedBy: uuid('accessed_by').notNull(),
+    accessedByInstitutionId: uuid('accessed_by_institution_id').notNull().references(() => institutions.id),
+    reason: text('reason').notNull(),
+    accessedAt: timestamp('accessed_at').defaultNow().notNull(),
+    expiresAt: timestamp('expires_at').notNull(),
+    blockchainHash: text('blockchain_hash').notNull(),
+    blockchainTransactionId: text('blockchain_transaction_id'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+}, (table) => ({
+    patientIdx: index('idx_emergency_patient').on(table.patientId),
+    accessedByIdx: index('idx_emergency_accessed_by').on(table.accessedBy),
+}));

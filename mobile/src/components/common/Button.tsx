@@ -59,11 +59,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 20,
   },
-  primary: { backgroundColor: "#16A34A" },
+  primary: { backgroundColor: "rgb(2, 77, 36)" },
   outline: {
     backgroundColor: "transparent",
     borderWidth: 1.5,
-    borderColor: "#16A34A",
+    borderColor: "rgb(2, 77, 36)",
   },
   danger: { backgroundColor: "#DC2626" },
   ghost: { backgroundColor: "transparent" },

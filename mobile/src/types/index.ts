@@ -175,6 +175,7 @@ export type RootStackParamList = {
 export type AuthStackParamList = {
     Login: undefined;
     Register: undefined;
+    changepassword: undefined;
 };
 
 export type MainTabParamList = {

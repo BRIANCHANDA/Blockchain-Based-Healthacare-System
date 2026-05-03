@@ -30,6 +30,13 @@ interface QueueItem {
   status: string;
 }
 
+function safeDateDistance(dateStr: string | null | undefined): string {
+  if (!dateStr) return "—";
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return "—";
+  return formatDistanceToNow(d, { addSuffix: true });
+}
+
 const PRIORITY: Record<
   string,
   { color: string; bg: string; border: string; dot: string; label: string }

@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "medchain",
-    "platforms": ["android"],
+    "platforms": ["android", "web", "ios"],
     "android": {
       "package": "com.medchain.patient",
       "softwareKeyboardLayoutMode": "pan",
