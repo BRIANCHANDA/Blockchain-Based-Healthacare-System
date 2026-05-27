@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import {
@@ -10,8 +10,6 @@ import {
   ChevronRight,
   CheckCircle2,
   AlertTriangle,
-  Filter,
-  Download,
   UserCog,
   Stethoscope,
   FlaskConical,
@@ -19,9 +17,7 @@ import {
   Pill,
   Shield,
   Users,
-  Building2,
 } from "lucide-react";
-import { format } from "date-fns";
 
 const ROLE_OPTIONS = [
   { value: "", label: "All Roles" },
@@ -72,7 +68,8 @@ const ROLE_META: Record<
   admin: { label: "Admin", color: "#dc2626", bg: "#fef2f2", icon: Shield },
 };
 
-export default function StaffPage() {
+// ── Inner component (uses useSearchParams — must be inside Suspense) ───────────
+function StaffPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initFilter = searchParams.get("filter") ?? "";
@@ -118,8 +115,6 @@ export default function StaffPage() {
   useEffect(() => {
     load();
   }, [load]);
-
-  // Reset page on filter change
   useEffect(() => {
     setPage(1);
   }, [search, roleFilter, verifiedFilter]);
@@ -135,12 +130,6 @@ export default function StaffPage() {
 
   const totalPages = Math.ceil(total / PER_PAGE);
   const unverifiedCount = staff.filter((s) => !s.isVerified).length;
-
-  const tabCounts = {
-    all: total,
-    unverified: staff.filter((s) => !s.isVerified).length,
-    verified: staff.filter((s) => s.isVerified).length,
-  };
 
   return (
     <div style={{ maxWidth: 1100 }}>
@@ -253,7 +242,7 @@ export default function StaffPage() {
         </div>
       )}
 
-      {/* Filters row */}
+      {/* Filters */}
       <div
         style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}
       >
@@ -333,7 +322,7 @@ export default function StaffPage() {
           style={{
             display: "flex",
             gap: 6,
-            padding: "4px",
+            padding: 4,
             borderRadius: 10,
             background: "#f1f5f9",
           }}
@@ -368,7 +357,7 @@ export default function StaffPage() {
         </div>
       </div>
 
-      {/* Table card */}
+      {/* Table */}
       <div
         style={{
           background: "#fff",
@@ -459,7 +448,7 @@ export default function StaffPage() {
                   (e.currentTarget.style.background = "none")
                 }
               >
-                {/* Name + avatar */}
+                {/* Name */}
                 <div
                   style={{
                     display: "flex",
@@ -570,7 +559,7 @@ export default function StaffPage() {
                   {s.institutionName ?? "—"}
                 </p>
 
-                {/* Status + verify */}
+                {/* Status */}
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   {s.isVerified ? (
                     <span
@@ -600,7 +589,6 @@ export default function StaffPage() {
                         color: "#dc2626",
                         border: "1px solid #fecaca",
                         cursor: "pointer",
-                        transition: "all 0.12s",
                         display: "inline-flex",
                         alignItems: "center",
                         gap: 5,
@@ -680,7 +668,6 @@ export default function StaffPage() {
                 fontSize: 13,
                 cursor: "pointer",
                 color: page === 1 ? "#d1d5db" : "#374151",
-                transition: "background 0.12s",
               }}
             >
               Previous
@@ -700,7 +687,6 @@ export default function StaffPage() {
                     fontSize: 13,
                     fontWeight: 600,
                     cursor: "pointer",
-                    transition: "all 0.12s",
                     background: page === p ? "#166534" : "#fff",
                     color: page === p ? "#fff" : "#374151",
                     borderColor: page === p ? "#166534" : "#e5e7eb",
@@ -721,7 +707,6 @@ export default function StaffPage() {
                 fontSize: 13,
                 cursor: "pointer",
                 color: page === totalPages ? "#d1d5db" : "#374151",
-                transition: "background 0.12s",
               }}
             >
               Next
@@ -730,5 +715,20 @@ export default function StaffPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Suspense wrapper — required for useSearchParams in Next.js 16 ─────────────
+export default function StaffPage() {
+  return (
+    <Suspense
+      fallback={
+        <div style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>
+          Loading…
+        </div>
+      }
+    >
+      <StaffPageInner />
+    </Suspense>
   );
 }
