@@ -907,7 +907,7 @@ export default function NewVisitPage() {
         </div>
       }
     >
-      <NewVisitInner />
+      <NewVisitPageInner />
     </Suspense>
   );
 }
