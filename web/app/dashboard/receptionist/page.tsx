@@ -1,77 +1,30 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
-import { api, visitApi } from "@/lib/api";
+import { api, practitionersApi, visitApi } from "@/lib/api";
 import {
   UserPlus,
   Users,
   ClipboardList,
-  ArrowUpRight,
   Clock,
   CheckCircle2,
   AlertCircle,
   Activity,
   ChevronRight,
-  Play,
-  TrendingUp,
   Zap,
-  CalendarDays,
   RefreshCw,
+  User,
+  UserCheck,
+  Loader2,
+  Building2,
+  TrendingUp,
+  ArrowRight,
+  Droplets,
 } from "lucide-react";
-import { formatDistanceToNow, format } from "date-fns";
+import { formatDistanceToNow, format, getHours } from "date-fns";
 
-// ── Priority config ───────────────────────────────────────────────────────────
-const PRIORITY: Record<
-  string,
-  { color: string; bg: string; border: string; dot: string }
-> = {
-  routine: {
-    color: "#15803d",
-    bg: "#f0fdf4",
-    border: "#bbf7d0",
-    dot: "#16a34a",
-  },
-  urgent: {
-    color: "#b45309",
-    bg: "#fffbeb",
-    border: "#fde68a",
-    dot: "#f59e0b",
-  },
-  emergency: {
-    color: "#dc2626",
-    bg: "#fef2f2",
-    border: "#fecaca",
-    dot: "#ef4444",
-  },
-  critical: {
-    color: "#7c3aed",
-    bg: "#faf5ff",
-    border: "#e9d5ff",
-    dot: "#a855f7",
-  },
-};
-
-function greeting() {
-  const h = new Date().getHours();
-  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
-}
-
-function PulseDot({ color }: { color: string }) {
-  return (
-    <span className="relative flex h-2 w-2 flex-shrink-0">
-      <span
-        className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-50"
-        style={{ background: color }}
-      />
-      <span
-        className="relative inline-flex rounded-full h-2 w-2"
-        style={{ background: color }}
-      />
-    </span>
-  );
-}
-
+// ── Types ─────────────────────────────────────────────────────────────────────
 interface QueueItem {
   id: string;
   visitNumber: string;
@@ -80,143 +33,566 @@ interface QueueItem {
   status: string;
   admissionDate: string;
   wardOrRoom?: string;
-  patient?: { firstName: string; lastName: string };
+  patientName?: string;
+  patient?: {
+    firstName: string;
+    lastName: string;
+    gender: string;
+    bloodType: string;
+  } | null;
+  assignedNurseId?: string;
+  assignedNurseName?: string;
 }
 
-// ── Stat Card ─────────────────────────────────────────────────────────────────
-function StatCard({
-  icon: Icon,
-  label,
-  value,
-  sub,
-  color,
-  bg,
-  border,
-  onClick,
-  loading,
-}: {
-  icon: any;
-  label: string;
-  value: number | string;
-  sub?: string;
-  color: string;
-  bg: string;
-  border: string;
-  onClick?: () => void;
-  loading?: boolean;
-}) {
+interface Nurse {
+  id: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  specialization: string | null;
+  lastSeenAt: string | null;
+}
+
+// ── Design tokens ─────────────────────────────────────────────────────────────
+const T = {
+  forest: "#052e16",
+  forestMid: "#064e23",
+  green: "#16a34a",
+  greenLight: "#86efac",
+  greenGhost: "#f0fdf4",
+  ink: "#0a0f0d",
+  inkSoft: "#374151",
+  inkMuted: "#6b7280",
+  inkFaint: "#e5e7eb",
+  white: "#ffffff",
+  amber: "#f59e0b",
+  amberLight: "#fef3c7",
+  coral: "#ef4444",
+  coralLight: "#fef2f2",
+  blue: "#2563eb",
+  blueLight: "#eff6ff",
+  violet: "#7c3aed",
+  violetLight: "#faf5ff",
+  border: "#f3f4f6",
+  bg: "#f8faf9",
+};
+
+const PRIORITY: Record<
+  string,
+  { color: string; bg: string; border: string; dot: string; label: string }
+> = {
+  routine: {
+    color: T.green,
+    bg: T.greenGhost,
+    border: "#bbf7d0",
+    dot: T.green,
+    label: "Routine",
+  },
+  urgent: {
+    color: "#b45309",
+    bg: T.amberLight,
+    border: "#fde68a",
+    dot: T.amber,
+    label: "Urgent",
+  },
+  emergency: {
+    color: T.coral,
+    bg: T.coralLight,
+    border: "#fecaca",
+    dot: T.coral,
+    label: "Emergency",
+  },
+  critical: {
+    color: T.violet,
+    bg: T.violetLight,
+    border: "#e9d5ff",
+    dot: T.violet,
+    label: "Critical",
+  },
+};
+
+const BLOOD: Record<string, string> = {
+  "A+": "#3b82f6",
+  "A-": "#6366f1",
+  "B+": "#8b5cf6",
+  "B-": "#ec4899",
+  "AB+": "#f59e0b",
+  "AB-": "#ef4444",
+  "O+": "#10b981",
+  "O-": "#14b8a6",
+};
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+}
+
+function getInitials(name: string) {
   return (
-    <button
-      onClick={onClick}
-      className={`relative text-left rounded-2xl p-5 border overflow-hidden transition-all group
-        ${onClick ? "hover:shadow-lg hover:-translate-y-0.5 cursor-pointer" : "cursor-default"}`}
-      style={{ background: bg, borderColor: border }}
-    >
-      {/* Decorative circle */}
-      <div
-        className="absolute -right-4 -bottom-4 w-20 h-20 rounded-full opacity-10"
-        style={{ background: color }}
-      />
-
-      <div className="flex items-start justify-between mb-4">
-        <div
-          className="w-10 h-10 rounded-xl flex items-center justify-center"
-          style={{
-            background: "rgba(255,255,255,0.75)",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-          }}
-        >
-          <Icon size={18} style={{ color }} />
-        </div>
-        {onClick && (
-          <ArrowUpRight
-            size={15}
-            className="opacity-0 group-hover:opacity-100 transition-opacity"
-            style={{ color }}
-          />
-        )}
-      </div>
-
-      <p className="text-3xl font-extrabold leading-none" style={{ color }}>
-        {loading ? (
-          <span className="inline-block w-10 h-7 rounded-lg bg-black/5 animate-pulse" />
-        ) : (
-          value
-        )}
-      </p>
-      <p className="text-sm font-semibold text-gray-700 mt-1">{label}</p>
-      {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
-    </button>
+    name
+      .split(" ")
+      .filter(Boolean)
+      .map((n) => n[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "?"
   );
 }
 
-// ── Queue Row ─────────────────────────────────────────────────────────────────
-function QueueRow({
-  item,
-  onOpen,
-}: {
-  item: QueueItem;
-  onOpen: (id: string) => void;
-}) {
-  const p = PRIORITY[item.priority] ?? PRIORITY.routine;
-  const isActive = item.status === "in-progress";
+function getPatientName(item: QueueItem) {
+  if (item.patientName) return item.patientName;
+  if (item.patient) return `${item.patient.firstName} ${item.patient.lastName}`;
+  return "Unknown Patient";
+}
+
+// ── SVG Sparkline area chart ──────────────────────────────────────────────────
+function VisitSparkline({ queue }: { queue: QueueItem[] }) {
+  const W = 340,
+    H = 72;
+  const SLOTS = 12; // 06:00 – 18:00, one per hour
+
+  // Bucket visits by hour of day (06 – 17)
+  const buckets = useMemo(() => {
+    const b = Array(SLOTS).fill(0);
+    queue.forEach((v) => {
+      const h = getHours(new Date(v.admissionDate));
+      const idx = Math.min(Math.max(h - 6, 0), SLOTS - 1);
+      b[idx]++;
+    });
+    return b;
+  }, [queue]);
+
+  const maxVal = Math.max(...buckets, 1);
+  const pad = { l: 4, r: 4, t: 8, b: 4 };
+  const gW = W - pad.l - pad.r;
+  const gH = H - pad.t - pad.b;
+
+  // Build SVG path
+  const pts = buckets.map((v, i) => ({
+    x: pad.l + (i / (SLOTS - 1)) * gW,
+    y: pad.t + gH - (v / maxVal) * gH,
+  }));
+
+  const linePath = pts
+    .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
+    .join(" ");
+  const areaPath = `${linePath} L${pts[pts.length - 1].x.toFixed(1)},${(pad.t + gH).toFixed(1)} L${pts[0].x.toFixed(1)},${(pad.t + gH).toFixed(1)} Z`;
+
+  const currentHour = getHours(new Date());
+  const nowX =
+    pad.l +
+    (Math.min(Math.max(currentHour - 6, 0), SLOTS - 1) / (SLOTS - 1)) * gW;
+
+  const hourLabels = ["6am", "8am", "10am", "12pm", "2pm", "4pm", "6pm"];
+  const labelIndices = [0, 2, 4, 6, 8, 10, 12];
 
   return (
-    <div className="flex items-center gap-4 px-5 py-3.5 border-b border-gray-50 last:border-0 hover:bg-gray-50/60 transition-colors group">
-      <PulseDot color={isActive ? p.dot : "#d1d5db"} />
-
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          <span className="text-xs font-bold font-mono text-gray-400">
-            {item.visitNumber}
-          </span>
-          <span
-            className="text-xs font-semibold px-2 py-0.5 rounded-full capitalize"
-            style={{
-              background: p.bg,
-              color: p.color,
-              border: `1px solid ${p.border}`,
-            }}
-          >
-            {item.priority}
-          </span>
-        </div>
-        <p className="text-sm font-semibold text-gray-900 truncate">
-          {item.chiefComplaint}
-        </p>
-        {item.wardOrRoom && (
-          <p className="text-xs text-gray-400 mt-0.5">{item.wardOrRoom}</p>
-        )}
-      </div>
-
-      <div className="text-right flex-shrink-0 hidden sm:block">
-        <p className="text-xs text-gray-400">
-          {formatDistanceToNow(new Date(item.admissionDate), {
-            addSuffix: true,
-          })}
-        </p>
-        <p className="text-xs text-gray-300">
-          {format(new Date(item.admissionDate), "HH:mm")}
-        </p>
-      </div>
-
-      <button
-        onClick={() => onOpen(item.id)}
-        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex-shrink-0
-          hover:shadow-sm"
-        style={{
-          background: "linear-gradient(135deg, #166534, #15803d)",
-          color: "#fff",
-        }}
+    <div>
+      <svg
+        width="100%"
+        viewBox={`0 0 ${W} ${H + 14}`}
+        preserveAspectRatio="none"
+        style={{ overflow: "visible" }}
       >
-        <Play size={10} />
-        Open
-      </button>
+        <defs>
+          <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={T.green} stopOpacity="0.18" />
+            <stop offset="100%" stopColor={T.green} stopOpacity="0" />
+          </linearGradient>
+        </defs>
+
+        {/* Grid lines */}
+        {[0.25, 0.5, 0.75, 1].map((f) => (
+          <line
+            key={f}
+            x1={pad.l}
+            y1={pad.t + gH - f * gH}
+            x2={W - pad.r}
+            y2={pad.t + gH - f * gH}
+            stroke={T.inkFaint}
+            strokeWidth="0.5"
+            strokeDasharray="3 3"
+          />
+        ))}
+
+        {/* Area fill */}
+        <path d={areaPath} fill="url(#sparkGrad)" />
+
+        {/* Line */}
+        <path
+          d={linePath}
+          fill="none"
+          stroke={T.green}
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {/* Data dots */}
+        {pts.map(
+          (p, i) =>
+            buckets[i] > 0 && (
+              <circle
+                key={i}
+                cx={p.x}
+                cy={p.y}
+                r="2.5"
+                fill={T.white}
+                stroke={T.green}
+                strokeWidth="1.5"
+              />
+            ),
+        )}
+
+        {/* Now line */}
+        {currentHour >= 6 && currentHour <= 18 && (
+          <>
+            <line
+              x1={nowX}
+              y1={pad.t}
+              x2={nowX}
+              y2={pad.t + gH}
+              stroke={T.coral}
+              strokeWidth="1"
+              strokeDasharray="3 2"
+              opacity="0.6"
+            />
+            <text
+              x={nowX + 3}
+              y={pad.t + 7}
+              fontSize="7"
+              fill={T.coral}
+              opacity="0.7"
+            >
+              now
+            </text>
+          </>
+        )}
+
+        {/* Hour labels */}
+        {labelIndices.map((idx, i) => (
+          <text
+            key={idx}
+            x={pad.l + (idx / (SLOTS - 1)) * gW}
+            y={H + 11}
+            fontSize="8"
+            fill={T.inkMuted}
+            textAnchor="middle"
+          >
+            {hourLabels[i]}
+          </text>
+        ))}
+      </svg>
     </div>
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+// ── Donut chart ───────────────────────────────────────────────────────────────
+function StatusDonut({
+  waiting,
+  inProgress,
+  done,
+  total,
+}: {
+  waiting: number;
+  inProgress: number;
+  done: number;
+  total: number;
+}) {
+  const R = 28,
+    CX = 36,
+    CY = 36,
+    STROKE = 7;
+  const circumference = 2 * Math.PI * R;
+
+  const segments = [
+    { value: done, color: T.green, label: "Done" },
+    { value: inProgress, color: T.blue, label: "Active" },
+    { value: waiting, color: T.amber, label: "Waiting" },
+  ];
+
+  let offset = 0;
+  const arcs = segments.map((s) => {
+    const frac = total > 0 ? s.value / total : 0;
+    const dash = frac * circumference;
+    const gap = circumference - dash;
+    const start = offset;
+    offset += dash;
+    return { ...s, dash, gap, start };
+  });
+
+  return (
+    <div className="flex items-center gap-4">
+      <svg width="72" height="72">
+        <circle
+          cx={CX}
+          cy={CY}
+          r={R}
+          fill="none"
+          stroke={T.inkFaint}
+          strokeWidth={STROKE}
+        />
+        {arcs.map((arc, i) => (
+          <circle
+            key={i}
+            cx={CX}
+            cy={CY}
+            r={R}
+            fill="none"
+            stroke={arc.color}
+            strokeWidth={STROKE}
+            strokeDasharray={`${arc.dash} ${arc.gap}`}
+            strokeDashoffset={-arc.start}
+            style={{
+              transform: "rotate(-90deg)",
+              transformOrigin: `${CX}px ${CY}px`,
+            }}
+          />
+        ))}
+        <text
+          x={CX}
+          y={CY + 1}
+          textAnchor="middle"
+          dominantBaseline="middle"
+          fontSize="13"
+          fontWeight="800"
+          fill={T.ink}
+        >
+          {total}
+        </text>
+        <text
+          x={CX}
+          y={CY + 12}
+          textAnchor="middle"
+          fontSize="6.5"
+          fill={T.inkMuted}
+        >
+          visits
+        </text>
+      </svg>
+      <div className="space-y-1.5">
+        {segments.map((s) => (
+          <div key={s.label} className="flex items-center gap-2">
+            <span
+              className="w-2 h-2 rounded-full flex-shrink-0"
+              style={{ background: s.color }}
+            />
+            <span className="text-xs text-gray-500 font-medium w-12">
+              {s.label}
+            </span>
+            <span className="text-xs font-bold text-gray-800 tabular-nums">
+              {s.value}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Queue row ─────────────────────────────────────────────────────────────────
+function QueueRow({
+  item,
+  idx,
+  onOpen,
+  onlineNurses,
+  assignNurse,
+  assigningVisitId,
+  showDropdownFor,
+  setShowDropdownFor,
+}: {
+  item: QueueItem;
+  idx: number;
+  onOpen: (id: string) => void;
+  onlineNurses: Nurse[];
+  assignNurse: (visitId: string, nurseId: string) => Promise<void>;
+  assigningVisitId: string | null;
+  showDropdownFor: string | null;
+  setShowDropdownFor: (id: string | null) => void;
+}) {
+  const p = PRIORITY[item.priority] ?? PRIORITY.routine;
+  const isActive = item.status === "in-progress";
+  const isWaiting = item.status === "waiting";
+  const name = getPatientName(item);
+  const bloodType = item.patient?.bloodType;
+  const waitMins = Math.floor(
+    (Date.now() - new Date(item.admissionDate).getTime()) / 60_000,
+  );
+
+  return (
+    <div
+      className="group grid items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50/70 transition-colors cursor-pointer"
+      style={{ gridTemplateColumns: "20px 36px 1fr 80px 72px 88px" }}
+      onClick={() => onOpen(item.id)}
+    >
+      {/* Priority indicator */}
+      <div className="flex items-center justify-center">
+        <span className="relative flex h-2 w-2">
+          {(isActive || item.priority === "critical") && (
+            <span
+              className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-40"
+              style={{ background: p.dot }}
+            />
+          )}
+          <span
+            className="relative inline-flex rounded-full h-2 w-2"
+            style={{ background: p.dot }}
+          />
+        </span>
+      </div>
+
+      {/* Avatar */}
+      <div
+        className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+        style={{ background: `${p.dot}cc` }}
+      >
+        {getInitials(name)}
+      </div>
+
+      {/* Info */}
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 mb-0.5">
+          <p className="text-sm font-semibold text-gray-900 truncate">{name}</p>
+          {bloodType && bloodType !== "unknown" && (
+            <span
+              className="text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white flex-shrink-0 flex items-center gap-0.5"
+              style={{ background: BLOOD[bloodType] ?? "#6b7280" }}
+            >
+              <Droplets className="w-2 h-2" />
+              {bloodType}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-gray-400 truncate">
+          {item.chiefComplaint || "—"}
+        </p>
+        {item.assignedNurseName && (
+          <p className="text-xs text-green-600 mt-0.5 flex items-center gap-1">
+            <UserCheck className="w-2.5 h-2.5" />
+            {item.assignedNurseName}
+          </p>
+        )}
+      </div>
+
+      {/* Wait time */}
+      <div className="text-right">
+        <p
+          className="text-xs font-semibold tabular-nums"
+          style={{
+            color:
+              waitMins > 60 ? T.coral : waitMins > 30 ? T.amber : T.inkMuted,
+          }}
+        >
+          {waitMins < 60
+            ? `${waitMins}m`
+            : `${Math.floor(waitMins / 60)}h${waitMins % 60}m`}
+        </p>
+        <p className="text-[10px] text-gray-300">
+          {format(new Date(item.admissionDate), "HH:mm")}
+        </p>
+      </div>
+
+      {/* Priority pill */}
+      <span
+        className="text-[10px] font-bold px-2 py-1 rounded-full text-center capitalize leading-none"
+        style={{
+          background: p.bg,
+          color: p.color,
+          border: `1px solid ${p.border}`,
+        }}
+      >
+        {p.label}
+      </span>
+
+      {/* Action */}
+      <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
+        {isWaiting ? (
+          <div className="relative">
+            {showDropdownFor === item.id ? (
+              <div className="absolute right-0 top-0 mt-8 z-20 bg-white rounded-xl shadow-xl border border-gray-100 w-48">
+                <div className="p-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 px-2 py-1">
+                    Assign nurse
+                  </p>
+                  {onlineNurses.length === 0 ? (
+                    <p className="text-xs text-gray-400 px-2 py-2">
+                      No nurses online
+                    </p>
+                  ) : (
+                    onlineNurses.map((nurse) => (
+                      <button
+                        key={nurse.id}
+                        onClick={() => {
+                          setShowDropdownFor(null);
+                          assignNurse(item.id, nurse.id);
+                        }}
+                        disabled={assigningVisitId === item.id}
+                        className="w-full text-left px-2 py-2 text-sm rounded-lg hover:bg-gray-50 flex items-center gap-2 transition-colors"
+                      >
+                        <div className="w-6 h-6 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
+                          <span className="text-[9px] font-bold text-green-700">
+                            {nurse.firstName[0]}
+                            {nurse.lastName[0]}
+                          </span>
+                        </div>
+                        <span className="font-medium text-gray-800">
+                          {nurse.firstName} {nurse.lastName}
+                        </span>
+                        {assigningVisitId === item.id && (
+                          <Loader2 className="w-3 h-3 animate-spin ml-auto text-gray-400" />
+                        )}
+                      </button>
+                    ))
+                  )}
+                  <div className="border-t border-gray-100 mt-1 pt-1">
+                    <button
+                      onClick={() => setShowDropdownFor(null)}
+                      className="w-full text-xs text-gray-400 px-2 py-1.5 hover:bg-gray-50 rounded-lg text-left"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowDropdownFor(item.id)}
+                disabled={assigningVisitId === item.id}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all border"
+                style={{
+                  background: T.violetLight,
+                  color: T.violet,
+                  borderColor: "#e9d5ff",
+                }}
+              >
+                {assigningVisitId === item.id ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <User className="w-3 h-3" />
+                )}
+                Assign
+              </button>
+            )}
+          </div>
+        ) : (
+          <button
+            onClick={() => onOpen(item.id)}
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all"
+            style={{
+              background: T.greenGhost,
+              color: T.green,
+              border: "1px solid #bbf7d0",
+            }}
+          >
+            Open <ArrowRight className="w-3 h-3" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
 export default function ReceptionistOverviewPage() {
   const router = useRouter();
   const { user } = useAuthStore();
@@ -225,420 +601,556 @@ export default function ReceptionistOverviewPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  const [onlineNurses, setOnlineNurses] = useState<Nurse[]>([]);
+  const [assigningId, setAssigningId] = useState<string | null>(null);
+  const [dropdownFor, setDropdownFor] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  const institutionName = (user as any)?.institutionName ?? null;
+  const institutionId = (user as any)?.institutionId ?? null;
+  const hasInstitution = !!institutionName || !!institutionId;
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const fetchData = useCallback(async (silent = false) => {
     if (silent) setRefreshing(true);
     else setLoading(true);
     try {
-      const res = await api.get("/api/visits/today");
-      setQueue(res.data.data?.visits ?? res.data.data?.queue ?? []);
+      const [queueRes, nursesRes] = await Promise.all([
+        api.get("/api/visits/today"),
+        practitionersApi.getOnlineStaff("nurse"),
+      ]);
+      setQueue(queueRes.data.data?.visits ?? []);
+      setOnlineNurses(nursesRes.data.data?.staff ?? []);
       setLastUpdated(new Date());
-    } catch (_) {
+    } catch {
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
+  const assignNurse = async (visitId: string, nurseId: string) => {
+    setAssigningId(visitId);
+    try {
+      await visitApi.assignNurse(visitId, nurseId);
+      await fetchData(true);
+      setDropdownFor(null);
+    } catch {
+      alert("Failed to assign nurse. Please try again.");
+    } finally {
+      setAssigningId(null);
+    }
+  };
+
   useEffect(() => {
     fetchData();
-    const interval = setInterval(() => fetchData(true), 30_000);
-    return () => clearInterval(interval);
+    const iv = setInterval(() => fetchData(true), 30_000);
+    return () => clearInterval(iv);
   }, [fetchData]);
 
+  // Derived
   const waiting = queue.filter((q) => q.status === "waiting").length;
   const inProgress = queue.filter((q) => q.status === "in-progress").length;
-  const done = queue.filter(
-    (q) => q.status === "completed" || q.status === "discharged",
+  const done = queue.filter((q) =>
+    ["completed", "discharged"].includes(q.status),
   ).length;
-  const urgent = queue.filter(
-    (q) => q.priority === "critical" || q.priority === "emergency",
+  const urgent = queue.filter((q) =>
+    ["critical", "emergency"].includes(q.priority),
   ).length;
 
-  const liveQueue = queue
-    .filter((q) => q.status === "in-progress" || q.status === "waiting")
-    .sort((a, b) => {
-      const order: Record<string, number> = {
-        critical: 0,
-        emergency: 1,
-        urgent: 2,
-        routine: 3,
-      };
-      return (order[a.priority] ?? 9) - (order[b.priority] ?? 9);
-    })
-    .slice(0, 6);
+  const liveQueue = useMemo(
+    () =>
+      queue
+        .filter((q) => ["in-progress", "waiting"].includes(q.status))
+        .sort((a, b) => {
+          const o: Record<string, number> = {
+            critical: 0,
+            emergency: 1,
+            urgent: 2,
+            routine: 3,
+          };
+          return (o[a.priority] ?? 9) - (o[b.priority] ?? 9);
+        }),
+    [queue],
+  );
+
+  // Hourly throughput for last 6 hours (for the bar mini-chart)
+  const hourlyBars = useMemo(() => {
+    const now = new Date();
+    const bars: { label: string; count: number }[] = [];
+    for (let i = 5; i >= 0; i--) {
+      const h = new Date(now);
+      h.setHours(h.getHours() - i, 0, 0, 0);
+      const label = format(h, "HH:mm");
+      const count = queue.filter((v) => {
+        const vh = new Date(v.admissionDate);
+        return vh >= h && vh < new Date(h.getTime() + 3_600_000);
+      }).length;
+      bars.push({ label, count });
+    }
+    return bars;
+  }, [queue]);
+  const barMax = Math.max(...hourlyBars.map((b) => b.count), 1);
 
   return (
-    <div
-      className="max-w-5xl mx-auto space-y-6"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
-    >
-      {/* ── Welcome banner ── */}
+    <div style={{ fontFamily: "'DM Sans', sans-serif" }} className="space-y-5">
+      {/* ── Header bar ────────────────────────────────────────────────────── */}
       <div
-        className="relative rounded-2xl overflow-hidden px-7 py-6"
+        className="rounded-2xl overflow-hidden"
         style={{
-          background:
-            "linear-gradient(135deg, #052e16 0%, #064e23 55%, #166534 100%)",
+          background: `linear-gradient(135deg, ${T.forest} 0%, ${T.forestMid} 60%, #0a5c2e 100%)`,
         }}
       >
-        {/* Decorative blobs */}
+        {/* Subtle grid texture overlay */}
         <div
-          className="absolute top-0 right-0 w-64 h-64 rounded-full opacity-[0.07]"
+          className="px-7 py-6 relative"
           style={{
-            background: "radial-gradient(circle, #86efac, transparent)",
-            transform: "translate(30%, -30%)",
+            backgroundImage:
+              "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0)",
+            backgroundSize: "24px 24px",
           }}
-        />
-        <div
-          className="absolute bottom-0 left-32 w-40 h-40 rounded-full opacity-[0.05]"
-          style={{
-            background: "radial-gradient(circle, #4ade80, transparent)",
-            transform: "translate(-50%, 50%)",
-          }}
-        />
+        >
+          {/* Glow blobs */}
+          <div
+            className="absolute top-0 right-0 w-96 h-40 pointer-events-none"
+            style={{
+              background:
+                "radial-gradient(ellipse at top right, rgba(134,239,172,0.08), transparent 60%)",
+            }}
+          />
+          <div
+            className="absolute bottom-0 left-20 w-64 h-24 pointer-events-none"
+            style={{
+              background:
+                "radial-gradient(ellipse, rgba(74,222,128,0.06), transparent 70%)",
+            }}
+          />
 
-        <div className="relative flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <p className="text-green-400/80 text-sm font-medium mb-1">
-              {format(new Date(), "EEEE, dd MMMM yyyy")}
-            </p>
-            <h1
-              className="text-white text-2xl font-bold leading-tight"
-              style={{ fontFamily: "'Playfair Display', serif" }}
-            >
-              {greeting()}, {user?.firstName}
-            </h1>
-            <div className="flex flex-wrap items-center gap-4 mt-3">
-              <div className="flex items-center gap-1.5 text-sm text-green-300/80">
-                <ClipboardList size={13} />
-                <span>{queue.length} visits today</span>
+          <div className="relative flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              {/* Eyebrow */}
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                <span className="text-green-400/70 text-xs font-semibold tracking-widest uppercase">
+                  {format(new Date(), "EEEE, dd MMMM yyyy")}
+                </span>
               </div>
-              {urgent > 0 && (
-                <div className="flex items-center gap-1.5 text-sm text-red-300 animate-pulse">
-                  <Zap size={13} />
-                  <span>{urgent} urgent / critical</span>
+
+              <h1
+                className="text-white text-2xl font-bold leading-tight mb-1"
+                style={{
+                  fontFamily: "'Playfair Display', serif",
+                  letterSpacing: "-0.02em",
+                }}
+              >
+                {greeting()}, {user?.firstName}
+              </h1>
+
+              {/* Institution */}
+              {hasInstitution ? (
+                <div className="flex items-center gap-1.5 mt-1">
+                  <Building2 className="w-3.5 h-3.5 text-green-400/60 flex-shrink-0" />
+                  <span className="text-green-200/70 text-sm font-medium">
+                    {institutionName}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 mt-1">
+                  <Building2 className="w-3.5 h-3.5 text-red-400/60" />
+                  <span className="text-red-300/70 text-sm">
+                    No institution — contact admin
+                  </span>
                 </div>
               )}
-              {done > 0 && (
-                <div className="flex items-center gap-1.5 text-sm text-green-400/70">
-                  <CheckCircle2 size={13} />
-                  <span>{done} completed</span>
+
+              {/* Live counts */}
+              {!loading && (
+                <div className="flex flex-wrap items-center gap-4 mt-3">
+                  <div className="flex items-center gap-1.5">
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-50" />
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-400" />
+                    </span>
+                    <span className="text-green-300/90 text-xs font-semibold">
+                      {inProgress} active · {waiting} waiting
+                    </span>
+                  </div>
+                  {urgent > 0 && (
+                    <div className="flex items-center gap-1.5 text-red-300 text-xs font-semibold">
+                      <Zap className="w-3 h-3" />
+                      {urgent} urgent/critical
+                    </div>
+                  )}
+                  {done > 0 && (
+                    <div className="flex items-center gap-1.5 text-green-400/70 text-xs">
+                      <CheckCircle2 className="w-3 h-3" />
+                      {done} discharged
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          </div>
 
-          <div className="flex items-center gap-2">
-            {lastUpdated && (
-              <p className="text-green-400/40 text-xs">
-                Updated {format(lastUpdated, "HH:mm")}
-              </p>
-            )}
-            <button
-              onClick={() => fetchData(true)}
-              disabled={refreshing}
-              className="p-2 rounded-xl transition-colors"
-              style={{ background: "rgba(255,255,255,0.08)" }}
-              title="Refresh"
-            >
-              <RefreshCw
-                size={14}
-                className={`text-green-300 ${refreshing ? "animate-spin" : ""}`}
-              />
-            </button>
-            <button
-              onClick={() => router.push("/dashboard/receptionist/visits/new")}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:shadow-lg hover:-translate-y-0.5"
-              style={{
-                background: "linear-gradient(135deg, #16a34a, #15803d)",
-                color: "#fff",
-              }}
-            >
-              <UserPlus size={15} />
-              New Visit
-            </button>
+            {/* Right actions */}
+            <div className="flex items-center gap-2 flex-shrink-0 mt-1">
+              {lastUpdated && (
+                <span className="text-green-400/30 text-xs hidden sm:block">
+                  {format(lastUpdated, "HH:mm")}
+                </span>
+              )}
+              <button
+                onClick={() => fetchData(true)}
+                disabled={refreshing}
+                className="p-2.5 rounded-xl transition-all disabled:opacity-40"
+                style={{
+                  background: "rgba(255,255,255,0.07)",
+                  border: "1px solid rgba(255,255,255,0.09)",
+                }}
+              >
+                <RefreshCw
+                  className={`w-3.5 h-3.5 text-green-300 ${refreshing ? "animate-spin" : ""}`}
+                />
+              </button>
+              <button
+                onClick={() =>
+                  router.push("/dashboard/receptionist/visits/new")
+                }
+                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:-translate-y-px hover:shadow-lg"
+                style={{
+                  background: "linear-gradient(135deg, #16a34a, #15803d)",
+                }}
+              >
+                <UserPlus className="w-4 h-4" />
+                New Visit
+              </button>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* ── Stat cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard
-          icon={ClipboardList}
-          label="Total Today"
-          value={queue.length}
-          sub="all visits"
-          color="#166534"
-          bg="linear-gradient(135deg, #f0fdf4, #dcfce7)"
-          border="#bbf7d0"
-          onClick={() => router.push("/dashboard/receptionist/queue")}
-          loading={loading}
-        />
-        <StatCard
-          icon={Clock}
-          label="Waiting"
-          value={waiting}
-          sub={waiting === 1 ? "patient waiting" : "patients waiting"}
-          color="#b45309"
-          bg="linear-gradient(135deg, #fffbeb, #fef3c7)"
-          border="#fde68a"
-          loading={loading}
-        />
-        <StatCard
-          icon={Activity}
-          label="In Progress"
-          value={inProgress}
-          sub="active encounters"
-          color="#1d4ed8"
-          bg="linear-gradient(135deg, #eff6ff, #dbeafe)"
-          border="#bfdbfe"
-          loading={loading}
-        />
-        <StatCard
-          icon={CheckCircle2}
-          label="Completed"
-          value={done}
-          sub="discharged today"
-          color="#6d28d9"
-          bg="linear-gradient(135deg, #faf5ff, #ede9fe)"
-          border="#ddd6fe"
-          loading={loading}
-        />
+      {/* ── KPI strip ─────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          {
+            icon: ClipboardList,
+            label: "Total Today",
+            value: queue.length,
+            color: T.forest,
+            bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
+            border: "#bbf7d0",
+            sub: "all encounters",
+          },
+          {
+            icon: Clock,
+            label: "Waiting",
+            value: waiting,
+            color: "#92400e",
+            bg: "linear-gradient(135deg,#fffbeb,#fef3c7)",
+            border: "#fde68a",
+            sub: `avg ${Math.max(0, Math.floor((Date.now() - (queue.find((q) => q.status === "waiting") ? new Date(queue.find((q) => q.status === "waiting")!.admissionDate).getTime() : Date.now())) / 60_000))}m`,
+          },
+          {
+            icon: Activity,
+            label: "In Progress",
+            value: inProgress,
+            color: T.blue,
+            bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
+            border: "#bfdbfe",
+            sub: "active right now",
+          },
+          {
+            icon: CheckCircle2,
+            label: "Completed",
+            value: done,
+            color: T.violet,
+            bg: "linear-gradient(135deg,#faf5ff,#ede9fe)",
+            border: "#ddd6fe",
+            sub: "discharged today",
+          },
+        ].map(({ icon: Icon, label, value, color, bg, border, sub }, i) => (
+          <div
+            key={label}
+            className="relative rounded-2xl p-4 border overflow-hidden"
+            style={{
+              background: bg,
+              borderColor: border,
+              animationDelay: `${i * 60}ms`,
+              opacity: mounted ? 1 : 0,
+              transform: mounted ? "none" : "translateY(6px)",
+              transition: `opacity 0.3s ${i * 60}ms, transform 0.3s ${i * 60}ms`,
+            }}
+          >
+            {/* Decorative circle */}
+            <div
+              className="absolute -right-3 -bottom-3 w-14 h-14 rounded-full opacity-[0.08]"
+              style={{ background: color }}
+            />
+            <Icon className="w-4 h-4 mb-3" style={{ color }} />
+            <p
+              className="text-3xl font-extrabold leading-none tabular-nums"
+              style={{ color }}
+            >
+              {loading ? (
+                <span className="inline-block w-8 h-7 rounded-lg bg-black/5 animate-pulse" />
+              ) : (
+                value
+              )}
+            </p>
+            <p
+              className="text-xs font-bold mt-1"
+              style={{ color, opacity: 0.8 }}
+            >
+              {label}
+            </p>
+            <p className="text-[10px] mt-0.5" style={{ color, opacity: 0.45 }}>
+              {sub}
+            </p>
+          </div>
+        ))}
       </div>
 
-      {/* ── Main content row ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Live queue — 2/3 width */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+      {/* ── Main grid ─────────────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* ── Queue table — 8 cols ────────────────────────────────────────── */}
+        <div className="lg:col-span-8 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          {/* Table header */}
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
             <div className="flex items-center gap-3">
-              <div
-                className="w-8 h-8 rounded-lg flex items-center justify-center"
-                style={{ background: "#f0fdf4" }}
-              >
-                <Activity size={15} style={{ color: "#166534" }} />
+              <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-green-50">
+                <Activity className="w-4 h-4 text-green-700" />
               </div>
               <div>
                 <h2 className="text-sm font-bold text-gray-900">Live Queue</h2>
                 <p className="text-xs text-gray-400">
-                  Priority-sorted · updates every 30s
+                  Priority-sorted · auto-refresh 30s
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => router.push("/dashboard/receptionist/queue")}
-              className="flex items-center gap-1 text-xs font-semibold transition-colors hover:underline"
-              style={{ color: "#166534" }}
-            >
-              Full queue <ArrowUpRight size={12} />
-            </button>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                <span className="w-2 h-2 rounded-full bg-green-400" />
+                <span>{onlineNurses.length} nurses online</span>
+              </div>
+              <button
+                onClick={() => router.push("/dashboard/receptionist/queue")}
+                className="flex items-center gap-1 text-xs font-semibold text-green-700 hover:underline"
+              >
+                Full queue <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
+
+          {/* Column headers */}
+          {!loading && liveQueue.length > 0 && (
+            <div
+              className="grid px-5 py-2 border-b border-gray-50 text-[10px] font-bold uppercase tracking-widest text-gray-400"
+              style={{ gridTemplateColumns: "20px 36px 1fr 80px 72px 88px" }}
+            >
+              <div />
+              <div />
+              <div>Patient</div>
+              <div className="text-right">Wait</div>
+              <div>Priority</div>
+              <div className="text-right">Action</div>
+            </div>
+          )}
 
           {loading ? (
             <div className="divide-y divide-gray-50">
-              {[...Array(4)].map((_, i) => (
+              {[...Array(5)].map((_, i) => (
                 <div
                   key={i}
-                  className="px-5 py-4 flex items-center gap-4 animate-pulse"
+                  className="flex items-center gap-4 px-5 py-3.5 animate-pulse"
                 >
-                  <div className="w-2 h-2 rounded-full bg-gray-200 flex-shrink-0" />
+                  <div className="w-2 h-2 rounded-full bg-gray-100 flex-shrink-0" />
+                  <div className="w-8 h-8 rounded-xl bg-gray-100 flex-shrink-0" />
                   <div className="flex-1 space-y-1.5">
-                    <div className="h-3 w-28 bg-gray-100 rounded" />
-                    <div className="h-3.5 w-44 bg-gray-100 rounded" />
+                    <div className="h-3.5 w-32 bg-gray-100 rounded" />
+                    <div className="h-3 w-48 bg-gray-100 rounded" />
                   </div>
-                  <div className="w-14 h-7 bg-gray-100 rounded-lg" />
+                  <div className="w-14 h-6 bg-gray-100 rounded-full" />
                 </div>
               ))}
             </div>
           ) : liveQueue.length === 0 ? (
             <div className="py-16 text-center">
-              <div
-                className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-3"
-                style={{ background: "#f0fdf4" }}
-              >
-                <ClipboardList size={22} style={{ color: "#16a34a" }} />
+              <div className="w-12 h-12 rounded-2xl bg-green-50 flex items-center justify-center mx-auto mb-3">
+                <ClipboardList className="w-5 h-5 text-green-300" />
               </div>
               <p className="text-sm font-semibold text-gray-500">
                 Queue is clear
               </p>
               <p className="text-xs text-gray-400 mt-1">
-                No active or waiting patients right now
+                No active or waiting patients
               </p>
               <button
                 onClick={() =>
                   router.push("/dashboard/receptionist/visits/new")
                 }
                 className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white"
-                style={{ background: "#166534" }}
+                style={{ background: T.forest }}
               >
-                <UserPlus size={13} /> Register first visit
+                <UserPlus className="w-3.5 h-3.5" /> Register first visit
               </button>
             </div>
           ) : (
-            <div>
-              {liveQueue.map((item) => (
+            <>
+              {liveQueue.slice(0, 8).map((item, idx) => (
                 <QueueRow
                   key={item.id}
                   item={item}
+                  idx={idx}
                   onOpen={(id) =>
                     router.push(`/dashboard/receptionist/visits/${id}`)
                   }
+                  onlineNurses={onlineNurses}
+                  assignNurse={assignNurse}
+                  assigningVisitId={assigningId}
+                  showDropdownFor={dropdownFor}
+                  setShowDropdownFor={setDropdownFor}
                 />
               ))}
-              {queue.filter((q) => q.status !== "completed").length > 6 && (
+              {liveQueue.length > 8 && (
                 <button
                   onClick={() => router.push("/dashboard/receptionist/queue")}
-                  className="w-full py-3 text-xs font-semibold text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors border-t border-gray-50 flex items-center justify-center gap-1"
+                  className="w-full py-3 text-xs font-semibold text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5 border-t border-gray-50"
                 >
-                  +{queue.filter((q) => q.status !== "completed").length - 6}{" "}
-                  more in queue
-                  <ChevronRight size={12} />
+                  +{liveQueue.length - 8} more in queue{" "}
+                  <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               )}
-            </div>
+            </>
           )}
         </div>
 
-        {/* Quick actions — 1/3 width */}
-        <div className="space-y-3">
-          {/* Quick actions card */}
+        {/* ── Right column — 4 cols ───────────────────────────────────────── */}
+        <div className="lg:col-span-4 space-y-4">
+          {/* ── Analytics card ───────────────────────────────────────────── */}
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100">
-              <h2 className="text-sm font-bold text-gray-900">Quick Actions</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Common tasks</p>
+            <div className="px-5 pt-5 pb-3">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-sm font-bold text-gray-900">Today's Flow</p>
+                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">
+                  6AM – 6PM
+                </span>
+              </div>
+              <p className="text-xs text-gray-400 mb-4">
+                Visits by hour of arrival
+              </p>
+
+              {loading ? (
+                <div className="h-[86px] bg-gray-50 rounded-xl animate-pulse" />
+              ) : (
+                <VisitSparkline queue={queue} />
+              )}
             </div>
-            <div className="p-3 space-y-2">
+
+            {/* Mini bar chart — last 6 hours */}
+            <div className="px-5 pb-4 pt-1 border-t border-gray-50">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">
+                Last 6 hours
+              </p>
+              <div className="flex items-end gap-1.5 h-10">
+                {hourlyBars.map((bar, i) => (
+                  <div
+                    key={i}
+                    className="flex-1 flex flex-col items-center gap-1"
+                  >
+                    <div
+                      className="w-full rounded-t-sm transition-all"
+                      style={{
+                        height: `${Math.max(2, (bar.count / barMax) * 36)}px`,
+                        background:
+                          i === hourlyBars.length - 1
+                            ? `linear-gradient(to top, ${T.green}, #22c55e)`
+                            : "#e5e7eb",
+                      }}
+                    />
+                    <span className="text-[8px] text-gray-400 tabular-nums">
+                      {bar.label.slice(0, 5)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* ── Status donut ─────────────────────────────────────────────── */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <p className="text-sm font-bold text-gray-900 mb-4">Visit Status</p>
+            {loading ? (
+              <div className="h-[72px] bg-gray-50 rounded-xl animate-pulse" />
+            ) : (
+              <StatusDonut
+                waiting={waiting}
+                inProgress={inProgress}
+                done={done}
+                total={queue.length}
+              />
+            )}
+            {urgent > 0 && (
+              <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50 border border-red-100">
+                <Zap className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+                <p className="text-xs font-semibold text-red-700">
+                  {urgent} critical/emergency patient{urgent !== 1 ? "s" : ""}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* ── Quick actions ─────────────────────────────────────────────── */}
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-gray-50">
+              <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
+                Quick actions
+              </p>
+            </div>
+            <div className="p-3 space-y-1.5">
               {[
                 {
                   icon: UserPlus,
-                  label: "Register New Patient",
-                  sub: "Create patient record",
+                  label: "Register Patient",
+                  sub: "New patient record",
                   href: "/dashboard/receptionist/register",
-                  color: "#166534",
-                  bg: "#f0fdf4",
+                  color: T.forest,
                 },
                 {
                   icon: ClipboardList,
                   label: "New Visit",
                   sub: "Start an encounter",
                   href: "/dashboard/receptionist/visits/new",
-                  color: "#1d4ed8",
-                  bg: "#eff6ff",
+                  color: T.blue,
                 },
                 {
                   icon: Users,
-                  label: "All Patients",
-                  sub: "Browse patient records",
+                  label: "Patient Directory",
+                  sub: "Browse records",
                   href: "/dashboard/receptionist/patients",
-                  color: "#6d28d9",
-                  bg: "#faf5ff",
+                  color: T.violet,
                 },
-              ].map(({ icon: Icon, label, sub, href, color, bg }) => (
+              ].map(({ icon: Icon, label, sub, href, color }) => (
                 <button
                   key={href}
                   onClick={() => router.push(href)}
-                  className="w-full flex items-center gap-3 px-3.5 py-3 rounded-xl hover:shadow-sm transition-all group text-left"
-                  style={{ background: bg, border: "1px solid transparent" }}
-                  onMouseEnter={(e) =>
-                    (e.currentTarget.style.borderColor = color + "40")
-                  }
-                  onMouseLeave={(e) =>
-                    (e.currentTarget.style.borderColor = "transparent")
-                  }
+                  className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl hover:bg-gray-50 transition-all group text-left"
                 >
                   <div
-                    className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-                    style={{ background: "rgba(255,255,255,0.8)" }}
+                    className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: `${color}12` }}
                   >
-                    <Icon size={15} style={{ color }} />
+                    <Icon className="w-3.5 h-3.5" style={{ color }} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 leading-tight">
+                    <p className="text-sm font-semibold text-gray-800">
                       {label}
                     </p>
                     <p className="text-xs text-gray-400">{sub}</p>
                   </div>
-                  <ChevronRight
-                    size={14}
-                    className="text-gray-300 group-hover:text-gray-500 transition-all group-hover:translate-x-0.5 flex-shrink-0"
-                  />
+                  <ChevronRight className="w-3.5 h-3.5 text-gray-200 group-hover:text-gray-400 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
                 </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Today's summary card */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100">
-              <h2 className="text-sm font-bold text-gray-900">
-                Today's Summary
-              </h2>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {format(new Date(), "dd MMM yyyy")}
-              </p>
-            </div>
-            <div className="p-4 space-y-3">
-              {[
-                {
-                  label: "Registered",
-                  value: queue.length,
-                  color: "#166534",
-                  icon: CalendarDays,
-                },
-                {
-                  label: "Waiting",
-                  value: waiting,
-                  color: "#b45309",
-                  icon: Clock,
-                },
-                {
-                  label: "In Progress",
-                  value: inProgress,
-                  color: "#1d4ed8",
-                  icon: TrendingUp,
-                },
-                {
-                  label: "Completed",
-                  value: done,
-                  color: "#6d28d9",
-                  icon: CheckCircle2,
-                },
-                {
-                  label: "Urgent/Crit",
-                  value: urgent,
-                  color: "#dc2626",
-                  icon: AlertCircle,
-                },
-              ].map(({ label, value, color, icon: Icon }) => (
-                <div key={label} className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Icon size={13} style={{ color }} />
-                    <span className="text-xs text-gray-500 font-medium">
-                      {label}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {/* Mini bar */}
-                    <div className="w-16 h-1.5 rounded-full bg-gray-100 overflow-hidden">
-                      <div
-                        className="h-full rounded-full transition-all"
-                        style={{
-                          background: color,
-                          width: queue.length
-                            ? `${Math.min(100, (value / Math.max(queue.length, 1)) * 100)}%`
-                            : "0%",
-                          opacity: 0.7,
-                        }}
-                      />
-                    </div>
-                    <span
-                      className="text-sm font-bold w-5 text-right"
-                      style={{ color }}
-                    >
-                      {loading ? "—" : value}
-                    </span>
-                  </div>
-                </div>
               ))}
             </div>
           </div>

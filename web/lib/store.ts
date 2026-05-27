@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 
 export interface User {
+    institutionId: any;
+
     id: string;
     type: 'patient' | 'practitioner' | 'nurse' | 'admin' | 'receptionist';
     blockchainAddress: string;

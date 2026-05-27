@@ -222,14 +222,7 @@ export default function AuditPage() {
             borderBottom: "1px solid #f3f4f6",
           }}
         >
-          {[
-            "Action",
-            "Resource",
-            "User",
-            "IP Address",
-            "Time",
-            "Blockchain",
-          ].map((h, i) => (
+          {["Action", "Resource", "User", "IP Address", "Time"].map((h, i) => (
             <p
               key={i}
               style={{
@@ -376,27 +369,6 @@ export default function AuditPage() {
                         })
                       : ""}
                   </p>
-                </div>
-
-                {/* Blockchain TX */}
-                <div title={log.blockchainTransactionId ?? ""}>
-                  {log.blockchainTransactionId ? (
-                    <span
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 4,
-                        fontSize: 11,
-                        color: "#166534",
-                        fontFamily: "monospace",
-                      }}
-                    >
-                      <Shield size={10} />
-                      {log.blockchainTransactionId.slice(0, 8)}…
-                    </span>
-                  ) : (
-                    <span style={{ fontSize: 11, color: "#d1d5db" }}>—</span>
-                  )}
                 </div>
               </div>
             );

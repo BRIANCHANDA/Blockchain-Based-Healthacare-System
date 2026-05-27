@@ -18,3 +18,10 @@ export const getLabResults = async (visitId: string) => {
     const res = await client.get(`/records/labs/${visitId}`);
     return res.data; // { success, data: { orders, results } }
 };
+
+// GET /referrals  — all referrals for the logged-in patient
+// Backend filters to patientId = userId when userType === 'patient'
+export async function getMyReferrals() {
+    const res = await client.get('/referrals');
+    return res.data; // { success, data: { referrals: [] } }
+}

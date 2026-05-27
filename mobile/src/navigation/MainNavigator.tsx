@@ -16,6 +16,7 @@ import type {
   MainTabParamList,
   RecordsStackParamList,
   AccessStackParamList,
+  ReferralsStackParamList,
 } from "../types";
 
 import RecordsListScreen from "../screens/records/RecordsListScreen";
@@ -24,46 +25,36 @@ import AccessRequestsScreen from "../screens/access/AccessRequestsScreen";
 import WhoHasAccessScreen from "../screens/access/WhoHasAccessScreen";
 import RevokeAccessScreen from "../screens/access/RevokeAccessScreen";
 import VisitHistoryScreen from "../screens/visits/VisitHistoryScreen";
+import ReferralsScreen from "../screens/referrals/ReferralsScreen";
 import ProfileScreen from "../screens/profile/ProfileScreen";
 
-const PRIMARY = "#0A6640";
-const TAB_HEIGHT = 64;
+const C = {
+  teal: "#0D9488",
+  tealDark: "#0F766E",
+  tealGhost: "#F0FDFA",
+  ink: "#1A1D2E",
+  inkMuted: "#9498B3",
+  card: "#FFFFFF",
+  cardBorder: "#ECEEF4",
+  amber: "#F59E0B",
+};
+
+const TAB_HEIGHT = 60;
 
 type TabConfig = {
   route: keyof MainTabParamList;
   icon: keyof typeof MaterialIcons.glyphMap;
   label: string;
-  accessibilityLabel: string;
 };
 
-const TAB_CONFIG: TabConfig[] = [
-  {
-    route: "Records",
-    icon: "folder-open",
-    label: "Records",
-    accessibilityLabel: "Medical records",
-  },
-  {
-    route: "Access",
-    icon: "security",
-    label: "Access",
-    accessibilityLabel: "Access management",
-  },
-  {
-    route: "Visits",
-    icon: "history",
-    label: "History",
-    accessibilityLabel: "Visit history",
-  },
-  {
-    route: "Profile",
-    icon: "person",
-    label: "Profile",
-    accessibilityLabel: "Your profile",
-  },
+const TABS: TabConfig[] = [
+  { route: "Records", icon: "folder-open", label: "Records" },
+  { route: "Access", icon: "security", label: "Access" },
+  { route: "History", icon: "history", label: "History" },
+  { route: "Referrals", icon: "compare-arrows", label: "Referrals" },
 ];
 
-// ─── Stack Navigators ────────────────────────────────────────────────────────
+// ── Stack navigators ──────────────────────────────────────────────────────────
 
 const RecordsStack = createNativeStackNavigator<RecordsStackParamList>();
 
@@ -71,10 +62,11 @@ function RecordsNavigator() {
   return (
     <RecordsStack.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: PRIMARY },
-        headerTintColor: "#fff",
+        headerStyle: { backgroundColor: C.card },
+        headerTintColor: C.tealDark,
         headerTitleStyle: styles.headerTitle,
         headerBackTitleVisible: false,
+        headerShadowVisible: false,
       }}
     >
       <RecordsStack.Screen
@@ -85,12 +77,20 @@ function RecordsNavigator() {
       <RecordsStack.Screen
         name="RecordDetail"
         component={RecordDetailScreen}
-        options={({ route }) => ({
-          title: route.params.visitNumber,
-          headerStyle: { backgroundColor: "#fff" },
-          headerTintColor: PRIMARY,
-          headerTitleStyle: [styles.headerTitle, { color: "#0D1F17" }],
-        })}
+        options={({ route }) => ({ title: route.params.visitNumber })}
+      />
+      {/* Profile pushed from Records header tap */}
+      <RecordsStack.Screen
+        name="Profile"
+        component={ProfileScreen}
+        options={{
+          title: "Profile",
+          headerShown: true,
+          headerStyle: { backgroundColor: "#0F766E" },
+          headerTintColor: "#fff",
+          headerTitleStyle: { color: "#fff", fontWeight: "700" },
+          headerShadowVisible: false,
+        }}
       />
     </RecordsStack.Navigator>
   );
@@ -102,10 +102,11 @@ function AccessNavigator() {
   return (
     <AccessStack.Navigator
       screenOptions={{
-        headerStyle: { backgroundColor: "#fff" },
-        headerTintColor: PRIMARY,
-        headerTitleStyle: [styles.headerTitle, { color: "#0D1F17" }],
+        headerStyle: { backgroundColor: C.card },
+        headerTintColor: C.tealDark,
+        headerTitleStyle: styles.headerTitle,
         headerBackTitleVisible: false,
+        headerShadowVisible: false,
       }}
     >
       <AccessStack.Screen
@@ -127,7 +128,29 @@ function AccessNavigator() {
   );
 }
 
-// ─── Tab Bar ─────────────────────────────────────────────────────────────────
+const ReferralsStack = createNativeStackNavigator<ReferralsStackParamList>();
+
+function ReferralsNavigator() {
+  return (
+    <ReferralsStack.Navigator screenOptions={{ headerShown: false }}>
+      <ReferralsStack.Screen name="ReferralsList" component={ReferralsScreen} />
+      <ReferralsStack.Screen
+        name="Profile"
+        component={ProfileScreen}
+        options={{
+          headerShown: true,
+          title: "Profile",
+          headerStyle: { backgroundColor: "#0F766E" },
+          headerTintColor: "#fff",
+          headerTitleStyle: { color: "#fff", fontWeight: "700" },
+          headerShadowVisible: false,
+        }}
+      />
+    </ReferralsStack.Navigator>
+  );
+}
+
+// ── Custom tab bar ────────────────────────────────────────────────────────────
 
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
@@ -139,9 +162,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
         target: routeKey,
         canPreventDefault: true,
       });
-      if (!isFocused && !event.defaultPrevented) {
-        navigation.navigate(routeName);
-      }
+      if (!isFocused && !event.defaultPrevented) navigation.navigate(routeName);
     },
     [navigation],
   );
@@ -150,12 +171,15 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
     <View
       style={[
         styles.tabBar,
-        { paddingBottom: insets.bottom, height: TAB_HEIGHT + insets.bottom },
+        {
+          paddingBottom: insets.bottom || 12,
+          height: TAB_HEIGHT + (insets.bottom || 12),
+        },
       ]}
     >
       {state.routes.map((route, index) => {
         const isFocused = state.index === index;
-        const tab = TAB_CONFIG[index];
+        const tab = TABS[index];
 
         return (
           <TouchableOpacity
@@ -164,24 +188,23 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
             onPress={() => handlePress(route.name, route.key, isFocused)}
             activeOpacity={0.7}
             accessibilityRole="tab"
-            accessibilityLabel={tab.accessibilityLabel}
             accessibilityState={{ selected: isFocused }}
           >
-            <View
-              style={[styles.tabIconWrap, isFocused && styles.tabIconActive]}
-            >
+            {isFocused && <View style={styles.activePill} />}
+
+            <View style={styles.tabIconWrap}>
               <MaterialIcons
                 name={tab.icon}
-                size={22}
-                color={isFocused ? "#fff" : "#8AA89C"}
+                size={21}
+                color={isFocused ? C.tealDark : C.inkMuted}
               />
             </View>
-            <Text
-              style={[styles.tabLabel, isFocused && styles.tabLabelActive]}
-              numberOfLines={1}
-            >
+
+            <Text style={[styles.tabLabel, isFocused && styles.tabLabelActive]}>
               {tab.label}
             </Text>
+
+            {isFocused && <View style={styles.activeDot} />}
           </TouchableOpacity>
         );
       })}
@@ -189,7 +212,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   );
 }
 
-// ─── Root Navigator ───────────────────────────────────────────────────────────
+// ── Root navigator ────────────────────────────────────────────────────────────
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
@@ -201,62 +224,67 @@ export default function MainNavigator() {
     >
       <Tab.Screen name="Records" component={RecordsNavigator} />
       <Tab.Screen name="Access" component={AccessNavigator} />
-      <Tab.Screen name="Visits" component={VisitHistoryScreen} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="History" component={VisitHistoryScreen} />
+      <Tab.Screen name="Referrals" component={ReferralsNavigator} />
     </Tab.Navigator>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-  headerTitle: {
-    fontWeight: "700",
-    fontSize: 17,
-  },
+  headerTitle: { fontWeight: "700", fontSize: 16, color: C.ink },
   tabBar: {
     flexDirection: "row",
-    backgroundColor: "#FFFFFF",
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#EEF4F1",
+    backgroundColor: C.card,
     paddingHorizontal: 8,
     paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: C.cardBorder,
     ...Platform.select({
       ios: {
-        shadowColor: "#0A6640",
-        shadowOffset: { width: 0, height: -3 },
-        shadowOpacity: 0.08,
-        shadowRadius: 12,
+        shadowColor: C.ink,
+        shadowOffset: { width: 0, height: -4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 16,
       },
-      android: {
-        elevation: 12,
-      },
+      android: { elevation: 16 },
     }),
   },
   tabItem: {
     flex: 1,
     alignItems: "center",
     justifyContent: "flex-start",
-    gap: 4,
+    position: "relative",
+    gap: 3,
+    paddingTop: 2,
+  },
+  activePill: {
+    position: "absolute",
+    top: 0,
+    left: 6,
+    right: 6,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: C.tealGhost,
   },
   tabIconWrap: {
-    width: 44,
-    height: 34,
-    borderRadius: 10,
+    width: 36,
+    height: 28,
     justifyContent: "center",
     alignItems: "center",
-  },
-  tabIconActive: {
-    backgroundColor: PRIMARY,
+    borderRadius: 8,
   },
   tabLabel: {
     fontSize: 10,
     fontWeight: "600",
-    color: "#8AA89C",
-    letterSpacing: 0.3,
+    color: C.inkMuted,
+    letterSpacing: 0.2,
   },
-  tabLabelActive: {
-    color: PRIMARY,
-    fontWeight: "700",
+  tabLabelActive: { color: C.tealDark, fontWeight: "700" },
+  activeDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: C.teal,
+    marginTop: 1,
   },
 });

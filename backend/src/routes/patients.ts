@@ -1,11 +1,11 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq, and, ilike, or, sql } from 'drizzle-orm';
+import { eq, and, desc, ne, or, isNull, sql, inArray } from 'drizzle-orm';
 import { db } from '../db';
 import {
-  patients,
-  patientInstitutionRegistrations,
-  institutions,
-  userTypeEnum,
+  patients, institutions, patientInstitutionRegistrations,
+  visits, consultations, diagnoses, imagingOrders, imagingReports,
+  labTestOrders, labTestResults, prescriptionItems, prescriptions,
+  vitalSigns, practitioners,
 } from '../db/schema';
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
@@ -13,43 +13,28 @@ import { encrypt, decrypt, hashData, generateRecordHash } from '../services/cryp
 import { storeRecordHash, checkPermission } from '../services/fabric';
 import crypto from 'crypto';
 
-const errorSchema = z.object({
-  success: z.boolean(),
-  error: z.object({ message: z.string() }),
-});
+const errorSchema = z.object({ success: z.boolean(), error: z.object({ message: z.string() }) });
+const successData = z.object({ success: z.boolean(), data: z.any() });
 
-// ==================== Registration Schema ====================
 const registerPatientSchema = z.object({
-  // Personal Information (will be encrypted)
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   middleName: z.string().optional(),
-  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), // YYYY-MM-DD
+  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   gender: z.enum(['male', 'female', 'other']),
   bloodType: z.enum(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'unknown']).default('unknown'),
-
-  // Contact
   phoneNumber: z.string().min(5),
   email: z.string().email().optional(),
   address: z.string().min(5),
-  emergencyContact: z.string().min(5), // could be JSON or string; assume string for now
-
-  // Identification
+  emergencyContact: z.string().min(5),
   nationalId: z.string().min(5),
-
-  // Demographics
   maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).optional(),
   occupation: z.string().optional(),
-
-  // Authentication
   password: z.string().min(8),
-
-  // Optional institution registration at creation
   institutionId: z.string().uuid().optional(),
-  hospitalPatientNumber: z.string().optional(), // if institutionId provided, this may be required
+  hospitalPatientNumber: z.string().optional(),
 });
 
-// ==================== Update Profile Schema ====================
 const updatePatientSchema = z.object({
   firstName: z.string().min(1).optional(),
   lastName: z.string().min(1).optional(),
@@ -66,52 +51,73 @@ const updatePatientSchema = z.object({
   password: z.string().min(8).optional(),
 });
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
+async function getStaffInstitution(userId: string): Promise<string | null> {
+  const row = await db.select({ institutionId: practitioners.institutionId })
+    .from(practitioners).where(eq(practitioners.id, userId)).limit(1);
+  return row[0]?.institutionId ?? null;
+}
+
+async function getInstitutionPatientIds(institutionId: string): Promise<string[]> {
+  const rows = await db.select({ patientId: patientInstitutionRegistrations.patientId })
+    .from(patientInstitutionRegistrations)
+    .where(and(
+      eq(patientInstitutionRegistrations.institutionId, institutionId),
+      eq(patientInstitutionRegistrations.isActive, true),
+    ));
+  return rows.map(r => r.patientId);
+}
+
+async function buildVisitPayload(visitId: string) {
+  const [consultationsData, diagnosesData, prescriptionsData, labOrdersData, imagingOrdersData, vitalsData] =
+    await Promise.all([
+      db.select().from(consultations).where(eq(consultations.visitId, visitId)),
+      db.select().from(diagnoses).where(eq(diagnoses.visitId, visitId)),
+      db.select().from(prescriptions).where(eq(prescriptions.visitId, visitId)),
+      db.select().from(labTestOrders).where(eq(labTestOrders.visitId, visitId)),
+      db.select().from(imagingOrders).where(eq(imagingOrders.visitId, visitId)),
+      db.select().from(vitalSigns).where(eq(vitalSigns.visitId, visitId)).orderBy(desc(vitalSigns.recordedAt)),
+    ]);
+
+  const prescriptionsWithItems = await Promise.all(prescriptionsData.map(async rx => {
+    const items = await db.select().from(prescriptionItems).where(eq(prescriptionItems.prescriptionId, rx.id));
+    return { ...rx, items };
+  }));
+  const labOrdersWithResults = await Promise.all(labOrdersData.map(async lo => {
+    const results = await db.select().from(labTestResults).where(eq(labTestResults.labTestOrderId, lo.id)).limit(1);
+    return { ...lo, result: results[0] ?? null };
+  }));
+  const imagingOrdersWithReports = await Promise.all(imagingOrdersData.map(async io => {
+    const report = await db.select().from(imagingReports).where(eq(imagingReports.imagingOrderId, io.id)).limit(1);
+    return { ...io, report: report[0] ?? null };
+  }));
+
+  return { consultations: consultationsData, diagnoses: diagnosesData, prescriptions: prescriptionsWithItems, labOrders: labOrdersWithResults, imagingOrders: imagingOrdersWithReports, vitals: vitalsData };
+}
+
+// ── Router ────────────────────────────────────────────────────────────────────
 
 export const patientRouter = createRouter()
 
-  // ========== REGISTER NEW PATIENT ==========
+  // ── REGISTER ─────────────────────────────────────────────────────────────
   .openapi(createRoute({
-    tags: ['Patients'],
-    summary: 'Register a new patient (default password: test1234)',
-    method: 'post',
-    path: '/',
-    request: {
-      body: {
-        content: {
-          'application/json': {
-            schema: registerPatientSchema.omit({ password: true }) // make password optional/omit
-          }
-        }
-      },
-    },
+    tags: ['Patients'], summary: 'Register a new patient',
+    method: 'post', path: '/',
+    request: { body: { content: { 'application/json': { schema: registerPatientSchema.omit({ password: true }) } } } },
     responses: {
-      201: {
-        content: {
-          'application/json': {
-            schema: z.object({
-              success: z.boolean(),
-              data: z.object({
-                patientId: z.string().uuid(),
-                blockchainAddress: z.string(),
-              }),
-            }),
-          },
-        },
-        description: 'Patient registered successfully',
-      },
-      409: { content: { 'application/json': { schema: errorSchema } }, description: 'National ID already registered' },
+      201: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ patientId: z.string().uuid(), blockchainAddress: z.string() }) }) } }, description: 'Registered' },
+      409: { content: { 'application/json': { schema: errorSchema } }, description: 'Duplicate national ID' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
       const body = c.req.valid('json');
 
-      // Generate blockchain address
-      const blockchainAddress = `patient:${crypto.createHash('sha256').update(body.nationalId + process.env.BLOCKCHAIN_SALT || 'salt').digest('hex')}`;
+      const blockchainAddress = `patient:${crypto.createHash('sha256').update(body.nationalId + (process.env.BLOCKCHAIN_SALT || 'salt')).digest('hex')}`;
 
-      // Encrypt fields
-      const encrypted = {
+      const result = await db.insert(patients).values({
+        blockchainAddress,
         firstNameEncrypted: encrypt(body.firstName),
         lastNameEncrypted: encrypt(body.lastName),
         middleNameEncrypted: body.middleName ? encrypt(body.middleName) : null,
@@ -121,136 +127,108 @@ export const patientRouter = createRouter()
         addressEncrypted: encrypt(body.address),
         emergencyContactEncrypted: encrypt(body.emergencyContact),
         nationalIdEncrypted: encrypt(body.nationalId),
-      };
-
-      // Hash the default password
-      const defaultPassword = 'test1234';
-      const passwordHash = hashData(defaultPassword);
-
-      // Insert patient
-      const result = await db.insert(patients).values({
-        blockchainAddress,
-        ...encrypted,
         gender: body.gender,
         bloodType: body.bloodType,
         maritalStatus: body.maritalStatus,
         occupation: body.occupation,
-        passwordHash,
-        mustChangePassword: true,   // <-- require password change on first login
+        passwordHash: hashData('test1234'),
         isActive: true,
       }).returning({ id: patients.id, blockchainAddress: patients.blockchainAddress });
 
       const patientId = result[0].id;
 
-      // (Optional) register at institution if provided – same as before
+      // ── Link to institution ───────────────────────────────────────────────
+      // Always create the registration link when institutionId is provided.
+      // Auto-generate hospitalPatientNumber if not supplied — never skip silently.
+      if (body.institutionId) {
+        const hospitalPatientNumber =
+          body.hospitalPatientNumber?.trim() ||
+          `HPN-${new Date().getFullYear()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 
-      // Store on blockchain (optional)
-      const creationHash = generateRecordHash({ patientId, blockchainAddress, timestamp: new Date().toISOString() });
-      await storeRecordHash(patientId, blockchainAddress, creationHash, 'patient_registration').catch(() => { });
+        await db.insert(patientInstitutionRegistrations).values({
+          patientId,
+          institutionId: body.institutionId,
+          hospitalPatientNumber,
+          isActive: true,
+          isHomeInstitution: true,
+        });
+      }
+
+      storeRecordHash(patientId, blockchainAddress, generateRecordHash({ patientId, blockchainAddress, timestamp: new Date().toISOString() }), 'patient_registration').catch(() => { });
 
       return c.json({ success: true, data: { patientId, blockchainAddress } }, 201);
     } catch (err: any) {
-      console.error('Patient registration error:', err);
-      if (err.code === '23505' && err.constraint === 'patients_national_id_encrypted_unique') {
+      if (err.code === '23505')
         return c.json({ success: false, error: { message: 'National ID already registered' } }, 409);
-      }
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   })
 
-  // ========== GET MY PROFILE ==========
+  // ── GET MY PROFILE ────────────────────────────────────────────────────────
   .openapi(createRoute({
-    tags: ['Patients'],
-    summary: 'Get authenticated patient profile',
-    method: 'get',
-    path: '/me',
-    security: [{ bearerAuth: [] }],
-    middleware: [authMiddleware],
+    tags: ['Patients'], summary: 'Get authenticated patient profile',
+    method: 'get', path: '/me',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
     responses: {
-      200: {
-        content: {
-          'application/json': {
-            schema: z.object({
-              success: z.boolean(),
-              data: z.object({
-                id: z.string(),
-                blockchainAddress: z.string(),
-                firstName: z.string(),
-                lastName: z.string(),
-                middleName: z.string().optional(),
-                dateOfBirth: z.string(),
-                gender: z.string(),
-                bloodType: z.string(),
-                phoneNumber: z.string(),
-                email: z.string().optional(),
-                address: z.string(),
-                emergencyContact: z.string(),
-                maritalStatus: z.string().optional(),
-                occupation: z.string().optional(),
-                isActive: z.boolean(),
-                createdAt: z.string(),
-              })
-            })
-          }
-        },
-        description: 'Patient profile',
-      },
+      200: { content: { 'application/json': { schema: successData } }, description: 'Profile' },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
-      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Patient not found' },
+      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
-      const userType = c.get('userType');
-      if (userType !== 'patient') {
-        return c.json({ success: false, error: { message: 'Only patients can access their own profile' } }, 403);
-      }
-
-      const patientId = c.get('userId');
-
-      const patient = await db.select().from(patients).where(eq(patients.id, patientId)).limit(1);
-      if (!patient.length) {
-        return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
-      }
-
-      const p = patient[0];
-
-      // Decrypt fields
-      const profile = {
-        id: p.id,
-        blockchainAddress: p.blockchainAddress,
-        firstName: decrypt(p.firstNameEncrypted),
-        lastName: decrypt(p.lastNameEncrypted),
-        middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : undefined,
-        dateOfBirth: decrypt(p.dateOfBirthEncrypted),
-        gender: p.gender,
-        bloodType: p.bloodType,
-        phoneNumber: decrypt(p.phoneNumberEncrypted),
-        email: p.emailEncrypted ? decrypt(p.emailEncrypted) : undefined,
-        address: decrypt(p.addressEncrypted),
-        emergencyContact: decrypt(p.emergencyContactEncrypted),
-        maritalStatus: p.maritalStatus || undefined,
-        occupation: p.occupation || undefined,
-        isActive: p.isActive,
-        createdAt: p.createdAt.toISOString(),
-      };
-
-      return c.json({ success: true, data: profile });
-
-    } catch (err: any) {
-      console.error('Get profile error:', err);
-      return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
-    }
+      if (c.get('userType') !== 'patient')
+        return c.json({ success: false, error: { message: 'Patients only' } }, 403);
+      const p = (await db.select().from(patients).where(eq(patients.id, c.get('userId'))).limit(1))[0];
+      if (!p) return c.json({ success: false, error: { message: 'Not found' } }, 404);
+      return c.json({ success: true, data: { id: p.id, blockchainAddress: p.blockchainAddress, firstName: decrypt(p.firstNameEncrypted), lastName: decrypt(p.lastNameEncrypted), middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : undefined, dateOfBirth: decrypt(p.dateOfBirthEncrypted), gender: p.gender, bloodType: p.bloodType, phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : undefined, address: decrypt(p.addressEncrypted), emergencyContact: decrypt(p.emergencyContactEncrypted), maritalStatus: p.maritalStatus || undefined, occupation: p.occupation || undefined, isActive: p.isActive, createdAt: p.createdAt.toISOString() } });
+    } catch { return c.json({ success: false, error: { message: 'Internal server error' } }, 500); }
   })
 
-  // ========== SEARCH PATIENTS (Receptionist/Nurse/Practitioner/Admin) ==========
+  // ── UPDATE MY PROFILE ─────────────────────────────────────────────────────
   .openapi(createRoute({
-    tags: ['Patients'],
-    summary: 'Search patients by name, national ID, or patient ID',
-    method: 'get',
-    path: '/search',
-    security: [{ bearerAuth: [] }],
-    middleware: [authMiddleware],
+    tags: ['Patients'], summary: 'Update authenticated patient profile',
+    method: 'patch', path: '/me',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    request: { body: { content: { 'application/json': { schema: updatePatientSchema } } } },
+    responses: {
+      200: { content: { 'application/json': { schema: successData } }, description: 'Updated' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+    },
+  }), async (c) => {
+    try {
+      if (c.get('userType') !== 'patient') return c.json({ success: false, error: { message: 'Patients only' } }, 403);
+      const patientId = c.get('userId');
+      const body = c.req.valid('json');
+      const u: any = {};
+      if (body.firstName) u.firstNameEncrypted = encrypt(body.firstName);
+      if (body.lastName) u.lastNameEncrypted = encrypt(body.lastName);
+      if (body.middleName !== undefined) u.middleNameEncrypted = body.middleName ? encrypt(body.middleName) : null;
+      if (body.dateOfBirth) u.dateOfBirthEncrypted = encrypt(body.dateOfBirth);
+      if (body.gender) u.gender = body.gender;
+      if (body.bloodType) u.bloodType = body.bloodType;
+      if (body.phoneNumber) u.phoneNumberEncrypted = encrypt(body.phoneNumber);
+      if (body.email !== undefined) u.emailEncrypted = body.email ? encrypt(body.email) : null;
+      if (body.address) u.addressEncrypted = encrypt(body.address);
+      if (body.emergencyContact) u.emergencyContactEncrypted = encrypt(body.emergencyContact);
+      if (body.maritalStatus !== undefined) u.maritalStatus = body.maritalStatus;
+      if (body.occupation !== undefined) u.occupation = body.occupation;
+      if (body.password) u.passwordHash = hashData(body.password);
+      u.updatedAt = new Date();
+      if (Object.keys(u).length === 1) return c.json({ success: true, data: { message: 'No fields to update' } });
+      const result = await db.update(patients).set(u).where(eq(patients.id, patientId)).returning();
+      if (!result.length) return c.json({ success: false, error: { message: 'Not found' } }, 404);
+      storeRecordHash(patientId, result[0].blockchainAddress, generateRecordHash({ patientId, timestamp: new Date().toISOString() }), 'patient_update').catch(() => { });
+      return c.json({ success: true, data: { message: 'Profile updated successfully' } });
+    } catch { return c.json({ success: false, error: { message: 'Internal server error' } }, 500); }
+  })
+
+  // ── SEARCH PATIENTS ───────────────────────────────────────────────────────
+  .openapi(createRoute({
+    tags: ['Patients'], summary: 'Search patients — institution-scoped',
+    method: 'get', path: '/search',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
     request: {
       query: z.object({
         q: z.string().optional(),
@@ -259,378 +237,328 @@ export const patientRouter = createRouter()
       }),
     },
     responses: {
-      200: {
-        content: {
-          'application/json': {
-            schema: z.object({
-              success: z.boolean(),
-              data: z.object({
-                patients: z.array(z.object({
-                  id: z.string().uuid(),
-                  blockchainAddress: z.string(),
-                  firstName: z.string(),
-                  lastName: z.string(),
-                  middleName: z.string().optional(),
-                  dateOfBirth: z.string(),
-                  gender: z.string(),
-                  phoneNumber: z.string(),
-                  email: z.string().optional(),
-                  nationalId: z.string(),
-                  createdAt: z.string(),
-                })),
-                total: z.number(),
-                limit: z.number(),
-                offset: z.number(),
-              }),
-            }),
-          },
-        },
-        description: 'List of matching patients',
-      },
+      200: { content: { 'application/json': { schema: successData } }, description: 'Results' },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
-      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
-    },
-  }), async (c) => {
-    try {
-      const userType = c.get('userType');
-      if (!['receptionist', 'nurse', 'practitioner', 'admin'].includes(userType)) {
-        return c.json({ success: false, error: { message: 'Access denied' } }, 403);
-      }
-
-      const { q, limit, offset } = c.req.valid('query');
-      const searchTerm = q?.toLowerCase().trim() || '';
-
-      // If searching by UUID (exact match), we can query directly
-      if (searchTerm.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-        const patient = await db.select().from(patients)
-          .where(and(eq(patients.id, searchTerm), eq(patients.isActive, true)))
-          .limit(1);
-        if (patient.length) {
-          const p = patient[0];
-          const firstName = decrypt(p.firstNameEncrypted);
-          const lastName = decrypt(p.lastNameEncrypted);
-          const middleName = p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : '';
-          const dateOfBirth = decrypt(p.dateOfBirthEncrypted);
-          const phoneNumber = decrypt(p.phoneNumberEncrypted);
-          const email = p.emailEncrypted ? decrypt(p.emailEncrypted) : '';
-          const nationalId = decrypt(p.nationalIdEncrypted);
-
-          return c.json({
-            success: true,
-            data: {
-              patients: [{
-                id: p.id,
-                blockchainAddress: p.blockchainAddress,
-                firstName,
-                lastName,
-                middleName: middleName || undefined,
-                dateOfBirth,
-                gender: p.gender,
-                phoneNumber,
-                email: email || undefined,
-                nationalId,
-                createdAt: p.createdAt.toISOString(),
-              }],
-              total: 1,
-              limit,
-              offset,
-            },
-          });
-        }
-      }
-
-      // Otherwise, fall back to fetching all active patients and decrypting in memory
-      const allPatients = await db.select().from(patients).where(eq(patients.isActive, true));
-
-      const matchedPatients = [];
-      for (const p of allPatients) {
-        try {
-          const firstName = decrypt(p.firstNameEncrypted);
-          const lastName = decrypt(p.lastNameEncrypted);
-          const middleName = p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : '';
-          const dateOfBirth = decrypt(p.dateOfBirthEncrypted);
-          const phoneNumber = decrypt(p.phoneNumberEncrypted);
-          const email = p.emailEncrypted ? decrypt(p.emailEncrypted) : '';
-          const nationalId = decrypt(p.nationalIdEncrypted);
-
-          const fullName = `${firstName} ${lastName}`.toLowerCase();
-
-          if (!searchTerm ||
-            fullName.includes(searchTerm) ||
-            nationalId.toLowerCase().includes(searchTerm) ||
-            p.id.includes(searchTerm)) {  // partial UUID match
-            matchedPatients.push({
-              id: p.id,
-              blockchainAddress: p.blockchainAddress,
-              firstName,
-              lastName,
-              middleName: middleName || undefined,
-              dateOfBirth,
-              gender: p.gender,
-              phoneNumber,
-              email: email || undefined,
-              nationalId,
-              createdAt: p.createdAt.toISOString(),
-            });
-          }
-        } catch (err) {
-          console.error(`Skipping patient ${p.id} due to decryption error:`, err);
-        }
-      }
-
-      const total = matchedPatients.length;
-      const paginated = matchedPatients.slice(offset, offset + limit);
-
-      return c.json({
-        success: true,
-        data: {
-          patients: paginated,
-          total,
-          limit,
-          offset,
-        },
-      });
-    } catch (err: unknown) {
-      console.error('Patient search error:', err);
-      return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
-    }
-  })
-
-  // ========== UPDATE MY PROFILE ==========
-  .openapi(createRoute({
-    tags: ['Patients'],
-    summary: 'Update authenticated patient profile',
-    method: 'patch',
-    path: '/me',
-    security: [{ bearerAuth: [] }],
-    middleware: [authMiddleware],
-    request: {
-      body: { content: { 'application/json': { schema: updatePatientSchema } } },
-    },
-    responses: {
-      200: {
-        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } },
-        description: 'Profile updated',
-      },
-      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
-      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Patient not found' },
-      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
-    },
-  }), async (c) => {
-    try {
-      const userType = c.get('userType');
-      if (userType !== 'patient') {
-        return c.json({ success: false, error: { message: 'Only patients can update their profile' } }, 403);
-      }
-
-      const patientId = c.get('userId');
-      const body = c.req.valid('json');
-
-      // Build update object with encrypted fields where needed
-      const updateData: any = {};
-
-      if (body.firstName) updateData.firstNameEncrypted = encrypt(body.firstName);
-      if (body.lastName) updateData.lastNameEncrypted = encrypt(body.lastName);
-      if (body.middleName !== undefined) updateData.middleNameEncrypted = body.middleName ? encrypt(body.middleName) : null;
-      if (body.dateOfBirth) updateData.dateOfBirthEncrypted = encrypt(body.dateOfBirth);
-      if (body.gender) updateData.gender = body.gender;
-      if (body.bloodType) updateData.bloodType = body.bloodType;
-      if (body.phoneNumber) updateData.phoneNumberEncrypted = encrypt(body.phoneNumber);
-      if (body.email !== undefined) updateData.emailEncrypted = body.email ? encrypt(body.email) : null;
-      if (body.address) updateData.addressEncrypted = encrypt(body.address);
-      if (body.emergencyContact) updateData.emergencyContactEncrypted = encrypt(body.emergencyContact);
-      if (body.maritalStatus !== undefined) updateData.maritalStatus = body.maritalStatus;
-      if (body.occupation !== undefined) updateData.occupation = body.occupation;
-      if (body.password) updateData.passwordHash = hashData(body.password);
-
-      updateData.updatedAt = new Date();
-
-      if (Object.keys(updateData).length === 0) {
-        return c.json({ success: true, data: { message: 'No fields to update' } });
-      }
-
-      const result = await db.update(patients)
-        .set(updateData)
-        .where(eq(patients.id, patientId))
-        .returning();
-
-      if (!result.length) {
-        return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
-      }
-
-      // Optionally store update hash on blockchain
-      const updateHash = generateRecordHash({ patientId, updates: Object.keys(body), timestamp: new Date().toISOString() });
-      await storeRecordHash(patientId, result[0].blockchainAddress, updateHash, 'patient_update').catch(() => { });
-
-      return c.json({ success: true, data: { message: 'Profile updated successfully' } });
-
-    } catch (err: any) {
-      console.error('Update profile error:', err);
-      return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
-    }
-  })
-
-  // ========== GET PATIENT BY ID (Practitioner/Admin with permission) ==========
-  .openapi(createRoute({
-    tags: ['Patients'],
-    summary: 'Get patient details by ID (requires permission)',
-    method: 'get',
-    path: '/:patientId',
-    security: [{ bearerAuth: [] }],
-    middleware: [authMiddleware],
-    request: {
-      params: z.object({ patientId: z.string().uuid() }),
-    },
-    responses: {
-      200: {
-        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } },
-        description: 'Patient details',
-      },
-      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
-      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Patient not found' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
       const userType = c.get('userType');
       const userId = c.get('userId');
-      const userBlockchainAddress = c.get('blockchainAddress');
-      const { patientId } = c.req.valid('param');
+      if (!['receptionist', 'nurse', 'practitioner', 'admin'].includes(userType))
+        return c.json({ success: false, error: { message: 'Access denied' } }, 403);
 
-      // Admin can access any patient
-      if (userType === 'admin' || userType === 'receptionist') {
-        const patient = await db.select().from(patients).where(eq(patients.id, patientId)).limit(1);
-        if (!patient.length) return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
-        // Decrypt and return
-        const p = patient[0];
-        return c.json({
-          success: true, data: {
-            id: p.id,
-            blockchainAddress: p.blockchainAddress,
-            firstName: decrypt(p.firstNameEncrypted),
-            lastName: decrypt(p.lastNameEncrypted),
-            // ... include all fields as in /me
-          }
-        });
-      }
+      const { q, limit, offset } = c.req.valid('query');
+      const searchTerm = q?.toLowerCase().trim() || '';
+      const staffInstitutionId = await getStaffInstitution(userId);
 
-      // Practitioners must have blockchain permission
-      if (userType === 'practitioner') {
-        // Get patient blockchain address
-        const patient = await db.select({
-          blockchainAddress: patients.blockchainAddress,
-        }).from(patients).where(eq(patients.id, patientId)).limit(1);
-
-        if (!patient.length) return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
-
-        const hasPermission = await checkPermission(patient[0].blockchainAddress, userBlockchainAddress);
-        if (!hasPermission) {
-          return c.json({ success: false, error: { message: 'No permission to access this patient' } }, 403);
+      // UUID fast-path
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (searchTerm && UUID_RE.test(searchTerm)) {
+        if (staffInstitutionId) {
+          const reg = await db.select().from(patientInstitutionRegistrations)
+            .where(and(eq(patientInstitutionRegistrations.patientId, searchTerm), eq(patientInstitutionRegistrations.institutionId, staffInstitutionId), eq(patientInstitutionRegistrations.isActive, true)))
+            .limit(1);
+          if (!reg.length) return c.json({ success: true, data: { patients: [], total: 0, limit, offset } });
         }
-
-        // Fetch full patient data
-        const fullPatient = await db.select().from(patients).where(eq(patients.id, patientId)).limit(1);
-        const p = fullPatient[0];
-        return c.json({
-          success: true, data: {
-            id: p.id,
-            blockchainAddress: p.blockchainAddress,
-            firstName: decrypt(p.firstNameEncrypted),
-            lastName: decrypt(p.lastNameEncrypted),
-            // ... include all fields needed for clinical context
-            dateOfBirth: decrypt(p.dateOfBirthEncrypted),
-            gender: p.gender,
-            bloodType: p.bloodType,
-            phoneNumber: decrypt(p.phoneNumberEncrypted),
-            email: p.emailEncrypted ? decrypt(p.emailEncrypted) : undefined,
-            address: decrypt(p.addressEncrypted),
-            emergencyContact: decrypt(p.emergencyContactEncrypted),
-          }
-        });
+        const row = await db.select().from(patients).where(and(eq(patients.id, searchTerm), eq(patients.isActive, true))).limit(1);
+        if (!row.length) return c.json({ success: true, data: { patients: [], total: 0, limit, offset } });
+        const p = row[0];
+        return c.json({ success: true, data: { patients: [{ id: p.id, blockchainAddress: p.blockchainAddress, firstName: decrypt(p.firstNameEncrypted), lastName: decrypt(p.lastNameEncrypted), middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : undefined, dateOfBirth: decrypt(p.dateOfBirthEncrypted), gender: p.gender, phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : undefined, nationalId: decrypt(p.nationalIdEncrypted), createdAt: p.createdAt.toISOString() }], total: 1, limit, offset } });
       }
 
-      return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+      // Decrypt-and-filter path
+      let scopedIds: string[] | null = null;
+      if (staffInstitutionId) {
+        scopedIds = await getInstitutionPatientIds(staffInstitutionId);
+        if (scopedIds.length === 0) return c.json({ success: true, data: { patients: [], total: 0, limit, offset } });
+      }
 
+      const rows = scopedIds
+        ? await db.select().from(patients).where(and(eq(patients.isActive, true), inArray(patients.id, scopedIds)))
+        : await db.select().from(patients).where(eq(patients.isActive, true));
+
+      const matched: any[] = [];
+      for (const p of rows) {
+        try {
+          const firstName = decrypt(p.firstNameEncrypted);
+          const lastName = decrypt(p.lastNameEncrypted);
+          const nationalId = decrypt(p.nationalIdEncrypted);
+          if (!searchTerm || `${firstName} ${lastName}`.toLowerCase().includes(searchTerm) || nationalId.toLowerCase().includes(searchTerm) || p.id.includes(searchTerm)) {
+            matched.push({ id: p.id, blockchainAddress: p.blockchainAddress, firstName, lastName, middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : undefined, dateOfBirth: decrypt(p.dateOfBirthEncrypted), gender: p.gender, phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : undefined, nationalId, createdAt: p.createdAt.toISOString() });
+          }
+        } catch (e) { console.error(`[SEARCH] skip ${p.id}:`, e); }
+      }
+
+      return c.json({ success: true, data: { patients: matched.slice(offset, offset + limit), total: matched.length, limit, offset } });
     } catch (err: any) {
-      console.error('Get patient by ID error:', err);
+      console.error('[SEARCH]', err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   })
 
-  // ========== SEARCH PATIENTS (Admin/Practitioner with permission) ==========
+  // ── GET BY ID ─────────────────────────────────────────────────────────────
   .openapi(createRoute({
-    tags: ['Patients'],
-    summary: 'Search patients by name or ID (requires practitioner/admin role)',
-    method: 'get',
-    path: '/',
-    security: [{ bearerAuth: [] }],
-    middleware: [authMiddleware],
-    request: {
-      query: z.object({
-        search: z.string().optional(),
-        limit: z.string().regex(/^\d+$/).transform(Number).optional().default('20'),
-        offset: z.string().regex(/^\d+$/).transform(Number).optional().default('0'),
-      }),
-    },
+    tags: ['Patients'], summary: 'Get patient by ID',
+    method: 'get', path: '/:patientId',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    request: { params: z.object({ patientId: z.string().uuid() }) },
     responses: {
-      200: {
-        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } },
-        description: 'List of patients',
-      },
+      200: { content: { 'application/json': { schema: successData } }, description: 'Patient' },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
       const userType = c.get('userType');
-      if (!['admin', 'practitioner', 'receptionist', 'nurse'].includes(userType)) {
+      const userId = c.get('userId');
+      const { patientId } = c.req.valid('param');
+      if (!['practitioner', 'nurse', 'receptionist', 'admin'].includes(userType))
         return c.json({ success: false, error: { message: 'Access denied' } }, 403);
-      }
 
-      const { search, limit, offset } = c.req.valid('query');
+      const row = await db.select().from(patients).where(eq(patients.id, patientId)).limit(1);
+      if (!row.length) return c.json({ success: false, error: { message: 'Not found' } }, 404);
 
-      // Build query – since fields are encrypted, we cannot search on them directly.
-      // We can search on blockchainAddress, id, or maybe we store searchable fields in plaintext? Not in schema.
-      // For simplicity, we'll just return paginated list of patients with decrypted names (but this is inefficient for large DB).
-      // In practice, you'd need a search index or store hashed searchable fields.
-      // For demo, we'll return limited fields without search filtering.
-
-      let query = db.select({
-        id: patients.id,
-        blockchainAddress: patients.blockchainAddress,
-        firstNameEncrypted: patients.firstNameEncrypted,
-        lastNameEncrypted: patients.lastNameEncrypted,
-        gender: patients.gender,
-        createdAt: patients.createdAt,
-      }).from(patients);
-
-      if (search) {
-        // Not possible with encrypted fields – we'll ignore search for now
-        // Alternatively, you could search by id if search is a UUID
-        if (search.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) {
-          query = query.where(eq(patients.id, search)) as any;
-        } else {
-          // No search by name, return empty? Or just ignore search.
-          return c.json({ success: true, data: { patients: [], total: 0 } });
+      let allowed = userType === 'admin';
+      if (!allowed) {
+        const instId = await getStaffInstitution(userId);
+        if (instId) {
+          const reg = await db.select().from(patientInstitutionRegistrations).where(and(eq(patientInstitutionRegistrations.patientId, patientId), eq(patientInstitutionRegistrations.institutionId, instId), eq(patientInstitutionRegistrations.isActive, true))).limit(1);
+          if (reg.length) allowed = true;
+        }
+        if (!allowed) {
+          const addr = c.get('blockchainAddress');
+          if (addr) allowed = await checkPermission(row[0].blockchainAddress, addr);
         }
       }
+      if (!allowed) return c.json({ success: false, error: { message: 'Access denied' } }, 403);
 
-      const patientsList = await query.limit(limit).offset(offset);
+      const p = row[0];
+      return c.json({ success: true, data: { id: p.id, blockchainAddress: p.blockchainAddress, firstName: decrypt(p.firstNameEncrypted), lastName: decrypt(p.lastNameEncrypted), middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : undefined, dateOfBirth: decrypt(p.dateOfBirthEncrypted), gender: p.gender, bloodType: p.bloodType, phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : undefined, address: decrypt(p.addressEncrypted), emergencyContact: decrypt(p.emergencyContactEncrypted), maritalStatus: p.maritalStatus || undefined, occupation: p.occupation || undefined, isActive: p.isActive, createdAt: p.createdAt.toISOString() } });
+    } catch { return c.json({ success: false, error: { message: 'Internal server error' } }, 500); }
+  })
 
-      // Decrypt names for response
-      const result = patientsList.map(p => ({
-        id: p.id,
-        blockchainAddress: p.blockchainAddress,
-        firstName: decrypt(p.firstNameEncrypted),
-        lastName: decrypt(p.lastNameEncrypted),
-        gender: p.gender,
-        createdAt: p.createdAt,
+  // ── LIST PATIENTS ─────────────────────────────────────────────────────────
+  .openapi(createRoute({
+    tags: ['Patients'], summary: 'List patients (paginated)',
+    method: 'get', path: '/',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    request: { query: z.object({ search: z.string().optional(), limit: z.string().regex(/^\d+$/).transform(Number).optional().default('20'), offset: z.string().regex(/^\d+$/).transform(Number).optional().default('0') }) },
+    responses: { 200: { content: { 'application/json': { schema: successData } }, description: 'List' }, 403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' }, 500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' } },
+  }), async (c) => {
+    try {
+      const userType = c.get('userType');
+      if (!['admin', 'practitioner', 'receptionist', 'nurse'].includes(userType)) return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+      const { search, limit, offset } = c.req.valid('query');
+      let query = db.select({ id: patients.id, blockchainAddress: patients.blockchainAddress, firstNameEncrypted: patients.firstNameEncrypted, lastNameEncrypted: patients.lastNameEncrypted, gender: patients.gender, createdAt: patients.createdAt }).from(patients);
+      if (search) {
+        if (search.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i)) query = query.where(eq(patients.id, search)) as any;
+        else return c.json({ success: true, data: { patients: [], total: 0 } });
+      }
+      const list = await query.limit(limit).offset(offset);
+      return c.json({ success: true, data: { patients: list.map(p => ({ id: p.id, blockchainAddress: p.blockchainAddress, firstName: decrypt(p.firstNameEncrypted), lastName: decrypt(p.lastNameEncrypted), gender: p.gender, createdAt: p.createdAt })), limit, offset } });
+    } catch { return c.json({ success: false, error: { message: 'Internal server error' } }, 500); }
+  })
+
+  // ── GET BY INSTITUTION ────────────────────────────────────────────────────
+  .openapi(createRoute({
+    tags: ['Patients'], summary: 'Get patients at an institution',
+    method: 'get', path: '/institution/:institutionId',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    request: { params: z.object({ institutionId: z.string().uuid() }), query: z.object({ search: z.string().optional(), limit: z.string().regex(/^\d+$/).transform(Number).optional().default('50'), offset: z.string().regex(/^\d+$/).transform(Number).optional().default('0') }) },
+    responses: { 200: { content: { 'application/json': { schema: successData } }, description: 'List' }, 403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' }, 500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' } },
+  }), async (c) => {
+    try {
+      const userType = c.get('userType');
+      const userId = c.get('userId');
+      const { institutionId } = c.req.valid('param');
+      const { search, limit, offset } = c.req.valid('query');
+
+      let allowed = userType === 'admin';
+      if (!allowed) { const sid = await getStaffInstitution(userId); if (sid === institutionId) allowed = true; }
+      if (!allowed) return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+
+      const regs = await db.select({ patientId: patientInstitutionRegistrations.patientId }).from(patientInstitutionRegistrations).where(and(eq(patientInstitutionRegistrations.institutionId, institutionId), eq(patientInstitutionRegistrations.isActive, true)));
+      if (!regs.length) return c.json({ success: true, data: { patients: [], total: 0, limit, offset } });
+
+      let rows = await db.select().from(patients).where(and(eq(patients.isActive, true), inArray(patients.id, regs.map(r => r.patientId))));
+
+      if (search) {
+        const q = search.toLowerCase();
+        const filtered = [];
+        for (const p of rows) {
+          try { if (`${decrypt(p.firstNameEncrypted)} ${decrypt(p.lastNameEncrypted)}`.toLowerCase().includes(q) || decrypt(p.nationalIdEncrypted).includes(q)) filtered.push(p); } catch { }
+        }
+        rows = filtered;
+      }
+
+      const total = rows.length;
+      return c.json({ success: true, data: { patients: rows.slice(offset, offset + limit).map(p => ({ id: p.id, blockchainAddress: p.blockchainAddress, firstName: decrypt(p.firstNameEncrypted), lastName: decrypt(p.lastNameEncrypted), middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : undefined, dateOfBirth: decrypt(p.dateOfBirthEncrypted), gender: p.gender, bloodType: p.bloodType, phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : undefined, nationalId: decrypt(p.nationalIdEncrypted), createdAt: p.createdAt.toISOString() })), total, limit, offset } });
+    } catch (err: any) { console.error('[INSTITUTION PATIENTS]', err); return c.json({ success: false, error: { message: 'Internal server error' } }, 500); }
+  })
+
+  // ── MEDICAL HISTORY ───────────────────────────────────────────────────────
+  .openapi(createRoute({
+    tags: ['Patients'], summary: 'Get patient medical history',
+    method: 'get', path: '/:patientId/history',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    request: { params: z.object({ patientId: z.string().uuid() }) },
+    responses: { 200: { content: { 'application/json': { schema: successData } }, description: 'History' }, 403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' }, 404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' }, 500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' } },
+  }), async (c) => {
+    try {
+      const userType = c.get('userType');
+      const userId = c.get('userId');
+      const staffBlockchainAddress = c.get('blockchainAddress') as string | undefined;
+      const { patientId } = c.req.valid('param');
+
+      if (!['practitioner', 'nurse', 'admin', 'patient', 'receptionist'].includes(userType))
+        return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+
+      const patientRow = await db.select().from(patients).where(eq(patients.id, patientId)).limit(1);
+      if (!patientRow.length) return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
+      const p = patientRow[0];
+
+      const patient = { id: p.id, firstName: decrypt(p.firstNameEncrypted), lastName: decrypt(p.lastNameEncrypted), middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : null, gender: p.gender, dateOfBirth: decrypt(p.dateOfBirthEncrypted), phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : null, bloodType: p.bloodType, maritalStatus: p.maritalStatus, occupation: p.occupation, blockchainAddress: p.blockchainAddress };
+
+      // Patient self
+      if (userType === 'patient') {
+        if (userId !== patientId) return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+        const allVisits = await db.select().from(visits).where(eq(visits.patientId, patientId)).orderBy(desc(visits.admissionDate));
+        return c.json({ success: true, data: { patient, ownVisits: await Promise.all(allVisits.map(async v => ({ visit: v, ...(await buildVisitPayload(v.id)) }))), awayInstitutions: [] } });
+      }
+
+      const staffInstitutionId = await getStaffInstitution(userId);
+
+      if (!staffInstitutionId) {
+        const allVisits = await db.select().from(visits).where(eq(visits.patientId, patientId)).orderBy(desc(visits.admissionDate));
+        return c.json({ success: true, data: { patient, ownVisits: await Promise.all(allVisits.map(async v => ({ visit: v, ...(await buildVisitPayload(v.id)) }))), awayInstitutions: [] } });
+      }
+
+      const ownVisitRows = await db.select().from(visits).where(and(eq(visits.patientId, patientId), or(eq(visits.institutionId, staffInstitutionId), isNull(visits.institutionId)))).orderBy(desc(visits.admissionDate));
+      const ownVisits = await Promise.all(ownVisitRows.map(async v => ({ visit: v, ...(await buildVisitPayload(v.id)) })));
+
+      const awayVisitRows = await db.select({ id: visits.id, institutionId: visits.institutionId, admissionDate: visits.admissionDate, status: visits.status }).from(visits).where(and(eq(visits.patientId, patientId), sql`${visits.institutionId} IS NOT NULL`, ne(visits.institutionId, staffInstitutionId))).orderBy(desc(visits.admissionDate));
+
+      const awayMap = new Map<string, typeof awayVisitRows>();
+      for (const v of awayVisitRows) { if (!v.institutionId) continue; if (!awayMap.has(v.institutionId)) awayMap.set(v.institutionId, []); awayMap.get(v.institutionId)!.push(v); }
+
+      const awayInstitutions = await Promise.all(Array.from(awayMap.entries()).map(async ([instId, rows]) => {
+        let institutionName = 'Unknown Institution';
+        try { const r = await db.select({ institutionName: institutions.institutionName }).from(institutions).where(eq(institutions.id, instId)).limit(1); if (r.length) institutionName = r[0].institutionName; } catch { }
+        let hasPermission = false;
+        try { if (staffBlockchainAddress) hasPermission = await checkPermission(p.blockchainAddress, staffBlockchainAddress); } catch { }
+        let visitsData: any[] = [];
+        if (hasPermission) { const fullRows = await db.select().from(visits).where(and(eq(visits.patientId, patientId), eq(visits.institutionId, instId))).orderBy(desc(visits.admissionDate)); visitsData = await Promise.all(fullRows.map(async v => ({ visit: v, ...(await buildVisitPayload(v.id)) }))); }
+        return { institutionId: instId, institutionName, visitCount: rows.length, hasPermission, visits: visitsData };
       }));
 
-      return c.json({ success: true, data: { patients: result, limit, offset } });
+      awayInstitutions.sort((a, b) => (a.hasPermission === b.hasPermission ? 0 : a.hasPermission ? -1 : 1));
+      return c.json({ success: true, data: { patient, ownVisits, awayInstitutions } });
+    } catch (err: any) { console.error('[HISTORY]', err); return c.json({ success: false, error: { message: 'Internal server error' } }, 500); }
+  })
 
-    } catch (err: any) {
-      console.error('Search patients error:', err);
-      return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
-    }
+  // ── REGISTRATION DETAILS ──────────────────────────────────────────────────
+  .openapi(createRoute({
+    tags: ['Patients'], summary: 'Get patient registration details — no clinical data',
+    method: 'get', path: '/:patientId/registration',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    request: { params: z.object({ patientId: z.string().uuid() }) },
+    responses: { 200: { content: { 'application/json': { schema: successData } }, description: 'Registration' }, 403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' }, 404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' }, 500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' } },
+  }), async (c) => {
+    try {
+      const userType = c.get('userType');
+      const userId = c.get('userId');
+      const { patientId } = c.req.valid('param');
+      if (!['receptionist', 'nurse', 'practitioner', 'admin'].includes(userType)) return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+
+      const row = await db.select().from(patients).where(eq(patients.id, patientId)).limit(1);
+      if (!row.length) return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
+      const p = row[0];
+
+      const staffInstitutionId = await getStaffInstitution(userId);
+      let registration: any = null;
+      if (staffInstitutionId) {
+        const reg = await db.select().from(patientInstitutionRegistrations).where(and(eq(patientInstitutionRegistrations.patientId, patientId), eq(patientInstitutionRegistrations.institutionId, staffInstitutionId), eq(patientInstitutionRegistrations.isActive, true))).limit(1);
+        if (reg.length) registration = { hospitalPatientNumber: reg[0].hospitalPatientNumber, isHomeInstitution: reg[0].isHomeInstitution ?? false, registeredAt: reg[0].createdAt?.toISOString?.() ?? new Date().toISOString() };
+      }
+
+      return c.json({ success: true, data: { id: p.id, blockchainAddress: p.blockchainAddress, firstName: decrypt(p.firstNameEncrypted), lastName: decrypt(p.lastNameEncrypted), middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : undefined, dateOfBirth: decrypt(p.dateOfBirthEncrypted), gender: p.gender, bloodType: p.bloodType, phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : undefined, address: decrypt(p.addressEncrypted), emergencyContact: decrypt(p.emergencyContactEncrypted), nationalId: decrypt(p.nationalIdEncrypted), maritalStatus: p.maritalStatus || undefined, occupation: p.occupation || undefined, isActive: p.isActive, createdAt: p.createdAt.toISOString(), registration } });
+    } catch (err: any) { console.error('[REGISTRATION]', err); return c.json({ success: false, error: { message: 'Internal server error' } }, 500); }
+  })
+
+  // ── UPDATE PATIENT (receptionist) ─────────────────────────────────────────
+  .openapi(createRoute({
+    tags: ['Patients'], summary: 'Update patient basic info — receptionist accessible',
+    method: 'patch', path: '/:patientId/update',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    request: {
+      params: z.object({ patientId: z.string().uuid() }),
+      body: { content: { 'application/json': { schema: z.object({ firstName: z.string().min(1).optional(), lastName: z.string().min(1).optional(), middleName: z.string().optional().nullable(), dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), gender: z.enum(['male', 'female', 'other']).optional(), phoneNumber: z.string().min(5).optional(), email: z.string().email().optional().nullable(), address: z.string().min(5).optional(), emergencyContact: z.string().min(5).optional(), maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).optional().nullable(), occupation: z.string().optional().nullable() }) } } },
+    },
+    responses: { 200: { content: { 'application/json': { schema: successData } }, description: 'Updated' }, 400: { content: { 'application/json': { schema: errorSchema } }, description: 'No fields' }, 403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' }, 404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' }, 500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' } },
+  }), async (c) => {
+    try {
+      const userType = c.get('userType');
+      const userId = c.get('userId');
+      const { patientId } = c.req.valid('param');
+      const body = c.req.valid('json');
+      if (!['receptionist', 'admin'].includes(userType)) return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+
+      const sid = await getStaffInstitution(userId);
+      if (sid) { const reg = await db.select().from(patientInstitutionRegistrations).where(and(eq(patientInstitutionRegistrations.patientId, patientId), eq(patientInstitutionRegistrations.institutionId, sid), eq(patientInstitutionRegistrations.isActive, true))).limit(1); if (!reg.length) return c.json({ success: false, error: { message: 'Patient not registered at your institution' } }, 403); }
+
+      const existing = await db.select({ id: patients.id, blockchainAddress: patients.blockchainAddress }).from(patients).where(eq(patients.id, patientId)).limit(1);
+      if (!existing.length) return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
+
+      const u: Record<string, any> = {};
+      if (body.firstName !== undefined) u.firstNameEncrypted = encrypt(body.firstName!);
+      if (body.lastName !== undefined) u.lastNameEncrypted = encrypt(body.lastName!);
+      if (body.middleName !== undefined) u.middleNameEncrypted = body.middleName ? encrypt(body.middleName) : null;
+      if (body.dateOfBirth !== undefined) u.dateOfBirthEncrypted = encrypt(body.dateOfBirth!);
+      if (body.gender !== undefined) u.gender = body.gender;
+      if (body.phoneNumber !== undefined) u.phoneNumberEncrypted = encrypt(body.phoneNumber!);
+      if (body.email !== undefined) u.emailEncrypted = body.email ? encrypt(body.email) : null;
+      if (body.address !== undefined) u.addressEncrypted = encrypt(body.address!);
+      if (body.emergencyContact !== undefined) u.emergencyContactEncrypted = encrypt(body.emergencyContact!);
+      if (body.maritalStatus !== undefined) u.maritalStatus = body.maritalStatus;
+      if (body.occupation !== undefined) u.occupation = body.occupation;
+      if (Object.keys(u).length === 0) return c.json({ success: false, error: { message: 'No fields provided' } }, 400);
+      u.updatedAt = new Date();
+
+      const result = await db.update(patients).set(u).where(eq(patients.id, patientId)).returning();
+      if (!result.length) return c.json({ success: false, error: { message: 'Not found' } }, 404);
+      storeRecordHash(patientId, existing[0].blockchainAddress, generateRecordHash({ patientId, updatedBy: userId, timestamp: new Date().toISOString() }), 'patient_info_update').catch(() => { });
+
+      const r = result[0];
+      return c.json({ success: true, data: { id: r.id, blockchainAddress: r.blockchainAddress, firstName: decrypt(r.firstNameEncrypted), lastName: decrypt(r.lastNameEncrypted), middleName: r.middleNameEncrypted ? decrypt(r.middleNameEncrypted) : undefined, dateOfBirth: decrypt(r.dateOfBirthEncrypted), gender: r.gender, bloodType: r.bloodType, phoneNumber: decrypt(r.phoneNumberEncrypted), email: r.emailEncrypted ? decrypt(r.emailEncrypted) : undefined, address: decrypt(r.addressEncrypted), emergencyContact: decrypt(r.emergencyContactEncrypted), nationalId: decrypt(r.nationalIdEncrypted), maritalStatus: r.maritalStatus || undefined, occupation: r.occupation || undefined, isActive: r.isActive, createdAt: r.createdAt.toISOString() } });
+    } catch (err: any) { console.error('[UPDATE]', err); return c.json({ success: false, error: { message: 'Internal server error' } }, 500); }
+  })
+
+  // ── RESET PASSWORD ────────────────────────────────────────────────────────
+  .openapi(createRoute({
+    tags: ['Patients'], summary: 'Reset patient password — receptionist accessible',
+    method: 'post', path: '/:patientId/reset-password',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    request: { params: z.object({ patientId: z.string().uuid() }), body: { content: { 'application/json': { schema: z.object({ newPassword: z.string().min(8) }) } } } },
+    responses: { 200: { content: { 'application/json': { schema: successData } }, description: 'Reset' }, 403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' }, 404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' }, 500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' } },
+  }), async (c) => {
+    try {
+      const userType = c.get('userType');
+      const userId = c.get('userId');
+      const { patientId } = c.req.valid('param');
+      const { newPassword } = c.req.valid('json');
+      if (!['receptionist', 'admin'].includes(userType)) return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+
+      const sid = await getStaffInstitution(userId);
+      if (sid) { const reg = await db.select().from(patientInstitutionRegistrations).where(and(eq(patientInstitutionRegistrations.patientId, patientId), eq(patientInstitutionRegistrations.institutionId, sid), eq(patientInstitutionRegistrations.isActive, true))).limit(1); if (!reg.length) return c.json({ success: false, error: { message: 'Patient not registered at your institution' } }, 403); }
+
+      const existing = await db.select({ id: patients.id, blockchainAddress: patients.blockchainAddress }).from(patients).where(eq(patients.id, patientId)).limit(1);
+      if (!existing.length) return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
+
+      await db.update(patients).set({ passwordHash: hashData(newPassword), updatedAt: new Date() }).where(eq(patients.id, patientId));
+      storeRecordHash(patientId, existing[0].blockchainAddress, generateRecordHash({ patientId, resetBy: userId, timestamp: new Date().toISOString() }), 'patient_password_reset').catch(() => { });
+
+      return c.json({ success: true, data: { message: 'Password reset successfully. Advise the patient to change it after logging in.' } });
+    } catch (err: any) { console.error('[RESET-PASSWORD]', err); return c.json({ success: false, error: { message: 'Internal server error' } }, 500); }
   });

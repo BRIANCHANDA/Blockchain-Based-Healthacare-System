@@ -7,6 +7,7 @@ import { useAuthStore } from "../store/authStore";
 import { RootStackParamList } from "../types";
 import AuthNavigator from "./AuthNavigator";
 import MainNavigator from "./MainNavigator";
+import ReferralsScreen from "../screens/referrals/ReferralsScreen";
 import { useNotifications } from "../hooks/useNotifications";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();

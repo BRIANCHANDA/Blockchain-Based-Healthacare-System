@@ -1,10 +1,11 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq, desc, inArray } from 'drizzle-orm';
+import { eq, desc, inArray, and } from 'drizzle-orm';
 import { db } from '../db';
 import {
   visits, consultations, diagnoses, vitalSigns,
   labTestOrders, labTestResults, imagingOrders,
-  prescriptions, patients, auditLogs
+  prescriptions, patients, auditLogs, practitioners,
+  patientInstitutionRegistrations,
 } from '../db/schema';
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
@@ -17,30 +18,55 @@ const errorSchema = z.object({
   error: z.object({ message: z.string() }),
 });
 
-// ── Helper: verify blockchain permission and log access ─────────────────
-async function verifyAccess(
+// ── Helper: get staff institution ID ─────────────────────────────────────────
+async function getStaffInstitutionId(staffUserId: string): Promise<string | null> {
+  const row = await db
+    .select({ institutionId: practitioners.institutionId })
+    .from(practitioners)
+    .where(eq(practitioners.id, staffUserId))
+    .limit(1);
+  return row[0]?.institutionId ?? null;
+}
+
+// ── Helper: is patient registered (active) at institution ────────────────────
+async function isPatientRegisteredAtInstitution(
+  patientId: string,
+  institutionId: string,
+): Promise<boolean> {
+  const reg = await db
+    .select({ id: patientInstitutionRegistrations.id })
+    .from(patientInstitutionRegistrations)
+    .where(and(
+      eq(patientInstitutionRegistrations.patientId, patientId),
+      eq(patientInstitutionRegistrations.institutionId, institutionId),
+      eq(patientInstitutionRegistrations.isActive, true),
+    ))
+    .limit(1);
+  return reg.length > 0;
+}
+
+// ── Helper: check blockchain permission + audit ───────────────────────────────
+async function verifyBlockchainAccess(
   patientBlockchainAddress: string,
   practitionerBlockchainAddress: string,
   practitionerId: string,
   patientId: string,
   resourceType: string,
   resourceId: string,
-  ipAddress?: string
+  ipAddress?: string,
 ): Promise<boolean> {
   const hasPermission = await checkPermission(
     patientBlockchainAddress,
-    practitionerBlockchainAddress
+    practitionerBlockchainAddress,
   );
 
-  // Log the access attempt on blockchain regardless of outcome
   const logResult = await logAccess(
     patientBlockchainAddress,
     resourceId,
     `${hasPermission ? 'GRANTED' : 'DENIED'}: ${resourceType}`,
-    hasPermission
+    hasPermission,
   );
 
-  // Also log in DB audit table
   await db.insert(auditLogs).values({
     userId: practitionerId,
     userType: 'practitioner',
@@ -55,12 +81,85 @@ async function verifyAccess(
   return hasPermission;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ACCESS + SCOPE RESOLUTION
+//
+// Rules applied consistently across every read endpoint:
+//
+//   userType === 'patient'
+//     → always allowed; sees ALL their own visits across all institutions
+//
+//   userType === 'practitioner' / 'nurse' / staff
+//     → Case 1: explicit blockchain permission granted by patient
+//               → allowed; sees ALL visits (patient consented to full history)
+//     → Case 2: no blockchain permission BUT patient is registered at staff's
+//               institution (implicit institutional access)
+//               → allowed; scoped to visits AT THAT INSTITUTION ONLY
+//     → Case 3: neither
+//               → 403 denied
+//
+// This means: a doctor at Hospital A with implicit access sees only Hospital A
+// visits. A doctor who the patient explicitly granted blockchain permission sees
+// everything (e.g. for referral continuity).
+// ─────────────────────────────────────────────────────────────────────────────
+
+type AccessResult =
+  | { allowed: false }
+  | { allowed: true; scopeInstitutionId: string | null }; // null = all institutions
+
+async function resolveAccess(
+  userType: string,
+  userId: string,
+  practitionerBlockchainAddress: string,
+  patientId: string,
+  patientBlockchainAddress: string,
+  resourceType: string,
+  resourceId: string,
+  ipAddress?: string,
+): Promise<AccessResult> {
+
+  // Patients always see their own data, no institution scoping
+  if (userType === 'patient') {
+    return { allowed: true, scopeInstitutionId: null };
+  }
+
+  // Staff: check blockchain permission first (explicit patient consent = full access)
+  const hasBlockchainPerm = await verifyBlockchainAccess(
+    patientBlockchainAddress,
+    practitionerBlockchainAddress,
+    userId,
+    patientId,
+    resourceType,
+    resourceId,
+    ipAddress,
+  );
+
+  if (hasBlockchainPerm) {
+    // Patient explicitly granted this practitioner access → full history
+    return { allowed: true, scopeInstitutionId: null };
+  }
+
+  // No blockchain permission — check implicit institutional access
+  const institutionId = await getStaffInstitutionId(userId);
+  if (institutionId) {
+    const isRegistered = await isPatientRegisteredAtInstitution(patientId, institutionId);
+    if (isRegistered) {
+      // Implicit access — scope strictly to this institution's records
+      return { allowed: true, scopeInstitutionId: institutionId };
+    }
+  }
+
+  return { allowed: false };
+}
+
 export const recordRouter = createRouter()
 
-  // ── GET PATIENT VISITS ────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+  // GET /visits/:patientId
+  // ══════════════════════════════════════════════════════════════════════════
   .openapi(createRoute({
     tags: ['Records'],
-    summary: 'Get all visits for a patient (requires blockchain permission)',
+    summary: 'Get visits for a patient (institution-scoped unless blockchain permission granted)',
     method: 'get',
     path: '/visits/:patientId',
     security: [{ bearerAuth: [] }],
@@ -70,10 +169,20 @@ export const recordRouter = createRouter()
     },
     responses: {
       200: {
-        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ visits: z.array(z.any()) }) }) } },
+        content: {
+          'application/json': {
+            schema: z.object({
+              success: z.boolean(),
+              data: z.object({
+                visits: z.array(z.any()),
+                scopedToInstitution: z.boolean(),
+              }),
+            }),
+          },
+        },
         description: 'Patient visits',
       },
-      403: { content: { 'application/json': { schema: errorSchema } }, description: 'No blockchain permission' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'No permission' },
       404: { content: { 'application/json': { schema: errorSchema } }, description: 'Patient not found' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
@@ -82,52 +191,60 @@ export const recordRouter = createRouter()
       const { patientId } = c.req.valid('param');
       const userId = c.get('userId');
       const userType = c.get('userType');
-      const practitionerBlockchainAddress = c.get('blockchainAddress');
+      const blockchainAddress = c.get('blockchainAddress');
       const ip = c.req.header('x-forwarded-for');
 
-      // Get patient blockchain address
-      const patient = await db.select({
-        id: patients.id,
-        blockchainAddress: patients.blockchainAddress,
-      }).from(patients).where(eq(patients.id, patientId)).limit(1);
+      const patient = await db
+        .select({ id: patients.id, blockchainAddress: patients.blockchainAddress })
+        .from(patients)
+        .where(eq(patients.id, patientId))
+        .limit(1);
 
-      if (!patient.length) {
+      if (!patient.length)
         return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
+
+      const access = await resolveAccess(
+        userType, userId, blockchainAddress,
+        patientId, patient[0].blockchainAddress,
+        'visits', patientId, ip,
+      );
+
+      if (!access.allowed)
+        return c.json({ success: false, error: { message: 'Access denied — patient has not granted you permission' } }, 403);
+
+      // ── Scope the query ───────────────────────────────────────────────────
+      const conditions = [eq(visits.patientId, patientId)];
+      if (access.scopeInstitutionId) {
+        // Implicit access — restrict to staff's institution only
+        conditions.push(eq(visits.institutionId, access.scopeInstitutionId));
       }
+      // null scopeInstitutionId → blockchain permission granted → no extra filter
 
-      // Patients can always see their own records
-      if (userType !== 'patient') {
-        const hasAccess = await verifyAccess(
-          patient[0].blockchainAddress,
-          practitionerBlockchainAddress,
-          userId,
-          patientId,
-          'visits',
-          patientId,
-          ip
-        );
-
-        if (!hasAccess) {
-          return c.json({ success: false, error: { message: 'Access denied - patient has not granted you permission' } }, 403);
-        }
-      }
-
-      const patientVisits = await db.select().from(visits)
-        .where(eq(visits.patientId, patientId))
+      const patientVisits = await db
+        .select()
+        .from(visits)
+        .where(and(...conditions))
         .orderBy(desc(visits.admissionDate));
 
-      return c.json({ success: true, data: { visits: patientVisits } });
-
+      return c.json({
+        success: true,
+        data: {
+          visits: patientVisits,
+          scopedToInstitution: !!access.scopeInstitutionId,
+        },
+      });
     } catch (err: any) {
-      console.error('Get patient visits error:', err);
+      console.error('[RECORD_VISITS]', err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   })
 
-  // ── GET VISIT DETAILS (full record) ──────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+  // GET /visits/:patientId/:visitId  — full visit detail
+  // ══════════════════════════════════════════════════════════════════════════
   .openapi(createRoute({
     tags: ['Records'],
-    summary: 'Get full details of a visit including consultations, labs, imaging, prescriptions',
+    summary: 'Get full details of a visit (scoped by institution or blockchain permission)',
     method: 'get',
     path: '/visits/:patientId/:visitId',
     security: [{ bearerAuth: [] }],
@@ -144,7 +261,7 @@ export const recordRouter = createRouter()
         description: 'Full visit record',
       },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'No permission' },
-      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Patient or visit not found' },
+      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
@@ -152,45 +269,48 @@ export const recordRouter = createRouter()
       const { patientId, visitId } = c.req.valid('param');
       const userId = c.get('userId');
       const userType = c.get('userType');
-      const practitionerBlockchainAddress = c.get('blockchainAddress');
+      const blockchainAddress = c.get('blockchainAddress');
       const ip = c.req.header('x-forwarded-for');
 
-      // Get patient for blockchain check
-      const patient = await db.select({
-        blockchainAddress: patients.blockchainAddress
-      }).from(patients).where(eq(patients.id, patientId)).limit(1);
+      const patient = await db
+        .select({ blockchainAddress: patients.blockchainAddress })
+        .from(patients)
+        .where(eq(patients.id, patientId))
+        .limit(1);
 
-      if (!patient.length) {
+      if (!patient.length)
         return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
+
+      const access = await resolveAccess(
+        userType, userId, blockchainAddress,
+        patientId, patient[0].blockchainAddress,
+        'visit_detail', visitId, ip,
+      );
+
+      if (!access.allowed)
+        return c.json({ success: false, error: { message: 'Access denied — no permission' } }, 403);
+
+      // ── If institution-scoped, verify this visit belongs to that institution
+      if (access.scopeInstitutionId) {
+        const visitCheck = await db
+          .select({ institutionId: visits.institutionId })
+          .from(visits)
+          .where(and(eq(visits.id, visitId), eq(visits.patientId, patientId)))
+          .limit(1);
+
+        if (!visitCheck.length)
+          return c.json({ success: false, error: { message: 'Visit not found' } }, 404);
+
+        if (visitCheck[0].institutionId !== access.scopeInstitutionId)
+          return c.json({ success: false, error: { message: 'Access denied — this visit belongs to another institution' } }, 403);
       }
 
-      // Check permission for non-patients
-      if (userType !== 'patient') {
-        const hasAccess = await verifyAccess(
-          patient[0].blockchainAddress,
-          practitionerBlockchainAddress,
-          userId,
-          patientId,
-          'visit_detail',
-          visitId,
-          ip
-        );
-        if (!hasAccess) {
-          return c.json({ success: false, error: { message: 'Access denied - no blockchain permission' } }, 403);
-        }
-      }
-
-      // Fetch all visit data in parallel
+      // ── Fetch all visit data in parallel ──────────────────────────────────
       const [
-        visitData,
-        consultationData,
-        diagnosisData,
-        vitalData,
-        labOrders,
-        imagingOrderData,
-        prescriptionData,
+        visitData, consultationData, diagnosisData, vitalData,
+        labOrders, imagingOrderData, prescriptionData,
       ] = await Promise.all([
-        db.select().from(visits).where(eq(visits.id, visitId)).limit(1),
+        db.select().from(visits).where(and(eq(visits.id, visitId), eq(visits.patientId, patientId))).limit(1),
         db.select().from(consultations).where(eq(consultations.visitId, visitId)),
         db.select().from(diagnoses).where(eq(diagnoses.visitId, visitId)),
         db.select().from(vitalSigns).where(eq(vitalSigns.visitId, visitId)).orderBy(desc(vitalSigns.recordedAt)),
@@ -199,9 +319,8 @@ export const recordRouter = createRouter()
         db.select().from(prescriptions).where(eq(prescriptions.visitId, visitId)),
       ]);
 
-      if (!visitData.length) {
+      if (!visitData.length)
         return c.json({ success: false, error: { message: 'Visit not found' } }, 404);
-      }
 
       return c.json({
         success: true,
@@ -213,19 +332,20 @@ export const recordRouter = createRouter()
           labOrders,
           imagingOrders: imagingOrderData,
           prescriptions: prescriptionData,
-        }
+        },
       });
-
     } catch (err: any) {
-      console.error('Get visit details error:', err);
+      console.error('[RECORD_VISIT_DETAIL]', err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   })
 
-  // ── CREATE VISIT ──────────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+  // POST /visits  — create visit
+  // ══════════════════════════════════════════════════════════════════════════
   .openapi(createRoute({
     tags: ['Records'],
-    summary: 'Create a new visit/encounter for a patient',
+    summary: 'Create a new visit for a patient',
     method: 'post',
     path: '/visits',
     security: [{ bearerAuth: [] }],
@@ -245,14 +365,25 @@ export const recordRouter = createRouter()
               admittingDiagnosis: z.string().optional(),
               wardOrRoom: z.string().optional(),
               bedNumber: z.string().optional(),
-            })
-          }
+            }),
+          },
         },
       },
     },
     responses: {
       201: {
-        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ visitId: z.string(), visitNumber: z.string(), blockchainHash: z.string() }) }) } },
+        content: {
+          'application/json': {
+            schema: z.object({
+              success: z.boolean(),
+              data: z.object({
+                visitId: z.string(),
+                visitNumber: z.string(),
+                blockchainHash: z.string(),
+              }),
+            }),
+          },
+        },
         description: 'Visit created',
       },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
@@ -262,28 +393,24 @@ export const recordRouter = createRouter()
   }), async (c) => {
     try {
       const userType = c.get('userType');
-      if (!['practitioner', 'nurse'].includes(userType)) {
-        return c.json({ success: false, error: { message: 'Only practitioners or nurses can create visits' } }, 403);
-      }
+      if (!['practitioner', 'nurse', 'receptionist'].includes(userType))
+        return c.json({ success: false, error: { message: 'Only clinical staff can create visits' } }, 403);
 
       const body = c.req.valid('json');
       const userId = c.get('userId');
       const ip = c.req.header('x-forwarded-for');
 
-      // Get patient blockchain address
-      const patient = await db.select({
-        id: patients.id,
-        blockchainAddress: patients.blockchainAddress,
-      }).from(patients).where(eq(patients.id, body.patientId)).limit(1);
+      const patient = await db
+        .select({ id: patients.id, blockchainAddress: patients.blockchainAddress })
+        .from(patients)
+        .where(eq(patients.id, body.patientId))
+        .limit(1);
 
-      if (!patient.length) {
+      if (!patient.length)
         return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
-      }
 
-      // Generate visit number
       const visitNumber = `VIS-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 
-      // Generate hash of the visit data
       const visitHash = generateRecordHash({
         patientId: body.patientId,
         visitType: body.visitType,
@@ -292,8 +419,7 @@ export const recordRouter = createRouter()
         timestamp: new Date().toISOString(),
       });
 
-      // First insert the visit into the database (so we get the DB-generated ID)
-      const result = await db.insert(visits).values({
+      const [result] = await db.insert(visits).values({
         patientId: body.patientId,
         institutionId: body.institutionId ?? null,
         departmentId: body.departmentId ?? null,
@@ -307,48 +433,38 @@ export const recordRouter = createRouter()
         wardOrRoom: body.wardOrRoom ?? null,
         bedNumber: body.bedNumber ?? null,
         status: 'in-progress',
-        blockchainHash: visitHash, // store hash in DB
+        blockchainHash: visitHash,
       }).returning({ id: visits.id, visitNumber: visits.visitNumber });
 
-      // Now store the hash on the blockchain using the DB-generated ID as resource ID
-      await storeRecordHash(
-        result[0].id,
-        patient[0].blockchainAddress,
-        visitHash,
-        'visit'
-      );
+      await storeRecordHash(result.id, patient[0].blockchainAddress, visitHash, 'visit');
 
-      // Audit log
       await db.insert(auditLogs).values({
         userId,
         userType,
         patientId: body.patientId,
         actionType: 'create',
         resourceType: 'visit',
-        resourceId: result[0].id,
-        blockchainTransactionId: crypto.randomBytes(16).toString('hex'), // if storeRecordHash returns txId, use it
+        resourceId: result.id,
+        blockchainTransactionId: crypto.randomBytes(16).toString('hex'),
         ipAddress: ip,
       });
 
       return c.json({
         success: true,
-        data: {
-          visitId: result[0].id,
-          visitNumber: result[0].visitNumber,
-          blockchainHash: visitHash,
-        }
+        data: { visitId: result.id, visitNumber: result.visitNumber, blockchainHash: visitHash },
       }, 201);
-
     } catch (err: any) {
-      console.error('Create visit error:', err);
+      console.error('[RECORD_CREATE_VISIT]', err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   })
 
-  // ── GET LAB RESULTS ───────────────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+  // GET /labs/:visitId
+  // ══════════════════════════════════════════════════════════════════════════
   .openapi(createRoute({
     tags: ['Records'],
-    summary: 'Get lab test results for a visit',
+    summary: 'Get lab results for a visit (institution-scoped or blockchain permission)',
     method: 'get',
     path: '/labs/:visitId',
     security: [{ bearerAuth: [] }],
@@ -362,7 +478,7 @@ export const recordRouter = createRouter()
         description: 'Lab results',
       },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
-      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Visit not found' },
+      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
@@ -370,65 +486,59 @@ export const recordRouter = createRouter()
       const { visitId } = c.req.valid('param');
       const userId = c.get('userId');
       const userType = c.get('userType');
-      const practitionerBlockchainAddress = c.get('blockchainAddress');
+      const blockchainAddress = c.get('blockchainAddress');
       const ip = c.req.header('x-forwarded-for');
 
-      // Get visit to find patientId
-      const visit = await db.select({ patientId: visits.patientId })
+      // Resolve visit → patient
+      const visit = await db
+        .select({ patientId: visits.patientId, institutionId: visits.institutionId })
         .from(visits)
         .where(eq(visits.id, visitId))
         .limit(1);
 
-      if (!visit.length) {
+      if (!visit.length)
         return c.json({ success: false, error: { message: 'Visit not found' } }, 404);
-      }
 
-      const patientId = visit[0].patientId;
+      const { patientId, institutionId: visitInstitutionId } = visit[0];
 
-      // Get patient blockchain address
-      const patient = await db.select({ blockchainAddress: patients.blockchainAddress })
+      const patient = await db
+        .select({ blockchainAddress: patients.blockchainAddress })
         .from(patients)
         .where(eq(patients.id, patientId))
         .limit(1);
 
-      if (!patient.length) {
+      if (!patient.length)
         return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
-      }
 
-      // Permission check (patients can view their own)
-      if (userType !== 'patient') {
-        const hasAccess = await verifyAccess(
-          patient[0].blockchainAddress,
-          practitionerBlockchainAddress,
-          userId,
-          patientId,
-          'lab_results',
-          visitId,
-          ip
-        );
-        if (!hasAccess) {
-          return c.json({ success: false, error: { message: 'Access denied - no permission' } }, 403);
-        }
-      }
+      const access = await resolveAccess(
+        userType, userId, blockchainAddress,
+        patientId, patient[0].blockchainAddress,
+        'lab_results', visitId, ip,
+      );
 
-      const orders = await db.select().from(labTestOrders)
-        .where(eq(labTestOrders.visitId, visitId));
+      if (!access.allowed)
+        return c.json({ success: false, error: { message: 'Access denied — no permission' } }, 403);
 
+      // Institution-scoped: verify the visit belongs to staff's institution
+      if (access.scopeInstitutionId && visitInstitutionId !== access.scopeInstitutionId)
+        return c.json({ success: false, error: { message: 'Access denied — this visit belongs to another institution' } }, 403);
+
+      const orders = await db.select().from(labTestOrders).where(eq(labTestOrders.visitId, visitId));
       const orderIds = orders.map(o => o.id);
       const results = orderIds.length > 0
-        ? await db.select().from(labTestResults)
-            .where(inArray(labTestResults.labTestOrderId, orderIds))
+        ? await db.select().from(labTestResults).where(inArray(labTestResults.labTestOrderId, orderIds))
         : [];
 
       return c.json({ success: true, data: { orders, results } });
-
     } catch (err: any) {
-      console.error('Get lab results error:', err);
+      console.error('[RECORD_LABS]', err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   })
 
-  // ── VERIFY RECORD INTEGRITY ───────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════
+  // POST /verify  — blockchain integrity check
+  // ══════════════════════════════════════════════════════════════════════════
   .openapi(createRoute({
     tags: ['Records'],
     summary: 'Verify a record has not been tampered with using blockchain hash',
@@ -443,9 +553,9 @@ export const recordRouter = createRouter()
             schema: z.object({
               recordId: z.string(),
               recordData: z.any(),
-            })
-          }
-        }
+            }),
+          },
+        },
       },
     },
     responses: {
@@ -454,12 +564,9 @@ export const recordRouter = createRouter()
           'application/json': {
             schema: z.object({
               success: z.boolean(),
-              data: z.object({
-                isValid: z.boolean(),
-                message: z.string(),
-              })
-            })
-          }
+              data: z.object({ isValid: z.boolean(), message: z.string() }),
+            }),
+          },
         },
         description: 'Verification result',
       },
@@ -469,7 +576,6 @@ export const recordRouter = createRouter()
     try {
       const { recordId, recordData } = c.req.valid('json');
       const currentHash = generateRecordHash(recordData);
-
       const isValid = await verifyRecordHash(recordId, currentHash);
 
       return c.json({
@@ -479,11 +585,10 @@ export const recordRouter = createRouter()
           message: isValid
             ? 'Record integrity verified — data matches blockchain'
             : 'WARNING: Record may have been tampered with',
-        }
+        },
       });
-
     } catch (err: any) {
-      console.error('Verify record error:', err);
+      console.error('[RECORD_VERIFY]', err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   });

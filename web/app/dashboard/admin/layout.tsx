@@ -145,8 +145,8 @@ export default function AdminLayout({
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
         style={{
           width: 232,
-          background: "linear-gradient(180deg, #0f172a 0%, #1e293b 100%)",
-          borderRight: "1px solid rgba(12, 172, 52, 0.06)",
+          background: "linear-gradient(180deg, #03350c 0%, #057c21 100%)",
+          borderRight: "1px solid rgba(5, 150, 42, 0.06)",
           flexShrink: 0,
         }}
       >
@@ -154,7 +154,7 @@ export default function AdminLayout({
         <div
           style={{
             padding: "20px 20px 16px",
-            borderBottom: "1px solid rgba(255,255,255,0.07)",
+            borderBottom: "1px solid rgba(5, 151, 39, 0.07)",
           }}
         >
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -225,7 +225,7 @@ export default function AdminLayout({
         <div
           style={{
             padding: "10px 20px",
-            borderBottom: "1px solid rgba(255,255,255,0.06)",
+            borderBottom: "1px solid rgba(0, 102, 46, 0.06)",
           }}
         >
           <span
@@ -401,7 +401,7 @@ export default function AdminLayout({
           >
             <span style={{ color: "#9ba3af" }}>Admin</span>
             <ChevronRight size={13} style={{ color: "#d1d5db" }} />
-            <span style={{ color: "#111827", fontWeight: 600 }}>
+            <span style={{ color: "#112719", fontWeight: 600 }}>
               {activeLabel}
             </span>
           </div>

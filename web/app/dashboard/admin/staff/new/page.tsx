@@ -1,8 +1,14 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
-import { ArrowLeft, UserPlus, AlertCircle, CheckCircle2 } from "lucide-react";
+import { api, institutionApi } from "@/lib/api";
+import {
+  ArrowLeft,
+  UserPlus,
+  AlertCircle,
+  CheckCircle2,
+  Loader2,
+} from "lucide-react";
 
 const ROLES = [
   { value: "practitioner", label: "Doctor / Practitioner" },
@@ -12,6 +18,29 @@ const ROLES = [
   { value: "pharmacist", label: "Pharmacist" },
   { value: "receptionist", label: "Receptionist" },
   { value: "admin", label: "Admin" },
+];
+
+const DEPARTMENTS = [
+  "Emergency Department",
+  "Internal Medicine",
+  "Surgery",
+  "Pediatrics",
+  "Obstetrics & Gynecology",
+  "Cardiology",
+  "Neurology",
+  "Orthopedics",
+  "Oncology",
+  "Radiology",
+  "Pathology & Laboratory",
+  "Pharmacy",
+  "Physiotherapy",
+  "Anesthesiology",
+  "Psychiatry",
+  "Intensive Care Unit (ICU)",
+  "Neonatal ICU",
+  "Outpatient Department",
+  "Administration",
+  "Other",
 ];
 
 const SPECIALIZATIONS: Record<string, string[]> = {
@@ -84,14 +113,22 @@ export default function NewStaffPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
 
+  // Institutions
+  const [institutions, setInstitutions] = useState<
+    Array<{ id: string; name: string }>
+  >([]);
+  const [loadingInstitutions, setLoadingInstitutions] = useState(true);
+
+  // Form state
   const [form, setForm] = useState({
     role: "practitioner",
     firstName: "",
     lastName: "",
     licenseNumber: "",
     institutionalId: "",
-    specialization: "",
+    institutionId: "",
     department: "",
+    specialization: "",
     shift: "",
     phoneNumber: "",
     email: "",
@@ -100,46 +137,89 @@ export default function NewStaffPage() {
     qualifications: "",
   });
 
-  const set = (key: string, value: string) =>
-    setForm((f) => ({ ...f, [key]: value }));
+  const setFormField = (key: string, value: string) =>
+    setForm((prev) => ({ ...prev, [key]: value }));
+
+  // Fetch institutions
+  useEffect(() => {
+    const fetchInstitutions = async () => {
+      try {
+        const res = await institutionApi.list();
+        const list = res.data.data?.institutions || [];
+        setInstitutions(
+          list.map((inst: any) => ({
+            id: inst.id,
+            name: inst.institutionName,
+          })),
+        );
+      } catch (err) {
+        console.error(err);
+        setError("Could not load hospital list. Please refresh.");
+      } finally {
+        setLoadingInstitutions(false);
+      }
+    };
+    fetchInstitutions();
+  }, []);
+
+  const handleInstitutionSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setFormField("institutionId", e.target.value);
+  };
+
+  const handleDepartmentSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    setFormField("department", e.target.value);
+  };
 
   const handleSubmit = async () => {
     setError("");
+
+    // Required fields validation
     if (
       !form.firstName ||
       !form.lastName ||
       !form.licenseNumber ||
       !form.email ||
-      !form.password
+      !form.institutionId
     ) {
-      setError("Please fill in all required fields.");
-      return;
-    }
-    if (form.password !== form.confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-    if (form.password.length < 8) {
-      setError("Password must be at least 8 characters.");
+      setError("Please fill in all required fields, including Hospital.");
       return;
     }
 
+    // Password is optional – if provided, must match and be >=8 characters
+    if (form.password) {
+      if (form.password !== form.confirmPassword) {
+        setError("Passwords do not match.");
+        return;
+      }
+      if (form.password.length < 8) {
+        setError("Password must be at least 8 characters.");
+        return;
+      }
+    }
+
+    // Ensure institutionalId is not empty – fallback to licenseNumber
+    const finalInstitutionalId =
+      form.institutionalId?.trim() || form.licenseNumber;
+
     setSubmitting(true);
     try {
-      await api.post("/api/auth/register/staff", {
+      const payload = {
         role: form.role,
         firstName: form.firstName,
         lastName: form.lastName,
         licenseNumber: form.licenseNumber,
-        institutionalId: form.institutionalId || form.licenseNumber,
-        specialization: form.specialization || undefined,
+        institutionalId: finalInstitutionalId,
+        institutionId: form.institutionId,
         department: form.department || undefined,
+        specialization: form.specialization || undefined,
         shift: form.shift || undefined,
         phoneNumber: form.phoneNumber,
         email: form.email,
-        password: form.password,
+        password: form.password || undefined, // send only if provided
         qualifications: form.qualifications || undefined,
-      });
+      };
+
+      await api.post("/api/auth/register/staff", payload);
       setSuccess(true);
     } catch (err: any) {
       setError(
@@ -167,8 +247,7 @@ export default function NewStaffPage() {
             Staff Member Created
           </h2>
           <p className="text-sm text-gray-500 mb-6">
-            {form.firstName} {form.lastName} has been added to the system and is
-            pending verification.
+            {form.firstName} {form.lastName} has been added to the system.
           </p>
           <div className="flex gap-3 justify-center">
             <button
@@ -189,8 +268,9 @@ export default function NewStaffPage() {
                   lastName: "",
                   licenseNumber: "",
                   institutionalId: "",
-                  specialization: "",
+                  institutionId: "",
                   department: "",
+                  specialization: "",
                   shift: "",
                   phoneNumber: "",
                   email: "",
@@ -260,7 +340,7 @@ export default function NewStaffPage() {
           {ROLES.map(({ value, label }) => (
             <button
               key={value}
-              onClick={() => set("role", value)}
+              onClick={() => setFormField("role", value)}
               className="px-3 py-2.5 rounded-xl text-xs font-semibold border transition-all text-center"
               style={
                 form.role === value
@@ -287,24 +367,21 @@ export default function NewStaffPage() {
           <Field label="First Name" required>
             <input
               value={form.firstName}
-              onChange={(e) => set("firstName", e.target.value)}
-              placeholder="e.g. John"
+              onChange={(e) => setFormField("firstName", e.target.value)}
               className={inputClass}
             />
           </Field>
           <Field label="Last Name" required>
             <input
               value={form.lastName}
-              onChange={(e) => set("lastName", e.target.value)}
-              placeholder="e.g. Doe"
+              onChange={(e) => setFormField("lastName", e.target.value)}
               className={inputClass}
             />
           </Field>
           <Field label="Phone Number">
             <input
               value={form.phoneNumber}
-              onChange={(e) => set("phoneNumber", e.target.value)}
-              placeholder="e.g. +260971234567"
+              onChange={(e) => setFormField("phoneNumber", e.target.value)}
               className={inputClass}
             />
           </Field>
@@ -312,15 +389,14 @@ export default function NewStaffPage() {
             <input
               type="email"
               value={form.email}
-              onChange={(e) => set("email", e.target.value)}
-              placeholder="e.g. john@hospital.com"
+              onChange={(e) => setFormField("email", e.target.value)}
               className={inputClass}
             />
           </Field>
         </div>
       </div>
 
-      {/* Professional info */}
+      {/* Professional details */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-4">
         <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-4">
           Professional Details
@@ -329,33 +405,72 @@ export default function NewStaffPage() {
           <Field label="License Number" required>
             <input
               value={form.licenseNumber}
-              onChange={(e) => set("licenseNumber", e.target.value)}
-              placeholder="e.g. MD-2024-001"
+              onChange={(e) => setFormField("licenseNumber", e.target.value)}
               className={inputClass}
             />
           </Field>
-          <Field label="Institutional ID">
-            <input
-              value={form.institutionalId}
-              onChange={(e) => set("institutionalId", e.target.value)}
-              placeholder="e.g. HSP-001 (defaults to license)"
-              className={inputClass}
-            />
+
+          <Field label="Hospital / Institution" required>
+            {loadingInstitutions ? (
+              <div className="flex items-center gap-2 text-gray-500">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading
+                hospitals...
+              </div>
+            ) : (
+              <select
+                value={form.institutionId}
+                onChange={handleInstitutionSelect}
+                className={inputClass}
+              >
+                <option value="">Select Hospital *</option>
+                {institutions.map((inst) => (
+                  <option key={inst.id} value={inst.id}>
+                    {inst.name}
+                  </option>
+                ))}
+              </select>
+            )}
           </Field>
+
           <Field label="Department">
-            <input
+            <select
               value={form.department}
-              onChange={(e) => set("department", e.target.value)}
-              placeholder="e.g. Emergency, ICU"
+              onChange={handleDepartmentSelect}
               className={inputClass}
-            />
+            >
+              <option value="">Select Department (optional)</option>
+              {DEPARTMENTS.map((dept) => (
+                <option key={dept} value={dept}>
+                  {dept}
+                </option>
+              ))}
+            </select>
           </Field>
+
+          {showShift && (
+            <Field label="Shift">
+              <select
+                value={form.shift}
+                onChange={(e) => setFormField("shift", e.target.value)}
+                className={inputClass}
+              >
+                <option value="">Select shift</option>
+                <option value="morning">Morning</option>
+                <option value="afternoon">Afternoon</option>
+                <option value="night">Night</option>
+                <option value="rotating">Rotating</option>
+              </select>
+            </Field>
+          )}
+
           {showSpecialization && (
             <Field label="Specialization">
               {SPECIALIZATIONS[form.role] ? (
                 <select
                   value={form.specialization}
-                  onChange={(e) => set("specialization", e.target.value)}
+                  onChange={(e) =>
+                    setFormField("specialization", e.target.value)
+                  }
                   className={inputClass}
                 >
                   <option value="">Select specialization</option>
@@ -368,33 +483,21 @@ export default function NewStaffPage() {
               ) : (
                 <input
                   value={form.specialization}
-                  onChange={(e) => set("specialization", e.target.value)}
+                  onChange={(e) =>
+                    setFormField("specialization", e.target.value)
+                  }
                   placeholder="Specialization"
                   className={inputClass}
                 />
               )}
             </Field>
           )}
-          {showShift && (
-            <Field label="Shift">
-              <select
-                value={form.shift}
-                onChange={(e) => set("shift", e.target.value)}
-                className={inputClass}
-              >
-                <option value="">Select shift</option>
-                <option value="morning">Morning</option>
-                <option value="afternoon">Afternoon</option>
-                <option value="night">Night</option>
-                <option value="rotating">Rotating</option>
-              </select>
-            </Field>
-          )}
+
           {showQualifications && (
             <Field label="Qualifications">
               <input
                 value={form.qualifications}
-                onChange={(e) => set("qualifications", e.target.value)}
+                onChange={(e) => setFormField("qualifications", e.target.value)}
                 placeholder="e.g. MBChB, MMED"
                 className={inputClass}
               />
@@ -403,26 +506,26 @@ export default function NewStaffPage() {
         </div>
       </div>
 
-      {/* Password */}
+      {/* Password – optional with note */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
         <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-4">
           Account Password
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Password" required>
+          <Field label="Password (optional)">
             <input
               type="password"
               value={form.password}
-              onChange={(e) => set("password", e.target.value)}
-              placeholder="Min. 8 characters"
+              onChange={(e) => setFormField("password", e.target.value)}
+              placeholder="Leave blank for default: test1234"
               className={inputClass}
             />
           </Field>
-          <Field label="Confirm Password" required>
+          <Field label="Confirm Password">
             <input
               type="password"
               value={form.confirmPassword}
-              onChange={(e) => set("confirmPassword", e.target.value)}
+              onChange={(e) => setFormField("confirmPassword", e.target.value)}
               placeholder="Repeat password"
               className={inputClass}
             />
@@ -439,44 +542,22 @@ export default function NewStaffPage() {
       <div className="flex gap-3 justify-end">
         <button
           onClick={() => router.back()}
-          className="px-5 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+          className="px-5 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50"
         >
           Cancel
         </button>
         <button
           onClick={handleSubmit}
-          disabled={submitting}
+          disabled={submitting || loadingInstitutions}
           className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition-all hover:shadow-md"
           style={{ background: "linear-gradient(135deg, #166534, #15803d)" }}
         >
           {submitting ? (
-            <>
-              <svg
-                className="animate-spin w-4 h-4"
-                viewBox="0 0 24 24"
-                fill="none"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8v8H4z"
-                />
-              </svg>{" "}
-              Creating…
-            </>
+            <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
-            <>
-              <UserPlus className="w-4 h-4" /> Create Staff Member
-            </>
+            <UserPlus className="w-4 h-4" />
           )}
+          {submitting ? "Creating…" : "Create Staff Member"}
         </button>
       </div>
     </div>

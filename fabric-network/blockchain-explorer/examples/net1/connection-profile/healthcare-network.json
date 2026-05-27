@@ -1,0 +1,50 @@
+{
+  "name": "healthcare-network",
+  "version": "1.0.0",
+  "client": {
+    "tlsEnable": true,
+    "adminCredential": {
+      "id": "exploreradmin",
+      "password": "exploreradminpw"
+    },
+    "enableAuthentication": true,
+    "organization": "HospitalOrgMSP",
+    "connection": {
+      "timeout": {
+        "peer": {
+          "endorser": "300"
+        },
+        "orderer": "300"
+      }
+    }
+  },
+  "channels": {
+    "healthcare": {
+      "peers": {
+        "peer0.hospital.healthcare.com": {}
+      }
+    }
+  },
+  "organizations": {
+    "HospitalOrgMSP": {
+      "mspid": "HospitalOrgMSP",
+      "adminPrivateKey": {
+        "path": "/home/brian/Project/Final_year_project/fabric-network/network/organizations/peerOrganizations/hospital.healthcare.com/users/Admin@hospital.healthcare.com/msp/keystore/priv_sk"
+      },
+      "signedCert": {
+        "path": "/home/brian/Project/Final_year_project/fabric-network/network/organizations/peerOrganizations/hospital.healthcare.com/users/Admin@hospital.healthcare.com/msp/signcerts/cert.pem"
+      }
+    }
+  },
+  "peers": {
+    "peer0.hospital.healthcare.com": {
+      "tlsCACerts": {
+        "path": "/home/brian/Project/Final_year_project/fabric-network/network/organizations/peerOrganizations/hospital.healthcare.com/peers/peer0.hospital.healthcare.com/tls/ca.crt"
+      },
+      "url": "grpcs://localhost:7051",
+      "grpcOptions": {
+        "ssl-target-name-override": "peer0.hospital.healthcare.com"
+      }
+    }
+  }
+}

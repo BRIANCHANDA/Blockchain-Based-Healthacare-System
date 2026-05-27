@@ -122,7 +122,7 @@ export default function AdminSettingsPage() {
                   activeSection === key
                     ? {
                         background: "#f0fdf4",
-                        color: "#166534",
+                        color: "#06401c",
                         fontWeight: 600,
                       }
                     : { color: "#6b7280" }
@@ -184,20 +184,6 @@ export default function AdminSettingsPage() {
 
           {activeSection === "security" && (
             <SectionCard title="Security Settings">
-              <ToggleRow
-                label="Two-Factor Authentication"
-                description="Require 2FA for all admin logins"
-                value={sys.twoFactor}
-                onChange={(v) => setSys((s) => ({ ...s, twoFactor: v }))}
-              />
-              <ToggleRow
-                label="Blockchain Verification"
-                description="Verify all records against Hyperledger Fabric"
-                value={sys.blockchainVerification}
-                onChange={(v) =>
-                  setSys((s) => ({ ...s, blockchainVerification: v }))
-                }
-              />
               <div className="pt-4 border-t border-gray-50">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
                   Change Password
@@ -257,55 +243,6 @@ export default function AdminSettingsPage() {
                 onChange={(v) => setNotifs((n) => ({ ...n, systemUpdates: v }))}
               />
             </SectionCard>
-          )}
-
-          {activeSection === "system" && (
-            <>
-              <SectionCard title="System Configuration">
-                <ToggleRow
-                  label="Audit Logging"
-                  description="Log all system actions to the database and blockchain"
-                  value={sys.auditLogging}
-                  onChange={(v) => setSys((s) => ({ ...s, auditLogging: v }))}
-                />
-                <ToggleRow
-                  label="Maintenance Mode"
-                  description="Disable access for non-admin users"
-                  value={sys.maintenanceMode}
-                  onChange={(v) =>
-                    setSys((s) => ({ ...s, maintenanceMode: v }))
-                  }
-                />
-              </SectionCard>
-              <SectionCard title="System Info">
-                {[
-                  { label: "Platform", value: "HealthChain v1.0" },
-                  { label: "Blockchain", value: "Hyperledger Fabric" },
-                  {
-                    label: "Channel",
-                    value:
-                      process.env.NEXT_PUBLIC_FABRIC_CHANNEL ??
-                      "healthcare-channel",
-                  },
-                  {
-                    label: "API",
-                    value:
-                      process.env.NEXT_PUBLIC_API_URL ??
-                      "http://localhost:3000",
-                  },
-                ].map(({ label, value }) => (
-                  <div
-                    key={label}
-                    className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
-                  >
-                    <p className="text-sm text-gray-500">{label}</p>
-                    <p className="text-sm font-semibold text-gray-800 font-mono">
-                      {value}
-                    </p>
-                  </div>
-                ))}
-              </SectionCard>
-            </>
           )}
 
           {/* Save button */}

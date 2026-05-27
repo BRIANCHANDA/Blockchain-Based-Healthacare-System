@@ -567,7 +567,7 @@ export default function StaffPage() {
                     textOverflow: "ellipsis",
                   }}
                 >
-                  {s.institution?.institutionName ?? "—"}
+                  {s.institutionName ?? "—"}
                 </p>
 
                 {/* Status + verify */}

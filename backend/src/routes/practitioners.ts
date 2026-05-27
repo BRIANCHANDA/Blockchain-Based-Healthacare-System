@@ -1,5 +1,5 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq, and, ilike, or, sql } from 'drizzle-orm';
+import { eq, and, ilike, or, sql, desc } from 'drizzle-orm';
 import { db } from '../db';
 import {
   practitioners,
@@ -41,7 +41,7 @@ const registerPractitionerSchema = z.object({
   password: z.string().min(8),
 
   // Optional institution association at creation
-  institutionId: z.string().uuid().optional(),
+  institutionId: z.string().uuid(),
 });
 
 // ==================== Update Profile Schema ====================
@@ -56,6 +56,25 @@ const updatePractitionerSchema = z.object({
   qualifications: z.string().optional(),
   password: z.string().min(8).optional(),
 });
+
+
+// ── HELPER FUNCTION (add this BEFORE the router definition) ──────────────────
+async function getStaffInstitution(staffId: string): Promise<string | null> {
+  console.log('[HELPER] 🔍 Getting institution for staff:', staffId);
+  try {
+    const staff = await db.select({ institutionId: practitioners.institutionId })
+      .from(practitioners)
+      .where(eq(practitioners.id, staffId))
+      .limit(1);
+
+    const institutionId = staff[0]?.institutionId || null;
+    console.log('[HELPER] ✅ Institution found:', institutionId || 'NULL');
+    return institutionId;
+  } catch (err: any) {
+    console.error('[HELPER] ❌ Error getting institution:', err.message);
+    return null;
+  }
+}
 
 export const practitionerRouter = createRouter()
 
@@ -117,7 +136,7 @@ export const practitionerRouter = createRouter()
       // Insert practitioner (not verified initially)
       const result = await db.insert(practitioners).values({
         blockchainAddress,
-        institutionId: body.institutionId ?? null,
+        institutionId: body.institutionId,
         ...encrypted,
         licenseNumber: body.licenseNumber,
         institutionalId: body.institutionalId,
@@ -145,6 +164,258 @@ export const practitionerRouter = createRouter()
     } catch (err: any) {
       console.error('Practitioner registration error:', err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+    }
+  })
+
+
+
+
+
+
+
+  // ── GET ONLINE STAFF ENDPOINT (add this to your router) ──────────────────────
+  .openapi(createRoute({
+    tags: ['Practitioners'],
+    summary: 'Get online staff by role (same institution)',
+    method: 'get',
+    path: '/online',
+    security: [{ bearerAuth: [] }],
+    middleware: [authMiddleware],
+    request: {
+      query: z.object({
+        role: z
+          .enum([
+            'nurse',
+            'practitioner',
+            'lab_technician',
+            'radiologist',
+            'pharmacist',
+            'receptionist',
+            'admin',
+          ])
+          .optional(),
+      }).passthrough(),
+    },
+    responses: {
+      200: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              success: z.boolean(),
+              data: z.object({
+                staff: z.array(
+                  z.object({
+                    id: z.string(),
+                    firstName: z.string(),
+                    lastName: z.string(),
+                    role: z.string(),
+                    specialization: z.string().nullable(),
+                    lastSeenAt: z.string().nullable(),
+                  })
+                ),
+              }),
+            }),
+          },
+        },
+        description: 'List of online staff members',
+      },
+      400: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              success: z.boolean(),
+              error: z.object({
+                message: z.string(),
+                code: z.string().optional(),
+              }),
+            }),
+          },
+        },
+        description: 'Invalid role parameter',
+      },
+      403: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              success: z.boolean(),
+              error: z.object({ message: z.string() }),
+            }),
+          },
+        },
+        description: 'Forbidden - user not associated with institution',
+      },
+      500: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              success: z.boolean(),
+              error: z.object({ message: z.string() }),
+            }),
+          },
+        },
+        description: 'Server error',
+      },
+    },
+  }), async (c) => {
+    try {
+      const userType = c.get('userType');
+      const userId = c.get('userId');
+      const rawUrl = c.req.raw.url;
+
+      console.log('[ONLINE_STAFF] 🔍 Fetching online staff:', {
+        userType,
+        userId,
+        url: rawUrl,
+      });
+
+      // ── Get staff's institution ────────────────────────────────────────
+      const staffInstitutionId = await getStaffInstitution(userId);
+
+      if (!staffInstitutionId) {
+        console.log('[ONLINE_STAFF] ❌ Staff not associated with institution');
+        return c.json(
+          {
+            success: false,
+            error: {
+              message: 'Your account is not associated with an institution. Contact your administrator.',
+              code: 'NO_INSTITUTION',
+            },
+          },
+          403
+        );
+      }
+
+      console.log('[ONLINE_STAFF] ✅ Staff institution:', staffInstitutionId);
+
+      // ── Parse role from query ──────────────────────────────────────────
+      const queryString = rawUrl.split('?')[1] || '';
+      const params = new URLSearchParams(queryString);
+      const roleParam = params.get('role');
+
+      console.log('[ONLINE_STAFF] 📋 Query:', {
+        role: roleParam,
+        rawQuery: queryString,
+      });
+
+      // ── Validate role ──────────────────────────────────────────────────
+      const VALID_ROLES = [
+        'nurse',
+        'practitioner',
+        'lab_technician',
+        'radiologist',
+        'pharmacist',
+        'receptionist',
+        'admin',
+      ];
+
+      if (roleParam && !VALID_ROLES.includes(roleParam.toLowerCase())) {
+        console.log('[ONLINE_STAFF] ❌ Invalid role:', roleParam);
+        return c.json(
+          {
+            success: false,
+            error: {
+              message: `Invalid role: "${roleParam}". Must be one of: ${VALID_ROLES.join(', ')}`,
+              code: 'INVALID_ROLE',
+            },
+          },
+          400
+        );
+      }
+
+      // ── Build query ────────────────────────────────────────────────────
+      const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+      console.log('[ONLINE_STAFF] 🏥 Querying for:', {
+        institution: staffInstitutionId,
+        role: roleParam || 'all',
+        recentlyOnline: fiveMinutesAgo.toISOString(),
+      });
+
+      // ── Query online staff ─────────────────────────────────────────────
+      let query = db
+        .select({
+          id: practitioners.id,
+          firstNameEncrypted: practitioners.firstNameEncrypted,
+          lastNameEncrypted: practitioners.lastNameEncrypted,
+          role: practitioners.role,
+          specialization: practitioners.specialization,
+          lastSeenAt: practitioners.lastSeenAt,
+        })
+        .from(practitioners)
+        .where(
+          and(
+            eq(practitioners.institutionId, staffInstitutionId),
+            eq(practitioners.isActive, true),
+            eq(practitioners.isVerified, true),
+            sql`${practitioners.lastSeenAt} >= ${fiveMinutesAgo}`
+          )
+        );
+
+      // Add role filter if provided
+      if (roleParam) {
+        console.log('[ONLINE_STAFF] 🔎 Adding role filter:', roleParam);
+        query = query.where(eq(practitioners.role, roleParam));
+      }
+
+      // Execute query
+      const onlineStaff = await query.orderBy(desc(practitioners.lastSeenAt));
+
+      console.log('[ONLINE_STAFF] ✅ Query complete:', {
+        count: onlineStaff.length,
+        role: roleParam || 'all',
+      });
+
+      if (onlineStaff.length === 0) {
+        console.log(
+          '[ONLINE_STAFF] ℹ️ No online staff found',
+          roleParam ? `for role: ${roleParam}` : ''
+        );
+      }
+
+      // ── Decrypt and format response ────────────────────────────────────
+      const { decrypt } = await import('../services/crypto');
+      const result = onlineStaff.map((s) => ({
+        id: s.id,
+        firstName: decrypt(s.firstNameEncrypted),
+        lastName: decrypt(s.lastNameEncrypted),
+        role: s.role,
+        specialization: s.specialization,
+        lastSeenAt: s.lastSeenAt?.toISOString() ?? null,
+      }));
+
+      console.log('[ONLINE_STAFF] 📤 Returning staff list');
+
+      return c.json({ success: true, data: { staff: result } });
+
+    } catch (err: any) {
+      console.error('[ONLINE_STAFF] ❌ ERROR:', err.message);
+      console.error('[ONLINE_STAFF] Stack:', err.stack);
+
+      // Handle Zod validation errors
+      if (err.issues) {
+        console.error('[ONLINE_STAFF] 🔴 Validation issues:', err.issues);
+        return c.json(
+          {
+            success: false,
+            error: {
+              message: `Validation error: ${err.issues.map((i: any) => i.message).join(', ')}`,
+              code: 'VALIDATION_ERROR',
+            },
+          },
+          400
+        );
+      }
+
+      return c.json(
+        {
+          success: false,
+          error: {
+            message: 'Failed to fetch online staff',
+            code: 'INTERNAL_ERROR',
+          },
+        },
+        500
+      );
     }
   })
 
@@ -303,20 +574,24 @@ export const practitionerRouter = createRouter()
     }
   })
 
-  // ========== LIST PRACTITIONERS (Admin only) ==========
+  // ========== LIST PRACTITIONERS ==========
+  // Admins: see all practitioners system-wide with full filters
+  // All other authenticated staff: see only practitioners in their own institution
+  // Supports ?role=nurse|practitioner|... for role filtering (used by receptionist nurse dropdown)
   .openapi(createRoute({
     tags: ['Practitioners'],
-    summary: 'List all practitioners (admin only)',
+    summary: 'List practitioners (admin sees all; staff sees own institution only)',
     method: 'get',
     path: '/',
     security: [{ bearerAuth: [] }],
     middleware: [authMiddleware],
     request: {
       query: z.object({
-        limit: z.string().regex(/^\d+$/).transform(Number).optional().default('20'),
+        limit: z.string().regex(/^\d+$/).transform(Number).optional().default('100'),
         offset: z.string().regex(/^\d+$/).transform(Number).optional().default('0'),
         verified: z.enum(['true', 'false']).optional(),
         active: z.enum(['true', 'false']).optional(),
+        role: z.enum(['nurse', 'practitioner', 'lab_technician', 'radiologist', 'pharmacist', 'receptionist', 'admin']).optional(),
       }),
     },
     responses: {
@@ -330,42 +605,62 @@ export const practitionerRouter = createRouter()
   }), async (c) => {
     try {
       const userType = c.get('userType');
-      if (userType !== 'admin') {
-        return c.json({ success: false, error: { message: 'Admin access required' } }, 403);
+      const userId = c.get('userId');
+      const { limit, offset, verified, active, role } = c.req.valid('query');
+
+      // Build the base WHERE conditions
+      const conditions: any[] = [];
+
+      // ── Institution scoping ─────────────────────────────────────────────────
+      // Always look up the caller's institutionId from DB
+      const callerInstitutionId = await getStaffInstitution(userId);
+
+      if (callerInstitutionId) {
+        // Scope to their institution (applies to admin, receptionist, nurse, etc.)
+        conditions.push(eq(practitioners.institutionId, callerInstitutionId));
+      } else if (userType !== 'admin') {
+        // Non-admin with no institutionId: their own record may not have it set yet.
+        // Rather than blocking them, log a warning and return all active staff of the
+        // requested role. This is a degraded-but-functional fallback for dev/seed data.
+        console.warn(`⚠️  Staff ${userId} (${userType}) has no institutionId — returning unscoped results for role=${role}`);
+        // No institution filter — will return all matching role globally.
+        // In production, always ensure institutionId is set at registration.
       }
+      // Admin with no institutionId = super-admin, sees everything (no condition added)
 
-      const { limit, offset, verified, active } = c.req.valid('query');
+      // ── Optional filters ────────────────────────────────────────────────────
+      if (role) conditions.push(eq(practitioners.role, role));
+      if (verified) conditions.push(eq(practitioners.isVerified, verified === 'true'));
+      if (active) conditions.push(eq(practitioners.isActive, active === 'true'));
 
-      let query = db.select({
+      // Always default to only active practitioners unless caller overrides
+      if (!active) conditions.push(eq(practitioners.isActive, true));
+
+      const practitionersList = await db.select({
         id: practitioners.id,
-        blockchainAddress: practitioners.blockchainAddress,
         firstNameEncrypted: practitioners.firstNameEncrypted,
         lastNameEncrypted: practitioners.lastNameEncrypted,
         licenseNumber: practitioners.licenseNumber,
+        role: practitioners.role,
         specialization: practitioners.specialization,
         department: practitioners.department,
         institutionId: practitioners.institutionId,
         isVerified: practitioners.isVerified,
         isActive: practitioners.isActive,
         createdAt: practitioners.createdAt,
-      }).from(practitioners);
+      })
+        .from(practitioners)
+        .where(and(...conditions))
+        .limit(limit)
+        .offset(offset)
+        .orderBy(practitioners.createdAt);
 
-      if (verified !== undefined) {
-        query = query.where(eq(practitioners.isVerified, verified === 'true'));
-      }
-      if (active !== undefined) {
-        query = query.where(eq(practitioners.isActive, active === 'true'));
-      }
-
-      const practitionersList = await query.limit(limit).offset(offset);
-
-      // Decrypt names for response
       const result = practitionersList.map(p => ({
         id: p.id,
-        blockchainAddress: p.blockchainAddress,
         firstName: decrypt(p.firstNameEncrypted),
         lastName: decrypt(p.lastNameEncrypted),
         licenseNumber: p.licenseNumber,
+        role: p.role,
         specialization: p.specialization,
         department: p.department,
         institutionId: p.institutionId,
@@ -374,7 +669,7 @@ export const practitionerRouter = createRouter()
         createdAt: p.createdAt,
       }));
 
-      return c.json({ success: true, data: { practitioners: result, limit, offset } });
+      return c.json({ success: true, data: { practitioners: result, total: result.length, limit, offset } });
 
     } catch (err: any) {
       console.error('List practitioners error:', err);

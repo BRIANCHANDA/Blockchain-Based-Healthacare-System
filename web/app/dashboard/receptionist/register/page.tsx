@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { patientApi } from "@/lib/api";
+import { useAuthStore } from "@/lib/store";
 import {
   CheckCircle,
   AlertCircle,
@@ -13,7 +14,7 @@ import {
   Phone,
 } from "lucide-react";
 
-// ── Schema: no password fields ─────────────────────────────
+// ── Schema ────────────────────────────────────────────────────────────────────
 const schema = z.object({
   firstName: z.string().min(2, "Required"),
   lastName: z.string().min(2, "Required"),
@@ -42,13 +43,12 @@ const steps = [
 ];
 
 export default function RegisterPatientPage() {
+  const { user } = useAuthStore();
+  const institutionId = (user as any)?.institutionId as string | undefined;
   const [step, setStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState<{
-    patientId: string;
-    blockchainAddress: string;
-  } | null>(null);
+  const [success, setSuccess] = useState<{ patientId: string } | null>(null);
 
   const {
     register,
@@ -56,10 +56,7 @@ export default function RegisterPatientPage() {
     formState: { errors },
     trigger,
     reset,
-  } = useForm<FormData>({
-    resolver: zodResolver(schema),
-    mode: "onBlur",
-  });
+  } = useForm<FormData>({ resolver: zodResolver(schema), mode: "onBlur" });
 
   const stepFields: (keyof FormData)[][] = [
     [
@@ -90,22 +87,28 @@ export default function RegisterPatientPage() {
     setLoading(true);
     setError("");
     try {
-      // Remove empty email
       const payload = { ...data };
       if (!payload.email) delete payload.email;
-      // No password field is sent – backend will use default "test1234"
-      const res = await patientApi.register(payload);
-      setSuccess(res.data.data);
+      // Include institutionId so the patient is linked to this institution on registration.
+      // The backend will auto-generate a hospitalPatientNumber if not provided.
+      const res = await patientApi.register({
+        ...payload,
+        institutionId,
+      } as any);
+      // Only store what we need — no blockchain address surfaced to the user
+      setSuccess({ patientId: res.data.data.patientId });
     } catch (err: any) {
-      const msg = err.response?.data?.error?.message;
-      setError(msg || "Registration failed. Please try again.");
-      setStep(stepFields.length - 1); // jump to last step to show error
+      setError(
+        err.response?.data?.error?.message ||
+          "Registration failed. Please try again.",
+      );
+      setStep(stepFields.length - 1);
     } finally {
       setLoading(false);
     }
   };
 
-  // ── Success screen ───────────────────────────────────────
+  // ── Success screen ────────────────────────────────────────────────────────
   if (success) {
     return (
       <div
@@ -120,29 +123,26 @@ export default function RegisterPatientPage() {
             className="text-xl font-bold text-gray-900 mb-1"
             style={{ fontFamily: "'Playfair Display', serif" }}
           >
-            Patient Registered!
+            Patient Registered
           </h2>
           <p className="text-gray-500 text-sm mb-6">
-            The patient account has been created successfully.
+            The patient account has been created. They can now log in using
+            their National ID and the default password.
           </p>
 
-          <div className="bg-gray-50 rounded-xl p-4 text-left space-y-3 mb-6">
-            <div>
-              <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">
-                Patient ID
-              </p>
-              <p className="font-mono text-sm text-gray-800 mt-0.5 break-all">
-                {success.patientId}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">
-                Blockchain Address
-              </p>
-              <p className="font-mono text-xs text-green-700 mt-0.5 break-all">
-                {success.blockchainAddress}
-              </p>
-            </div>
+          <div
+            className="rounded-xl p-4 text-left mb-6"
+            style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}
+          >
+            <p className="text-xs font-bold uppercase tracking-widest text-green-700 mb-1">
+              Default Password
+            </p>
+            <p className="font-mono text-lg font-bold text-green-900">
+              test1234
+            </p>
+            <p className="text-xs text-green-700 mt-1">
+              The patient will be asked to change this on their first login.
+            </p>
           </div>
 
           <div className="flex gap-3">
@@ -171,13 +171,12 @@ export default function RegisterPatientPage() {
     );
   }
 
-  // ── Form ────────────────────────────────────────────────
+  // ── Form ──────────────────────────────────────────────────────────────────
   return (
     <div
       className="max-w-2xl mx-auto"
       style={{ fontFamily: "'DM Sans', sans-serif" }}
     >
-      {/* Page header */}
       <div className="mb-6">
         <h1
           className="text-2xl font-bold text-gray-900"
@@ -186,9 +185,9 @@ export default function RegisterPatientPage() {
           Register New Patient
         </h1>
         <p className="text-gray-500 text-sm mt-1">
-          Create a new patient account – the default password is{" "}
-          <strong className="font-mono">test1234</strong>. The patient will be
-          asked to change it on first login.
+          Creates a new patient account. Default password is{" "}
+          <strong className="font-mono">test1234</strong> — patient changes it
+          on first login.
         </p>
       </div>
 
@@ -232,7 +231,7 @@ export default function RegisterPatientPage() {
                 {i < steps.length - 1 && (
                   <div
                     className="flex-1 h-px ml-2 transition-all"
-                    style={{ background: i < step ? "#166534" : "#e5e7eb" }}
+                    style={{ background: i < step ? "#166634" : "#e5e7eb" }}
                   />
                 )}
               </div>
@@ -244,7 +243,7 @@ export default function RegisterPatientPage() {
           <div className="p-6 space-y-4">
             <h3 className="font-semibold text-gray-900">{steps[step].title}</h3>
 
-            {/* ── Step 0: Personal Info ── */}
+            {/* Step 0 — Personal Info */}
             {step === 0 && (
               <>
                 <div className="grid grid-cols-2 gap-4">
@@ -263,6 +262,7 @@ export default function RegisterPatientPage() {
                     />
                   </Field>
                 </div>
+
                 <Field label="Middle Name" error={errors.middleName?.message}>
                   <input
                     {...register("middleName")}
@@ -270,6 +270,7 @@ export default function RegisterPatientPage() {
                     className={cls}
                   />
                 </Field>
+
                 <div className="grid grid-cols-2 gap-4">
                   <Field
                     label="Date of Birth *"
@@ -290,10 +291,23 @@ export default function RegisterPatientPage() {
                     </select>
                   </Field>
                 </div>
+
+                <Field label="Blood Type" error={errors.bloodType?.message}>
+                  <select {...register("bloodType")} className={cls}>
+                    <option value="">Unknown / not tested</option>
+                    {["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map(
+                      (bt) => (
+                        <option key={bt} value={bt}>
+                          {bt}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </Field>
               </>
             )}
 
-            {/* ── Step 1: Contact Details & National ID ── */}
+            {/* Step 1 — Contact & ID */}
             {step === 1 && (
               <>
                 <Field
@@ -306,6 +320,7 @@ export default function RegisterPatientPage() {
                     className={cls}
                   />
                 </Field>
+
                 <Field label="Email Address" error={errors.email?.message}>
                   <input
                     {...register("email")}
@@ -314,6 +329,7 @@ export default function RegisterPatientPage() {
                     className={cls}
                   />
                 </Field>
+
                 <Field label="Home Address *" error={errors.address?.message}>
                   <textarea
                     {...register("address")}
@@ -322,6 +338,7 @@ export default function RegisterPatientPage() {
                     rows={2}
                   />
                 </Field>
+
                 <Field
                   label="Emergency Contact *"
                   error={errors.emergencyContact?.message}
@@ -332,6 +349,7 @@ export default function RegisterPatientPage() {
                     className={cls}
                   />
                 </Field>
+
                 <div className="grid grid-cols-2 gap-4">
                   <Field
                     label="Marital Status"
@@ -362,21 +380,6 @@ export default function RegisterPatientPage() {
                   />
                 </Field>
 
-                {/* Info note about default password */}
-                <div
-                  className="p-3.5 rounded-xl text-sm"
-                  style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}
-                >
-                  <p className="font-medium text-green-800 text-xs mb-1">
-                    📋 Default password
-                  </p>
-                  <p className="text-green-700 text-xs leading-relaxed">
-                    The patient will use <strong>test1234</strong> as their
-                    initial password. They will be required to change it the
-                    first time they log in.
-                  </p>
-                </div>
-
                 {error && (
                   <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-red-50 border border-red-100">
                     <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 shrink-0" />
@@ -387,7 +390,7 @@ export default function RegisterPatientPage() {
             )}
           </div>
 
-          {/* Navigation buttons */}
+          {/* Navigation */}
           <div className="px-6 pb-6 flex gap-3">
             {step > 0 && (
               <button
@@ -402,8 +405,8 @@ export default function RegisterPatientPage() {
               <button
                 type="button"
                 onClick={next}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all"
-                style={{ background: "#166534" }}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold text-white"
+                style={{ background: "#166634" }}
               >
                 Continue <ChevronRight className="w-4 h-4" />
               </button>
@@ -411,8 +414,8 @@ export default function RegisterPatientPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-60"
-                style={{ background: "#166534" }}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-60"
+                style={{ background: "#166634" }}
               >
                 {loading ? (
                   <svg
@@ -446,7 +449,7 @@ export default function RegisterPatientPage() {
   );
 }
 
-// ── Helpers ───────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 const cls =
   "w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm outline-none transition-all focus:border-green-600 focus:ring-2 focus:ring-green-600/10 focus:bg-white placeholder:text-gray-400";
 
@@ -467,8 +470,7 @@ function Field({
       {children}
       {error && (
         <p className="flex items-center gap-1 text-xs text-red-600 mt-1">
-          <AlertCircle className="w-3 h-3" />
-          {error}
+          <AlertCircle className="w-3 h-3" /> {error}
         </p>
       )}
     </div>

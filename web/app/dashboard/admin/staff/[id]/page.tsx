@@ -83,9 +83,18 @@ export default function StaffDetailPage() {
   useEffect(() => {
     const load = async () => {
       try {
+        console.log(`[STAFF_DETAIL] Loading staff: ${staffId}`);
         const res = await api.get(`/api/practitioners/${staffId}`);
-        setStaff(res.data.data?.practitioner ?? res.data.data);
-      } catch {
+        const staffData = res.data.data?.practitioner ?? res.data.data;
+        console.log("[STAFF_DETAIL] Loaded:", {
+          id: staffData.id,
+          name: `${staffData.firstName} ${staffData.lastName}`,
+          institutionId: staffData.institutionId,
+          institutionName: staffData.institutionName,
+        });
+        setStaff(staffData);
+      } catch (err: any) {
+        console.error("[STAFF_DETAIL] Error:", err.message);
         setError("Failed to load staff member.");
       } finally {
         setLoading(false);
@@ -172,7 +181,7 @@ export default function StaffDetailPage() {
     );
   }
 
-  const meta = ROLE_META[staff.role] ?? ROLE_META.practitioner;
+  const meta = ROLE_META[staff.specialization] ?? ROLE_META.practitioner;
 
   return (
     <div
@@ -251,7 +260,27 @@ export default function StaffDetailPage() {
           />
           <InfoRow label="Specialization" value={staff.specialization} />
           <InfoRow label="Department" value={staff.department} />
-          {staff.shift && <InfoRow label="Shift" value={staff.shift} />}
+          {/* FIXED: Show institution details from backend */}
+          {staff.institutionName ? (
+            <InfoRow label="Institution" value={staff.institutionName} />
+          ) : (
+            <InfoRow
+              label="Institution"
+              value={
+                staff.institutionId ? "Assigned but not loaded" : "Not assigned"
+              }
+            />
+          )}
+          {staff.institutionCode && (
+            <InfoRow
+              label="Institution Code"
+              value={staff.institutionCode}
+              mono
+            />
+          )}
+          {staff.institutionType && (
+            <InfoRow label="Institution Type" value={staff.institutionType} />
+          )}
           {staff.qualifications && (
             <InfoRow label="Qualifications" value={staff.qualifications} />
           )}
@@ -285,14 +314,22 @@ export default function StaffDetailPage() {
             </div>
             <p className="text-sm text-gray-700">{staff.phoneNumber ?? "—"}</p>
           </div>
-          {staff.institution && (
+          {/* FIXED: Show institution info from backend data */}
+          {staff.institutionName && (
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0">
                 <Building2 className="w-4 h-4 text-gray-400" />
               </div>
-              <p className="text-sm text-gray-700">
-                {staff.institution.institutionName}
-              </p>
+              <div>
+                <p className="text-sm text-gray-700 font-medium">
+                  {staff.institutionName}
+                </p>
+                {staff.institutionCode && (
+                  <p className="text-xs text-gray-500">
+                    Code: {staff.institutionCode}
+                  </p>
+                )}
+              </div>
             </div>
           )}
         </div>

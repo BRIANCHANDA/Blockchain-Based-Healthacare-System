@@ -4,6 +4,7 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { serveStatic } from 'hono/bun'; // ✅ Bun‑compatible static server
 
+
 import { authRouter } from './routes/auth';
 import { patientRouter } from './routes/patients';
 import { practitionerRouter } from './routes/practitioners';
@@ -19,6 +20,7 @@ import { labStatsRouter } from './routes/lab-stats';
 import { radiologyStatsRouter } from './routes/radiology-stats';
 import { adminStatsRouter } from './routes/admin-stats';
 import { pharmacyStatsRouter } from './routes/pharmacy';
+import { appointmentRouter } from "./routes/appointments";
 
 const app = new OpenAPIHono();
 
@@ -46,6 +48,7 @@ app.route('/api/lab-stats', labStatsRouter);
 app.route('/api/radiology-stats', radiologyStatsRouter);
 app.route('/api/dashboard/admin', adminStatsRouter);
 app.route('/api/pharmacy-stats', pharmacyStatsRouter);
+app.route('/api/appointments', appointmentRouter);
 // OpenAPI documentation
 app.doc('/doc', {
   openapi: '3.0.0',
@@ -97,3 +100,10 @@ export default {
   fetch: app.fetch,
   idleTimeout: 60, // seconds — prevents Bun from killing slow blockchain queries
 };
+
+app.use('/*', cors({
+  origin: ['http://localhost:3000', 'http://localhost:3001'], // or your frontend URL
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+}));

@@ -182,9 +182,3 @@ Profiles:
         - *PractitionerOrg
         - *PatientOrg
       Capabilities: *ApplicationCapabilities
-    Consortiums:
-      HealthcareConsortium:
-        Organizations:
-          - *HospitalOrg
-          - *PractitionerOrg
-          - *PatientOrg

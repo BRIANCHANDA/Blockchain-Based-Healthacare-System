@@ -42,7 +42,8 @@ export const authApi = {
 
 // ── Patients ─────────────────────────────────────────────
 export const patientApi = {
-    register: (data: any) => api.post('/api/auth/register/patient', data),
+    register: (data: any, institutionId?: string) =>
+        api.post('/api/auth/register/patient', institutionId ? { ...data, institutionId } : data),
     search: (query: string) => api.get(`/api/patients/search?q=${encodeURIComponent(query)}`),
     searchPaginated: (params: { q?: string; limit?: number; offset?: number }) => {
         const p = new URLSearchParams();
@@ -52,7 +53,37 @@ export const patientApi = {
         return api.get(`/api/patients/search?${p}`);
     },
     getById: (id: string) => api.get(`/api/patients/${id}`),
+    getRegistration: (id: string) => api.get(`/api/patients/${id}/registration`),
     getVisits: (id: string) => api.get(`/api/records/visits/${id}`),
+    getHistory: (patientId: string) => api.get(`/api/patients/${patientId}/history`),
+    updateInfo: (id: string, data: any) => api.patch(`/api/patients/${id}/update`, data),
+    resetPassword: (id: string, newPassword: string) =>
+        api.post(`/api/patients/${id}/reset-password`, { newPassword }),
+    getAllByInstitution: (institutionId: string, params?: { search?: string; limit?: number; offset?: number }) => {
+        const p = new URLSearchParams();
+        if (params?.search) p.set('search', params.search);
+        if (params?.limit) p.set('limit', String(params.limit));
+        if (params?.offset) p.set('offset', String(params.offset));
+        const url = `/api/patients/institution/${institutionId}${p.toString() ? `?${p.toString()}` : ''}`;
+        return api.get(url);
+    },
+};
+
+// ── Practitioners ────────────────────────────────────────
+export const practitionersApi = {
+    getOnlineStaff: (role?: string) => {
+        const url = role ? `/api/practitioners/online?role=${role}` : '/api/practitioners/online';
+        return api.get(url);
+    },
+    list: (params?: { limit?: number; offset?: number; role?: string }) => {
+        const p = new URLSearchParams();
+        if (params?.limit) p.set('limit', String(params.limit));
+        if (params?.offset) p.set('offset', String(params.offset));
+        if (params?.role) p.set('role', params.role);
+        return api.get(`/api/practitioners?${p}`);
+    },
+    getById: (id: string) => api.get(`/api/practitioners/${id}`),
+    updateProfile: (data: any) => api.patch('/api/practitioners/me', data),
 };
 
 // ── Visits ───────────────────────────────────────────────
@@ -64,13 +95,45 @@ export const visitApi = {
         api.get(`/api/visits/${visitId}/info`),
     checkMyPermission: (visitId: string) =>
         api.get(`/api/visits/${visitId}/my-permission`),
-    create: (data: any) => api.post('/api/visits', data),
-    createVisit: (data: any) => api.post('/api/visits', data),
-    getSummary: (visitId: string) => api.get(`/api/visits/${visitId}/summary`),
+    getSummary: (visitId: string) =>
+        api.get(`/api/visits/${visitId}/summary`),
+    checkActiveVisit: (patientId: string) =>
+        api.get(`/api/visits/patient/${patientId}/active`),
+
+    // Receptionist/nurse admission flow — chiefComplaint filled during triage
+    create: (body: {
+        patientId: string;
+        institutionId?: string;
+        visitType: string;
+        priority: string;
+        wardOrRoom?: string;
+        bedNumber?: string;
+    }) => api.post('/api/visits', body),
+
+    // Doctor direct admission — separate endpoint, bypasses nurse triage for
+    // emergency/critical priority. chiefComplaint required, doctor self-assigns.
+    doctorAdmit: (body: {
+        patientId: string;
+        visitType: string;
+        priority: string;
+        chiefComplaint: string;
+        admittingDiagnosis?: string;
+        wardOrRoom?: string;
+    }) => api.post('/api/visits/doctor-admit', body),
+
+    // ── Assignment ───────────────────────────────────────
+    assignNurse: (visitId: string, nurseId: string) =>
+        api.post(`/api/visits/${visitId}/assign-nurse`, { nurseId }),
+    assignDoctor: (visitId: string, doctorId: string) =>
+        api.post(`/api/visits/${visitId}/assign-doctor`, { doctorId }),
+
+    // ── Clinical ─────────────────────────────────────────
     recordVitals: (visitId: string, data: any) =>
         api.post(`/api/visits/${visitId}/vitals`, data),
     nursingAssessment: (visitId: string, data: any) =>
         api.post(`/api/visits/${visitId}/nursing-assessment`, data),
+    hasVitals: (visitId: string) =>
+        api.get(`/api/visits/${visitId}/has-vitals`),
     consult: (visitId: string, data: any) =>
         api.post(`/api/visits/${visitId}/consultation`, data),
     addConsultation: (visitId: string, data: any) =>
@@ -89,23 +152,31 @@ export const visitApi = {
         api.post(`/api/visits/${visitId}/prescriptions`, data),
     discharge: (visitId: string, data: any) =>
         api.patch(`/api/visits/${visitId}/discharge`, data),
-    getPendingLabOrders: () =>
-        api.get('/api/visits/lab-orders/pending'),
-    getResultedLabOrders: () =>
-        api.get('/api/visits/lab-orders/resulted'),
+
+    // ── Lab ──────────────────────────────────────────────
+    getPendingLabOrders: () => api.get('/api/visits/lab-orders/pending'),
+    getResultedLabOrders: () => api.get('/api/visits/lab-orders/resulted'),
     enterLabResult: (visitId: string, orderId: string, data: any) =>
         api.post(`/api/visits/${visitId}/lab-results/${orderId}`, data),
+    getLabResults: (visitId: string) =>
+        api.get(`/api/visits/${visitId}/lab-orders/results`),
+
+    // ── Pharmacy ─────────────────────────────────────────
     getPendingPrescriptions: () => api.get('/api/visits/prescriptions/pending'),
-    getPendingImagingOrders: () => api.get('/api/visits/imaging-orders/pending'),
-    getPrescriptionDetail: (id: string) => api.get(`/api/visits/prescriptions/${id}/detail`),
+    getPrescriptionDetail: (id: string) =>
+        api.get(`/api/visits/prescriptions/${id}/detail`),
     getDispensedPrescriptions: () => api.get('/api/visits/prescriptions/dispensed'),
     dispensePrescription: (visitId: string, prescriptionId: string, data: any) =>
         api.patch(`/api/visits/${visitId}/prescriptions/${prescriptionId}/dispense`, data),
-    // Radiology methods
+
+    // ── Radiology ────────────────────────────────────────
+    getPendingImagingOrders: () => api.get('/api/visits/imaging-orders/pending'),
     getImagingReport: (orderId: string) =>
         api.get(`/api/visits/imaging-orders/${orderId}/report`),
-    // The submit method now uses FormData (see the page component)
 
+    // ── Staff dropdown ────────────────────────────────────
+    getStaffByRole: (role: 'practitioner' | 'nurse' | 'lab_technician' | 'radiologist' | 'pharmacist') =>
+        api.get('/api/visits/staff', { params: { role } }),
 };
 
 // ── Permissions ──────────────────────────────────────────
@@ -133,8 +204,38 @@ export const auditApi = {
 export const institutionApi = {
     list: () => api.get('/api/institutions'),
     create: (data: any) => api.post('/api/institutions', data),
+    getDepartments: (institutionId?: string) => {
+        const url = institutionId
+            ? `/api/departments?institutionId=${institutionId}`
+            : '/api/departments';
+        return api.get(url);
+    },
+    getById: (id: string) => api.get(`/api/institutions/${id}`),
+    update: (id: string, data: any) => api.patch(`/api/institutions/${id}`, data),
+    deactivate: (id: string) => api.delete(`/api/institutions/${id}`),
 };
 
+// ── Appointments ─────────────────────────────────────────
+export const appointmentApi = {
+    list: (params?: { status?: string; doctorId?: string; from?: string; to?: string; limit?: number; offset?: number }) => {
+        const p = new URLSearchParams();
+        if (params?.status) p.set("status", params.status);
+        if (params?.doctorId) p.set("doctorId", params.doctorId);
+        if (params?.from) p.set("from", params.from);
+        if (params?.to) p.set("to", params.to);
+        if (params?.limit) p.set("limit", String(params.limit));
+        if (params?.offset) p.set("offset", String(params.offset));
+        return api.get(`/api/appointments?${p}`);
+    },
+    today: () => api.get("/api/appointments/today"),
+    followUps: (days = 30) => api.get(`/api/appointments/follow-ups?days=${days}`),
+    book: (body: Record<string, unknown>) => api.post("/api/appointments", body),
+    confirm: (id: string, body: Record<string, unknown> = {}) => api.patch(`/api/appointments/${id}/confirm`, body),
+    cancel: (id: string, reason: string) => api.patch(`/api/appointments/${id}/cancel`, { reason }),
+    reschedule: (id: string, body: Record<string, unknown>) => api.patch(`/api/appointments/${id}/reschedule`, body),
+};
+
+// ── Stats ─────────────────────────────────────────────────
 export const labStatsApi = {
     getOverview: () => api.get('/api/lab-stats'),
     getMyStats: () => api.get('/api/lab-stats/my-stats'),

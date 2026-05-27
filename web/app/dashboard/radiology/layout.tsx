@@ -21,7 +21,7 @@ const navItems = [
     href: "/dashboard/radiology/queue",
     icon: ClipboardList,
   },
-  { label: "History", href: "/dashboard/radiology/history", icon: History },
+  { label: "Patients", href: "/dashboard/radiology/patients", icon: History },
 ];
 
 export default function RadiologyLayout({

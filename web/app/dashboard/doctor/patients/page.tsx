@@ -1,423 +1,446 @@
 "use client";
-import { useState, useCallback, useRef } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { patientApi, visitApi } from "@/lib/api";
+import { patientApi } from "@/lib/api";
+import { useAuthStore } from "@/lib/store";
 import {
   Search,
   User,
-  ChevronRight,
-  AlertCircle,
   Calendar,
-  Droplets,
   Phone,
+  MapPin,
+  ChevronRight,
+  Loader2,
+  AlertCircle,
+  Users,
   Activity,
+  FileText,
+  Filter,
 } from "lucide-react";
+import { format } from "date-fns";
 
-const bloodTypeColor: Record<string, string> = {
-  "A+": "#3b82f6",
-  "A-": "#6366f1",
-  "B+": "#8b5cf6",
-  "B-": "#ec4899",
-  "AB+": "#f59e0b",
-  "AB-": "#ef4444",
-  "O+": "#10b981",
-  "O-": "#14b8a6",
-  unknown: "#9ca3af",
-};
+// Safe date formatter
+function safeFormatDate(d: any, fmt: string): string {
+  if (!d) return "—";
+  const dt = new Date(d);
+  return isNaN(dt.getTime()) ? "—" : format(dt, fmt);
+}
 
-const PRIORITY_STYLE: Record<string, { bg: string; text: string }> = {
-  routine: { bg: "#f0fdf4", text: "#15803d" },
-  urgent: { bg: "#fffbeb", text: "#d97706" },
-  emergency: { bg: "#fef2f2", text: "#dc2626" },
-  critical: { bg: "#fdf4ff", text: "#7c3aed" },
-};
-
-export default function PatientSearchPage() {
+export default function DoctorPatientsPage() {
   const router = useRouter();
-  const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const { user } = useAuthStore();
+
   const [patients, setPatients] = useState<any[]>([]);
-  const [selected, setSelected] = useState<any>(null);
-  const [loadingVisits, setLoadingVisits] = useState(false);
-  const [visits, setVisits] = useState<any[]>([]);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [filteredPatients, setFilteredPatients] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [filterGender, setFilterGender] = useState<string>("all");
+  const [filterBloodType, setFilterBloodType] = useState<string>("all");
+  const [error, setError] = useState("");
 
-  const handleSearch = useCallback(async () => {
-    const q = query.trim();
-    if (!q) return;
-    setLoading(true);
-    setError("");
-    setPatients([]);
-    setSelected(null);
-    setVisits([]);
-    try {
-      const res = await patientApi.search(q);
-      const list = res.data.data?.patients ?? [];
-      if (list.length === 0) {
-        setError(`No patients found matching "${q}".`);
-      } else {
-        setPatients(list);
-        // If only one result, auto-select
-        if (list.length === 1) handleSelectPatient(list[0]);
+  const institutionId = (user as any)?.institutionId;
+  const institutionName = (user as any)?.institutionName;
+
+  useEffect(() => {
+    const fetchPatients = async () => {
+      if (!institutionId) {
+        setError("No institution assigned to your account.");
+        setLoading(false);
+        return;
       }
-    } catch (err: any) {
-      setError(
-        err.response?.data?.error?.message ??
-          "Search failed. Please try again.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [query]);
 
-  const handleSelectPatient = useCallback(async (patient: any) => {
-    setSelected(patient);
-    setLoadingVisits(true);
-    setVisits([]);
-    try {
-      // Try a likely visitApi method first, otherwise fall back to a direct fetch.
-      let visitsList: any[] = [];
-
-      if ((visitApi as any).getByPatientId) {
-        const res = await (visitApi as any).getByPatientId(patient.id);
-        visitsList = res.data?.data?.visits ?? res.data?.visits ?? [];
-      } else {
-        const res = await fetch(
-          `/api/visits?patientId=${encodeURIComponent(patient.id)}`,
+      setLoading(true);
+      try {
+        // Fetch all patients from this institution
+        const res = await patientApi.getAllByInstitution(institutionId);
+        const patientsData = res.data.data?.patients ?? [];
+        setPatients(patientsData);
+        setFilteredPatients(patientsData);
+      } catch (err: any) {
+        setError(
+          err.response?.data?.error?.message ?? "Failed to load patients.",
         );
-        const json = await res.json();
-        visitsList = json.data?.visits ?? json?.visits ?? [];
+      } finally {
+        setLoading(false);
       }
+    };
 
-      setVisits(visitsList);
-    } catch (err) {
-      // Log error for debugging; keep UI stable
-      console.error(err);
-    } finally {
-      setLoadingVisits(false);
+    fetchPatients();
+  }, [institutionId]);
+
+  // Filter patients based on search and filters
+  useEffect(() => {
+    let result = [...patients];
+
+    // Search filter
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (p) =>
+          p.firstName?.toLowerCase().includes(q) ||
+          p.lastName?.toLowerCase().includes(q) ||
+          p.medicalRecordNumber?.toLowerCase().includes(q) ||
+          p.nationalId?.toLowerCase().includes(q) ||
+          p.phoneNumber?.includes(q),
+      );
     }
-  }, []);
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleSearch();
+    // Gender filter
+    if (filterGender !== "all") {
+      result = result.filter((p) => p.gender === filterGender);
+    }
+
+    // Blood type filter
+    if (filterBloodType !== "all") {
+      result = result.filter((p) => p.bloodType === filterBloodType);
+    }
+
+    setFilteredPatients(result);
+  }, [searchQuery, filterGender, filterBloodType, patients]);
+
+  const handleViewPatient = (patientId: string) => {
+    router.push(`/dashboard/doctor/patients/${patientId}`);
   };
 
-  const activeVisit = visits.find((v) => v.status === "in-progress");
+  if (!institutionId) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <AlertCircle size={48} className="text-red-400 mb-4" />
+        <p className="text-lg font-semibold text-gray-700">
+          No Institution Assigned
+        </p>
+        <p className="text-sm text-gray-500 mt-1">
+          Contact your administrator to assign you to an institution.
+        </p>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <Loader2 size={48} className="animate-spin text-green-600 mb-4" />
+        <p className="text-sm text-gray-500">Loading patients...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <AlertCircle size={48} className="text-red-400 mb-4" />
+        <p className="text-lg font-semibold text-gray-700">Error</p>
+        <p className="text-sm text-gray-500 mt-1">{error}</p>
+      </div>
+    );
+  }
 
   return (
     <div
-      className="max-w-4xl mx-auto"
+      className="max-w-7xl mx-auto"
       style={{ fontFamily: "'DM Sans', sans-serif" }}
     >
       {/* Header */}
       <div className="mb-6">
-        <h1
-          className="text-2xl font-bold text-gray-900"
-          style={{ fontFamily: "'Playfair Display', serif" }}
-        >
-          Patient Search
-        </h1>
-        <p className="text-gray-500 text-sm mt-1">
-          Search by patient name or National ID (NRC number)
-        </p>
+        <div className="flex items-center gap-3 mb-2">
+          <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
+            <Users size={20} className="text-green-700" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">
+              Patient Directory
+            </h1>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {institutionName ?? "Your Institution"} ·{" "}
+              {filteredPatients.length} of {patients.length} patients
+            </p>
+          </div>
+        </div>
       </div>
 
-      {/* Search box */}
+      {/* Search and Filters */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 mb-5">
-        <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
-          Patient Name or National ID
-        </label>
-        <div className="flex gap-3">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="e.g. Musonda or 123456/78/1"
-              className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm outline-none transition-all focus:border-green-600 focus:ring-2 focus:ring-green-600/10 focus:bg-white placeholder:text-gray-400"
-            />
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* Search */}
+          <div className="md:col-span-2">
+            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+              Search Patients
+            </label>
+            <div className="relative">
+              <Search
+                size={16}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
+              />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Name, MRN, National ID, Phone..."
+                className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-900 outline-none
+                  focus:border-green-600 focus:ring-2 focus:ring-green-600/10 focus:bg-white placeholder:text-gray-400 transition-all"
+              />
+            </div>
           </div>
-          <button
-            onClick={handleSearch}
-            disabled={loading || !query.trim()}
-            className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md disabled:opacity-50"
-            style={{ background: "linear-gradient(135deg, #166534, #15803d)" }}
-          >
-            {loading ? (
-              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            ) : (
-              <Search className="w-4 h-4" />
-            )}
-            Search
-          </button>
+
+          {/* Gender Filter */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+              Gender
+            </label>
+            <select
+              value={filterGender}
+              onChange={(e) => setFilterGender(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-900 outline-none
+                focus:border-green-600 focus:ring-2 focus:ring-green-600/10 focus:bg-white transition-all"
+            >
+              <option value="all">All</option>
+              <option value="male">Male</option>
+              <option value="female">Female</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+
+          {/* Blood Type Filter */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1.5">
+              Blood Type
+            </label>
+            <select
+              value={filterBloodType}
+              onChange={(e) => setFilterBloodType(e.target.value)}
+              className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-900 outline-none
+                focus:border-green-600 focus:ring-2 focus:ring-green-600/10 focus:bg-white transition-all"
+            >
+              <option value="all">All</option>
+              <option value="A+">A+</option>
+              <option value="A-">A-</option>
+              <option value="B+">B+</option>
+              <option value="B-">B-</option>
+              <option value="AB+">AB+</option>
+              <option value="AB-">AB-</option>
+              <option value="O+">O+</option>
+              <option value="O-">O-</option>
+            </select>
+          </div>
         </div>
 
-        {error && (
-          <div className="flex items-start gap-2 mt-3 p-3 rounded-xl bg-red-50 border border-red-100">
-            <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-            <p className="text-sm text-red-700">{error}</p>
+        {/* Active Filters Summary */}
+        {(searchQuery ||
+          filterGender !== "all" ||
+          filterBloodType !== "all") && (
+          <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-gray-400">Active filters:</span>
+            {searchQuery && (
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-green-50 text-green-700 border border-green-100">
+                Search: "{searchQuery}"
+              </span>
+            )}
+            {filterGender !== "all" && (
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
+                Gender: {filterGender}
+              </span>
+            )}
+            {filterBloodType !== "all" && (
+              <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-red-50 text-red-700 border border-red-100">
+                Blood: {filterBloodType}
+              </span>
+            )}
+            <button
+              onClick={() => {
+                setSearchQuery("");
+                setFilterGender("all");
+                setFilterBloodType("all");
+              }}
+              className="text-xs text-gray-400 hover:text-gray-600 underline ml-2"
+            >
+              Clear all
+            </button>
           </div>
         )}
       </div>
 
-      {/* Multiple results list */}
-      {patients.length > 1 && !selected && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-5">
-          <div className="px-5 py-3.5 border-b border-gray-100">
-            <p className="text-sm font-bold text-gray-900">
-              {patients.length} results found
-            </p>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Select a patient to view their records
-            </p>
-          </div>
-          <div className="divide-y divide-gray-50">
-            {patients.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => handleSelectPatient(p)}
-                className="w-full px-5 py-3.5 flex items-center gap-4 hover:bg-gray-50 transition-colors text-left group"
-              >
-                <div
-                  className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0"
-                  style={{ background: "#166534" }}
-                >
-                  {p.firstName?.[0]}
-                  {p.lastName?.[0]}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-semibold text-gray-900">
-                    {p.firstName} {p.lastName}
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    {p.gender} · {p.dateOfBirth}
-                  </p>
-                </div>
-                {p.bloodType && p.bloodType !== "unknown" && (
-                  <span
-                    className="text-xs font-bold px-2 py-1 rounded-full text-white flex-shrink-0"
-                    style={{
-                      background: bloodTypeColor[p.bloodType] ?? "#6b7280",
-                    }}
-                  >
-                    {p.bloodType}
-                  </span>
-                )}
-                <ChevronRight
-                  size={16}
-                  className="text-gray-300 group-hover:text-gray-500 transition-colors flex-shrink-0"
-                />
-              </button>
-            ))}
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5">
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-green-50 flex items-center justify-center">
+              <Users size={18} className="text-green-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-extrabold text-gray-900">
+                {patients.length}
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">Total Patients</p>
+            </div>
           </div>
         </div>
-      )}
 
-      {/* Selected patient detail */}
-      {selected && (
-        <div className="space-y-4">
-          {/* Patient card */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            {/* Patient header */}
-            <div
-              className="px-6 py-5 border-b border-gray-100"
-              style={{
-                background: "linear-gradient(135deg, #f0fdf4, #dcfce7)",
-              }}
-            >
-              <div className="flex items-center gap-4">
-                <div
-                  className="w-14 h-14 rounded-full flex items-center justify-center text-lg font-bold text-white flex-shrink-0"
-                  style={{ background: "#166534" }}
-                >
-                  {selected.firstName?.[0]}
-                  {selected.lastName?.[0]}
-                </div>
-                <div className="flex-1">
-                  <h2 className="text-lg font-bold text-gray-900">
-                    {selected.firstName} {selected.lastName}
-                  </h2>
-                  <p className="text-sm text-gray-500 capitalize">
-                    {selected.gender} · {selected.dateOfBirth}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  {selected.bloodType && selected.bloodType !== "unknown" && (
-                    <span
-                      className="text-sm font-bold px-3 py-1.5 rounded-full text-white"
-                      style={{
-                        background:
-                          bloodTypeColor[selected.bloodType] ?? "#6b7280",
-                      }}
-                    >
-                      {selected.bloodType}
-                    </span>
-                  )}
-                  {patients.length > 1 && (
-                    <button
-                      onClick={() => {
-                        setSelected(null);
-                        setVisits([]);
-                      }}
-                      className="text-xs font-medium text-green-700 hover:underline"
-                    >
-                      ← Back to results
-                    </button>
-                  )}
-                </div>
-              </div>
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center">
+              <Activity size={18} className="text-blue-600" />
             </div>
-
-            {/* Patient info grid */}
-            <div className="px-6 py-4 grid grid-cols-2 gap-x-8 gap-y-3 text-sm border-b border-gray-100">
-              {[
-                { icon: Phone, label: "Phone", value: selected.phoneNumber },
-                { icon: User, label: "NRC", value: selected.nationalId },
-                { icon: Calendar, label: "DOB", value: selected.dateOfBirth },
-                {
-                  icon: Activity,
-                  label: "Status",
-                  value: activeVisit ? "Currently admitted" : "Not admitted",
-                },
-              ].map(({ icon: Icon, label, value }) => (
-                <div key={label} className="flex items-center gap-2.5">
-                  <Icon size={14} className="text-gray-400 flex-shrink-0" />
-                  <div>
-                    <p className="text-xs text-gray-400 uppercase tracking-wide font-medium">
-                      {label}
-                    </p>
-                    <p
-                      className="text-gray-800 font-medium text-sm"
-                      style={
-                        label === "Status" && activeVisit
-                          ? { color: "#dc2626", fontWeight: 700 }
-                          : {}
-                      }
-                    >
-                      {value ?? "—"}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Allergies */}
-            {selected.allergies?.length > 0 && (
-              <div className="px-6 py-3 bg-red-50 border-b border-red-100 flex items-start gap-2">
-                <AlertCircle
-                  size={14}
-                  className="text-red-500 mt-0.5 flex-shrink-0"
-                />
-                <div>
-                  <p className="text-xs font-bold text-red-700 uppercase tracking-wide mb-0.5">
-                    Known Allergies
-                  </p>
-                  <p className="text-sm text-red-700">
-                    {selected.allergies
-                      .map((a: any) => `${a.allergen} (${a.severity})`)
-                      .join(", ")}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {/* Active visit CTA */}
-            {activeVisit && (
-              <div className="px-6 py-4">
-                <button
-                  onClick={() =>
-                    router.push(`/dashboard/doctor/visits/${activeVisit.id}`)
-                  }
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md"
-                  style={{
-                    background: "linear-gradient(135deg, #166534, #15803d)",
-                  }}
-                >
-                  <Activity className="w-4 h-4" />
-                  Open Active Visit — {activeVisit.visitNumber}
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Visit history */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-gray-100">
-              <p className="text-sm font-bold text-gray-900">Visit History</p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {visits.length} total visit{visits.length !== 1 ? "s" : ""}
+            <div>
+              <p className="text-2xl font-extrabold text-gray-900">
+                {filteredPatients.length}
               </p>
+              <p className="text-xs text-gray-400 mt-0.5">Filtered Results</p>
             </div>
+          </div>
+        </div>
 
-            {loadingVisits ? (
-              <div className="py-8 text-center">
-                <div className="w-5 h-5 border-2 border-green-600 border-t-transparent rounded-full animate-spin mx-auto" />
-              </div>
-            ) : visits.length === 0 ? (
-              <div className="py-8 text-center text-gray-400 text-sm">
-                No visits found
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-50">
-                {visits.map((v) => {
-                  const ps =
-                    PRIORITY_STYLE[v.priority] ?? PRIORITY_STYLE.routine;
-                  const isActive = v.status === "in-progress";
-                  return (
-                    <button
-                      key={v.id}
-                      onClick={() =>
-                        router.push(`/dashboard/doctor/visits/${v.id}`)
-                      }
-                      className="w-full px-5 py-3.5 flex items-center gap-4 hover:bg-gray-50 transition-colors text-left group"
-                    >
-                      {isActive && (
-                        <div className="w-2 h-2 rounded-full bg-red-500 flex-shrink-0 animate-pulse" />
-                      )}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span className="text-xs font-bold text-gray-500 font-mono">
-                            {v.visitNumber}
-                          </span>
-                          <span
-                            className="text-xs font-semibold px-2 py-0.5 rounded-full capitalize"
-                            style={{ background: ps.bg, color: ps.text }}
-                          >
-                            {v.priority}
-                          </span>
-                          {isActive && (
-                            <span
-                              className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                              style={{
-                                background: "#fef2f2",
-                                color: "#dc2626",
-                              }}
-                            >
-                              Active
-                            </span>
+        <div className="bg-white rounded-xl border border-gray-100 shadow-sm p-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center">
+              <FileText size={18} className="text-purple-600" />
+            </div>
+            <div>
+              <p className="text-2xl font-extrabold text-gray-900">
+                {patients.reduce((sum, p) => sum + (p.visitCount ?? 0), 0)}
+              </p>
+              <p className="text-xs text-gray-400 mt-0.5">Total Visits</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Patient List */}
+      {filteredPatients.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-12 text-center">
+          <Users size={48} className="text-gray-300 mx-auto mb-4" />
+          <p className="text-lg font-semibold text-gray-700">
+            No patients found
+          </p>
+          <p className="text-sm text-gray-500 mt-1">
+            {searchQuery || filterGender !== "all" || filterBloodType !== "all"
+              ? "Try adjusting your filters"
+              : "No patients registered at this institution yet"}
+          </p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full">
+              <thead className="bg-gray-50 border-b border-gray-100">
+                <tr>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    Patient
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    MRN
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    Demographics
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    Contact
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    Visits
+                  </th>
+                  <th className="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                    Actions
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filteredPatients.map((patient) => (
+                  <tr
+                    key={patient.id}
+                    className="hover:bg-gray-50 transition-colors cursor-pointer"
+                    onClick={() => handleViewPatient(patient.id)}
+                  >
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-sm font-bold text-green-700">
+                          {patient.firstName?.[0]}
+                          {patient.lastName?.[0]}
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">
+                            {patient.firstName} {patient.lastName}
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            {patient.nationalId ?? "—"}
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <p className="text-sm font-mono font-semibold text-gray-700">
+                        {patient.medicalRecordNumber}
+                      </p>
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2 text-xs text-gray-600">
+                          <User size={12} className="text-gray-400" />
+                          <span className="capitalize">{patient.gender}</span>
+                          {patient.bloodType && (
+                            <>
+                              <span className="text-gray-300">·</span>
+                              <span className="font-semibold text-red-600">
+                                {patient.bloodType}
+                              </span>
+                            </>
                           )}
                         </div>
-                        <p className="text-sm font-semibold text-gray-900 truncate">
-                          {v.chiefComplaint}
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          {v.admissionDate?.split("T")[0]} ·{" "}
-                          {v.institution?.institutionName ?? "—"}
-                        </p>
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          <Calendar size={12} className="text-gray-400" />
+                          DOB:{" "}
+                          {safeFormatDate(patient.dateOfBirth, "dd MMM yyyy")}
+                        </div>
                       </div>
-                      <ChevronRight
-                        size={16}
-                        className="text-gray-300 group-hover:text-gray-500 flex-shrink-0 transition-colors"
-                      />
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <div className="space-y-0.5">
+                        {patient.phoneNumber && (
+                          <div className="flex items-center gap-2 text-xs text-gray-600">
+                            <Phone size={12} className="text-gray-400" />
+                            {patient.phoneNumber}
+                          </div>
+                        )}
+                        {patient.address && (
+                          <div className="flex items-center gap-2 text-xs text-gray-500">
+                            <MapPin size={12} className="text-gray-400" />
+                            <span className="truncate max-w-[200px]">
+                              {patient.address}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-lg bg-blue-50 flex items-center justify-center">
+                          <span className="text-sm font-bold text-blue-600">
+                            {patient.visitCount ?? 0}
+                          </span>
+                        </div>
+                        <span className="text-xs text-gray-400">visits</span>
+                      </div>
+                    </td>
+
+                    <td className="px-5 py-4">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleViewPatient(patient.id);
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-green-700 bg-green-50 hover:bg-green-100 border border-green-100 transition-all"
+                      >
+                        View Details
+                        <ChevronRight size={12} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}

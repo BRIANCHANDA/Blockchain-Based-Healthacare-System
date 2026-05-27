@@ -175,23 +175,30 @@ export type RootStackParamList = {
 export type AuthStackParamList = {
     Login: undefined;
     Register: undefined;
-    changepassword: undefined;
+    ChangePassword: undefined;
 };
 
 export type MainTabParamList = {
     Records: undefined;
     Access: undefined;
-    Visits: undefined;
-    Profile: undefined;
+    History: undefined;
+    Referrals: undefined;
 };
 
 export type RecordsStackParamList = {
     RecordsList: undefined;
     RecordDetail: { visitId: string; visitNumber: string };
+    Profile: undefined;
 };
 
 export type AccessStackParamList = {
     AccessRequests: undefined;
     WhoHasAccess: undefined;
     RevokeAccess: { permissionId: string; granteeName: string; practitionerId: string };
+};
+
+
+export type ReferralsStackParamList = {
+    ReferralsList: undefined;
+    Profile: undefined;
 };

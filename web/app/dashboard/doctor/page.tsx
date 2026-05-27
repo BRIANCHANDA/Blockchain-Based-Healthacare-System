@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
 import { api } from "@/lib/api";
@@ -19,10 +19,15 @@ import {
   Microscope,
   Pill,
   RefreshCw,
+  AlertCircle,
+  Hourglass,
+  Scan,
+  CheckCircle2,
+  Loader2,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
-// ── Types ──────────────────────────────────────────────────────────────────────
+// ── Types ─────────────────────────────────────────────────────────────────────
 interface TodayStats {
   total: number;
   triaged: number;
@@ -43,13 +48,10 @@ interface RecentPatient {
   status: string;
   chiefComplaint: string;
   consultedAt: string;
-  patient: {
-    firstName: string;
-    lastName: string;
-    gender: string;
-    bloodType: string;
-  } | null;
+  patient: { firstName: string; lastName: string } | null;
 }
+
+// assigned-to-me returns flat fields, not nested patient object
 interface QueueVisit {
   id: string;
   visitNumber: string;
@@ -58,15 +60,15 @@ interface QueueVisit {
   status: string;
   admissionDate: string;
   hasConsultation: boolean;
-  patient: {
-    firstName: string;
-    lastName: string;
-    gender: string;
-    bloodType: string;
-  } | null;
+  pendingLabCount: number;
+  pendingImagingCount: number;
+  // Flat fields from assigned-to-me practitioner branch
+  patientName: string;
+  gender: string;
+  bloodType: string;
 }
 
-// ── Priority config ────────────────────────────────────────────────────────────
+// ── Config ────────────────────────────────────────────────────────────────────
 const PC: Record<
   string,
   { color: string; bg: string; border: string; dot: string; label: string }
@@ -102,7 +104,7 @@ const PC: Record<
 };
 const getP = (p: string) => PC[p] ?? PC.routine;
 
-const bloodTypeColor: Record<string, string> = {
+const BLOOD_COLORS: Record<string, string> = {
   "A+": "#3b82f6",
   "A-": "#6366f1",
   "B+": "#8b5cf6",
@@ -113,69 +115,193 @@ const bloodTypeColor: Record<string, string> = {
   "O-": "#14b8a6",
 };
 
-function getGreeting() {
+function greeting() {
   const h = new Date().getHours();
   return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
 }
 
-// ── Component ──────────────────────────────────────────────────────────────────
+// Get initials from flat patientName string e.g. "John Doe" → "JD"
+function getInitials(name: string) {
+  return (
+    name
+      .split(" ")
+      .filter(Boolean)
+      .map((n) => n[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "?"
+  );
+}
+
+// ── Pending result card ───────────────────────────────────────────────────────
+function PendingResultCard({
+  visit,
+  onClick,
+}: {
+  visit: QueueVisit;
+  onClick: () => void;
+}) {
+  const p = getP(visit.priority);
+  const totalPending = visit.pendingLabCount + visit.pendingImagingCount;
+  const waitMins = Math.floor(
+    (Date.now() - new Date(visit.admissionDate).getTime()) / 60_000,
+  );
+  const waitStr =
+    waitMins > 60
+      ? `${Math.floor(waitMins / 60)}h ${waitMins % 60}m`
+      : `${waitMins}m`;
+
+  return (
+    <button
+      onClick={onClick}
+      className="w-full flex items-center gap-3.5 px-4 py-3.5 text-left hover:bg-gray-50/80 transition-colors group"
+    >
+      <div className="relative flex-shrink-0">
+        <div
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold"
+          style={{ background: p.bg, color: p.color }}
+        >
+          {getInitials(visit.patientName)}
+        </div>
+        <div
+          className="absolute -top-1 -right-1 min-w-[18px] px-1 h-[18px] rounded-full flex items-center justify-center font-bold text-white"
+          style={{ background: "#f59e0b", fontSize: "9px" }}
+        >
+          {totalPending}
+        </div>
+      </div>
+
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-semibold text-gray-900 truncate">
+          {visit.patientName}
+        </p>
+        <p className="text-xs text-gray-400 truncate mt-0.5">
+          {visit.chiefComplaint}
+        </p>
+        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+          {visit.pendingLabCount > 0 && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
+              <FlaskConical className="w-2.5 h-2.5" /> {visit.pendingLabCount}{" "}
+              lab
+            </span>
+          )}
+          {visit.pendingImagingCount > 0 && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-100">
+              <Scan className="w-2.5 h-2.5" /> {visit.pendingImagingCount}{" "}
+              imaging
+            </span>
+          )}
+          <span className="text-[10px] text-gray-400 flex items-center gap-1 ml-auto">
+            <Clock className="w-2.5 h-2.5" /> {waitStr}
+          </span>
+        </div>
+      </div>
+
+      <ChevronRight className="w-4 h-4 text-gray-200 group-hover:text-amber-500 transition-colors flex-shrink-0" />
+    </button>
+  );
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
 export default function DoctorOverview() {
   const router = useRouter();
   const { user } = useAuthStore();
 
   const [stats, setStats] = useState<TodayStats | null>(null);
   const [activity, setActivity] = useState<ActivityStats | null>(null);
-  const [recentPatients, setRecent] = useState<RecentPatient[]>([]);
+  const [recentPatients, setRecentPatients] = useState<RecentPatient[]>([]);
   const [queue, setQueue] = useState<QueueVisit[]>([]);
   const [loadingStats, setLoadingStats] = useState(true);
   const [loadingQueue, setLoadingQueue] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     try {
       const res = await api.get("/api/doctor/stats");
       const d = res.data.data;
       setStats(d.today);
       setActivity(d.activity);
-      setRecent(d.recentPatients ?? []);
-    } catch (_) {
+      setRecentPatients(d.recentPatients ?? []);
+    } catch (err: any) {
+      setError(err?.response?.data?.error?.message ?? "Failed to load stats");
     } finally {
       setLoadingStats(false);
     }
-  };
+  }, []);
 
-  const fetchQueue = async (silent = false) => {
+  const fetchQueue = useCallback(async (silent = false) => {
     if (silent) setRefreshing(true);
     try {
-      const res = await api.get("/api/doctor/today-queue");
-      setQueue(res.data.data.visits ?? []);
-    } catch (_) {
+      const res = await api.get("/api/visits/assigned-to-me");
+      // assigned-to-me returns an array directly in data
+      const raw: any[] = res.data?.data ?? [];
+      const sorted = [...raw].sort((a, b) => {
+        const order: Record<string, number> = {
+          critical: 0,
+          emergency: 1,
+          urgent: 2,
+          routine: 3,
+        };
+        const po = (order[a.priority] ?? 9) - (order[b.priority] ?? 9);
+        return po !== 0
+          ? po
+          : new Date(a.admissionDate).getTime() -
+              new Date(b.admissionDate).getTime();
+      });
+      setQueue(sorted as QueueVisit[]);
+    } catch (err: any) {
+      if (!silent)
+        setError(err?.response?.data?.error?.message ?? "Failed to load queue");
     } finally {
       setLoadingQueue(false);
       setRefreshing(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchStats();
     fetchQueue();
-    const i = setInterval(() => fetchQueue(true), 30_000);
-    return () => clearInterval(i);
-  }, []);
+    const iv = setInterval(() => fetchQueue(true), 30_000);
+    return () => clearInterval(iv);
+  }, [fetchStats, fetchQueue]);
 
-  const skeletonVal = (v: number | undefined, color: string) =>
-    loadingStats ? (
+  // Derived
+  const pendingConsultCount = queue.filter((v) => !v.hasConsultation).length;
+  const waitingForResults = queue.filter(
+    (v) =>
+      v.hasConsultation && (v.pendingLabCount > 0 || v.pendingImagingCount > 0),
+  );
+  const totalPendingResults = waitingForResults.reduce(
+    (s, v) => s + v.pendingLabCount + v.pendingImagingCount,
+    0,
+  );
+
+  function Skel({ color }: { color: string }) {
+    return (
       <span
         className="inline-block w-8 h-7 rounded-lg animate-pulse"
         style={{ background: `${color}18` }}
       />
-    ) : (
-      <>{v ?? 0}</>
     );
+  }
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      {/* ── Hero banner ── */}
+      {error && (
+        <div className="mb-4 px-4 py-3 rounded-xl border flex items-center gap-3 bg-red-50 border-red-100 text-red-800">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <p className="text-sm font-medium flex-1">{error}</p>
+          <button
+            onClick={() => setError(null)}
+            className="text-sm font-semibold hover:opacity-70"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Hero */}
       <div
         className="relative rounded-3xl overflow-hidden mb-6 px-7 py-6"
         style={{
@@ -187,47 +313,43 @@ export default function DoctorOverview() {
           className="absolute -right-10 -top-10 w-48 h-48 rounded-full opacity-[0.07]"
           style={{ background: "radial-gradient(circle,#bbf7d0,transparent)" }}
         />
-        <div
-          className="absolute right-28 bottom-0 w-32 h-32 rounded-full opacity-[0.05]"
-          style={{ background: "radial-gradient(circle,#dcfce7,transparent)" }}
-        />
-
         <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <p className="text-green-300/70 text-sm font-medium mb-1">
-              {getGreeting()}, Dr.
+              {greeting()}, Dr.
             </p>
             <h1
-              className="text-white text-2xl font-bold leading-tight"
+              className="text-white text-2xl font-bold"
               style={{ fontFamily: "'Playfair Display', serif" }}
             >
               {user?.firstName} {user?.lastName}
             </h1>
             <p className="text-green-200/50 text-sm mt-1.5">
               {format(new Date(), "EEEE, d MMMM yyyy")}
-              {stats && stats.total > 0 && (
+              {stats?.total ? (
                 <>
-                  {" · "}
+                  {" "}
+                  ·{" "}
                   <span className="text-green-200/80">
-                    {stats.total} patient{stats.total !== 1 ? "s" : ""} today
+                    {stats.total} patients today
                   </span>
-                  {stats.critical > 0 && (
-                    <>
-                      {" "}
-                      ·{" "}
-                      <span className="text-red-300">
-                        {stats.critical} critical
-                      </span>
-                    </>
-                  )}
                 </>
-              )}
+              ) : null}
+              {stats?.critical ? (
+                <>
+                  {" "}
+                  ·{" "}
+                  <span className="text-red-300">
+                    {stats.critical} critical
+                  </span>
+                </>
+              ) : null}
             </p>
           </div>
           <div className="flex gap-2.5 flex-wrap">
             <button
               onClick={() => router.push("/dashboard/doctor/queue")}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.02]"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
               style={{
                 background: "rgba(255,255,255,0.15)",
                 border: "1px solid rgba(255,255,255,0.2)",
@@ -237,7 +359,7 @@ export default function DoctorOverview() {
             </button>
             <button
               onClick={() => router.push("/dashboard/doctor/patients")}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold"
               style={{
                 background: "rgba(0,0,0,0.2)",
                 color: "#bbf7d0",
@@ -250,48 +372,46 @@ export default function DoctorOverview() {
         </div>
       </div>
 
-      {/* ── Stat cards ── */}
+      {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
-        {(
-          [
-            {
-              label: "Total Today",
-              value: stats?.total,
-              sub: "registered visits",
-              color: "#166534",
-              bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
-              border: "#bbf7d0",
-              icon: Calendar,
-            },
-            {
-              label: "Awaiting Me",
-              value: stats?.triaged,
-              sub: "triaged · ready for consult",
-              color: "#1d4ed8",
-              bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
-              border: "#bfdbfe",
-              icon: Clock,
-            },
-            {
-              label: "Completed",
-              value: stats?.completed,
-              sub: "discharged today",
-              color: "#7c3aed",
-              bg: "linear-gradient(135deg,#faf5ff,#ede9fe)",
-              border: "#ddd6fe",
-              icon: TrendingUp,
-            },
-            {
-              label: "Critical/Urgent",
-              value: (stats?.critical ?? 0) + (stats?.urgent ?? 0),
-              sub: `${stats?.critical ?? 0} critical · ${stats?.urgent ?? 0} urgent`,
-              color: "#dc2626",
-              bg: "linear-gradient(135deg,#fef2f2,#fee2e2)",
-              border: "#fecaca",
-              icon: AlertTriangle,
-            },
-          ] as const
-        ).map(({ label, value, sub, color, bg, border, icon: Icon }) => (
+        {[
+          {
+            label: "Total Today",
+            value: stats?.total,
+            sub: "registered visits",
+            color: "#166534",
+            bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
+            border: "#bbf7d0",
+            icon: Calendar,
+          },
+          {
+            label: "Awaiting Me",
+            value: stats?.triaged,
+            sub: "ready for consult",
+            color: "#1d4ed8",
+            bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
+            border: "#bfdbfe",
+            icon: Clock,
+          },
+          {
+            label: "Completed",
+            value: stats?.completed,
+            sub: "discharged today",
+            color: "#7c3aed",
+            bg: "linear-gradient(135deg,#faf5ff,#ede9fe)",
+            border: "#ddd6fe",
+            icon: TrendingUp,
+          },
+          {
+            label: "Critical/Urgent",
+            value: (stats?.critical ?? 0) + (stats?.urgent ?? 0),
+            sub: `${stats?.critical ?? 0} critical · ${stats?.urgent ?? 0} urgent`,
+            color: "#dc2626",
+            bg: "linear-gradient(135deg,#fef2f2,#fee2e2)",
+            border: "#fecaca",
+            icon: AlertTriangle,
+          },
+        ].map(({ label, value, sub, color, bg, border, icon: Icon }) => (
           <div
             key={label}
             className="relative rounded-2xl border overflow-hidden p-4"
@@ -311,7 +431,7 @@ export default function DoctorOverview() {
               className="text-3xl font-extrabold leading-none mb-1"
               style={{ color }}
             >
-              {skeletonVal(value, color)}
+              {loadingStats ? <Skel color={color} /> : (value ?? 0)}
             </p>
             <p className="text-xs font-bold" style={{ color, opacity: 0.75 }}>
               {label}
@@ -323,36 +443,34 @@ export default function DoctorOverview() {
         ))}
       </div>
 
-      {/* ── My Activity strip ── */}
+      {/* Activity strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
-        {(
-          [
-            {
-              label: "Consultations",
-              value: activity?.consultations,
-              color: "#166534",
-              icon: Stethoscope,
-            },
-            {
-              label: "Lab Orders",
-              value: activity?.labOrders,
-              color: "#0369a1",
-              icon: Microscope,
-            },
-            {
-              label: "Imaging Orders",
-              value: activity?.imagingOrders,
-              color: "#7c3aed",
-              icon: FlaskConical,
-            },
-            {
-              label: "Prescriptions",
-              value: activity?.prescriptions,
-              color: "#d97706",
-              icon: Pill,
-            },
-          ] as const
-        ).map(({ label, value, color, icon: Icon }) => (
+        {[
+          {
+            label: "Consultations",
+            value: activity?.consultations,
+            color: "#166534",
+            icon: Stethoscope,
+          },
+          {
+            label: "Lab Orders",
+            value: activity?.labOrders,
+            color: "#0369a1",
+            icon: Microscope,
+          },
+          {
+            label: "Imaging Orders",
+            value: activity?.imagingOrders,
+            color: "#7c3aed",
+            icon: FlaskConical,
+          },
+          {
+            label: "Prescriptions",
+            value: activity?.prescriptions,
+            color: "#d97706",
+            icon: Pill,
+          },
+        ].map(({ label, value, color, icon: Icon }) => (
           <div
             key={label}
             className="bg-white rounded-2xl border border-gray-100 shadow-sm px-4 py-3 flex items-center gap-3"
@@ -377,53 +495,51 @@ export default function DoctorOverview() {
         ))}
       </div>
 
-      {/* ── Bottom grid ── */}
+      {/* Main grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Quick actions */}
         <div className="space-y-3">
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
+          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
             Quick Actions
           </p>
-          {(
-            [
-              {
-                label: "Today's Queue",
-                desc: "Triaged patients ready for consult",
-                href: "/dashboard/doctor/queue",
-                icon: ClipboardList,
-                color: "#166534",
-                bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
-                border: "#bbf7d0",
-              },
-              {
-                label: "Patient Search",
-                desc: "Look up any registered patient",
-                href: "/dashboard/doctor/patients",
-                icon: Users,
-                color: "#1d4ed8",
-                bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
-                border: "#bfdbfe",
-              },
-              {
-                label: "Request Permissions",
-                desc: "Blockchain consent from patient",
-                href: "/dashboard/doctor/permissions",
-                icon: Activity,
-                color: "#7c3aed",
-                bg: "linear-gradient(135deg,#faf5ff,#ede9fe)",
-                border: "#ddd6fe",
-              },
-              {
-                label: "New Visit",
-                desc: "Register an emergency visit",
-                href: "/dashboard/doctor/visit/new",
-                icon: FileText,
-                color: "#d97706",
-                bg: "linear-gradient(135deg,#fffbeb,#fef3c7)",
-                border: "#fde68a",
-              },
-            ] as const
-          ).map(({ label, desc, href, icon: Icon, color, bg, border }) => (
+          {[
+            {
+              label: "Today's Queue",
+              desc: "Triaged patients ready for consult",
+              href: "/dashboard/doctor/queue",
+              icon: ClipboardList,
+              color: "#166534",
+              bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
+              border: "#bbf7d0",
+            },
+            {
+              label: "Patient Search",
+              desc: "Look up any registered patient",
+              href: "/dashboard/doctor/patients",
+              icon: Users,
+              color: "#1d4ed8",
+              bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
+              border: "#bfdbfe",
+            },
+            {
+              label: "Request Permissions",
+              desc: "Blockchain consent from patient",
+              href: "/dashboard/doctor/permissions",
+              icon: Activity,
+              color: "#7c3aed",
+              bg: "linear-gradient(135deg,#faf5ff,#ede9fe)",
+              border: "#ddd6fe",
+            },
+            {
+              label: "New Visit",
+              desc: "Register an emergency visit",
+              href: "/dashboard/doctor/visit/new",
+              icon: FileText,
+              color: "#d97706",
+              bg: "linear-gradient(135deg,#fffbeb,#fef3c7)",
+              border: "#fde68a",
+            },
+          ].map(({ label, desc, href, icon: Icon, color, bg, border }) => (
             <button
               key={href}
               onClick={() => router.push(href)}
@@ -448,216 +564,270 @@ export default function DoctorOverview() {
           ))}
         </div>
 
-        {/* Live queue — 2 cols */}
-        <div className="lg:col-span-2">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
-                Live Queue
-              </p>
-              {!loadingQueue &&
-                queue.filter((v) => !v.hasConsultation).length > 0 && (
-                  <span
-                    className="px-1.5 py-0.5 rounded-full text-xs font-bold"
-                    style={{ background: "#fef2f2", color: "#dc2626" }}
-                  >
-                    {queue.filter((v) => !v.hasConsultation).length} pending
+        {/* Right column */}
+        <div className="lg:col-span-2 space-y-4">
+          {/* Waiting for results */}
+          {(loadingQueue || waitingForResults.length > 0) && (
+            <div>
+              <div className="flex items-center justify-between mb-2.5">
+                <div className="flex items-center gap-2">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                    Waiting for Results
+                  </p>
+                  {!loadingQueue && totalPendingResults > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-100">
+                      {totalPendingResults} pending
+                    </span>
+                  )}
+                </div>
+                {refreshing && (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />
+                )}
+              </div>
+
+              <div className="bg-white rounded-2xl border border-amber-100 shadow-sm overflow-hidden">
+                <div className="flex items-center gap-2.5 px-4 py-3 border-b border-amber-50 bg-amber-50/50">
+                  <Hourglass className="w-4 h-4 text-amber-500" />
+                  <p className="text-xs font-semibold text-amber-700">
+                    Consulted — awaiting lab or imaging results before further
+                    action
+                  </p>
+                </div>
+
+                {loadingQueue ? (
+                  <div className="divide-y divide-gray-50">
+                    {[...Array(3)].map((_, i) => (
+                      <div
+                        key={i}
+                        className="flex items-center gap-4 px-5 py-4 animate-pulse"
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-gray-100 flex-shrink-0" />
+                        <div className="flex-1 space-y-2">
+                          <div className="h-3.5 w-28 bg-gray-100 rounded" />
+                          <div className="h-3 w-40 bg-gray-100 rounded" />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-50">
+                    {waitingForResults.map((v) => (
+                      <PendingResultCard
+                        key={v.id}
+                        visit={v}
+                        onClick={() =>
+                          router.push(`/dashboard/doctor/visit/${v.id}`)
+                        }
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Live queue — only visits needing consult */}
+          <div>
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="flex items-center gap-2">
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+                  Live Queue
+                </p>
+                {!loadingQueue && pendingConsultCount > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-red-50 text-red-600 border border-red-100">
+                    {pendingConsultCount} need consult
                   </span>
                 )}
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => fetchQueue(true)}
-                disabled={refreshing}
-                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all disabled:opacity-40"
-              >
-                <RefreshCw
-                  className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`}
-                />
-              </button>
-              <button
-                onClick={() => router.push("/dashboard/doctor/queue")}
-                className="text-xs font-semibold flex items-center gap-1 transition-colors"
-                style={{ color: "#166534" }}
-              >
-                See all <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            {loadingQueue ? (
-              <div className="divide-y divide-gray-50">
-                {[...Array(5)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center gap-4 px-5 py-4 animate-pulse"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-gray-100 flex-shrink-0" />
-                    <div className="flex-1 space-y-2">
-                      <div className="h-3.5 w-32 bg-gray-100 rounded" />
-                      <div className="h-3 w-52 bg-gray-100 rounded" />
-                    </div>
-                    <div className="w-16 h-6 bg-gray-100 rounded-full" />
-                  </div>
-                ))}
               </div>
-            ) : queue.length === 0 ? (
-              <div className="py-16 text-center">
-                <div
-                  className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
-                  style={{ background: "#f0fdf4" }}
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => fetchQueue(true)}
+                  disabled={refreshing || loadingQueue}
+                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all disabled:opacity-40"
                 >
-                  <TrendingUp className="w-6 h-6 text-green-400" />
-                </div>
-                <p className="text-sm font-semibold text-gray-500">
-                  No patients ready for consultation
-                </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  Patients will appear after nurse triage is complete
-                </p>
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`}
+                  />
+                </button>
+                <button
+                  onClick={() => router.push("/dashboard/doctor/queue")}
+                  className="text-xs font-semibold flex items-center gap-1 hover:opacity-70"
+                  style={{ color: "#166634" }}
+                >
+                  See all <ChevronRight className="w-3.5 h-3.5" />
+                </button>
               </div>
-            ) : (
-              <div className="divide-y divide-gray-50">
-                {queue.slice(0, 7).map((v, i) => {
-                  const p = getP(v.priority);
-                  const isCrit = ["critical", "emergency"].includes(v.priority);
-                  const needsReview = !v.hasConsultation;
-                  return (
-                    <button
-                      key={v.id}
-                      onClick={() =>
-                        router.push(`/dashboard/doctor/visit/${v.id}`)
-                      }
-                      className="w-full flex items-center gap-4 px-5 py-3.5 text-left transition-all group"
-                      style={{
-                        background:
-                          isCrit && i === 0 ? `${p.dot}08` : undefined,
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!(isCrit && i === 0))
-                          e.currentTarget.style.background = "#f9fafb";
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!(isCrit && i === 0))
-                          e.currentTarget.style.background = "transparent";
-                      }}
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+              {loadingQueue ? (
+                <div className="divide-y divide-gray-50">
+                  {[...Array(5)].map((_, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-4 px-5 py-4 animate-pulse"
                     >
-                      {/* Avatar */}
-                      <div className="relative flex-shrink-0">
-                        <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold"
+                      <div className="w-10 h-10 rounded-xl bg-gray-100 flex-shrink-0" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-3.5 w-32 bg-gray-100 rounded" />
+                        <div className="h-3 w-52 bg-gray-100 rounded" />
+                      </div>
+                      <div className="w-16 h-6 bg-gray-100 rounded-full" />
+                    </div>
+                  ))}
+                </div>
+              ) : queue.filter((v) => !v.hasConsultation).length === 0 ? (
+                <div className="py-16 text-center">
+                  <div
+                    className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
+                    style={{ background: "#f0fdf4" }}
+                  >
+                    <TrendingUp className="w-6 h-6 text-green-400" />
+                  </div>
+                  <p className="text-sm font-semibold text-gray-500">
+                    No patients needing consult
+                  </p>
+                  <p className="text-xs text-gray-400 mt-1">
+                    {waitingForResults.length > 0
+                      ? `${waitingForResults.length} patient${waitingForResults.length !== 1 ? "s" : ""} waiting for results above`
+                      : "All caught up for now"}
+                  </p>
+                </div>
+              ) : (
+                <div className="divide-y divide-gray-50">
+                  {queue
+                    .filter((v) => !v.hasConsultation)
+                    .slice(0, 6)
+                    .map((visit, idx) => {
+                      const p = getP(visit.priority);
+                      const isCrit = ["critical", "emergency"].includes(
+                        visit.priority,
+                      );
+                      return (
+                        <button
+                          key={visit.id}
+                          onClick={() =>
+                            router.push(`/dashboard/doctor/visit/${visit.id}`)
+                          }
+                          className="w-full flex items-center gap-4 px-5 py-3.5 text-left hover:bg-gray-50/80 transition-all group"
                           style={{
-                            background: isCrit ? p.color : "#e2e8f0",
-                            color: isCrit ? "#fff" : "#64748b",
+                            background:
+                              isCrit && idx === 0 ? `${p.dot}06` : undefined,
                           }}
                         >
-                          {v.patient
-                            ? `${v.patient.firstName?.[0]}${v.patient.lastName?.[0]}`
-                            : "?"}
-                        </div>
-                        <span
-                          className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white"
-                          style={{
-                            background: needsReview
-                              ? isCrit
-                                ? p.dot
-                                : "#f59e0b"
-                              : "#16a34a",
-                          }}
-                        />
-                      </div>
-
-                      {/* Info */}
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-semibold text-gray-900 leading-tight">
-                            {v.patient
-                              ? `${v.patient.firstName} ${v.patient.lastName}`
-                              : "Unknown"}
-                          </p>
-                          {v.patient?.bloodType &&
-                            v.patient.bloodType !== "unknown" && (
-                              <span
-                                className="text-xs font-bold px-1.5 py-0.5 rounded-full text-white"
-                                style={{
-                                  background:
-                                    bloodTypeColor[v.patient.bloodType] ??
-                                    "#6b7280",
-                                  fontSize: "10px",
-                                }}
-                              >
-                                {v.patient.bloodType}
+                          {/* Avatar */}
+                          <div className="relative flex-shrink-0">
+                            <div
+                              className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold"
+                              style={{
+                                background: isCrit ? p.color : "#e2e8f0",
+                                color: isCrit ? "#fff" : "#64748b",
+                              }}
+                            >
+                              {getInitials(visit.patientName)}
+                            </div>
+                            {isCrit && idx === 0 && (
+                              <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3">
+                                <span
+                                  className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-50"
+                                  style={{ background: p.dot }}
+                                />
+                                <span
+                                  className="relative inline-flex rounded-full h-3 w-3"
+                                  style={{ background: p.dot }}
+                                />
                               </span>
                             )}
-                          <span className="font-mono text-xs text-gray-400">
-                            {v.visitNumber}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-400 truncate mt-0.5 max-w-xs">
-                          {v.chiefComplaint}
-                        </p>
-                      </div>
+                          </div>
 
-                      {/* Right side */}
-                      <div className="hidden sm:flex flex-col items-end gap-1.5 flex-shrink-0">
-                        <span
-                          className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                          style={{
-                            background: p.bg,
-                            color: p.color,
-                            border: `1px solid ${p.border}`,
-                          }}
-                        >
-                          {p.label}
-                        </span>
-                        <span
-                          className="text-xs flex items-center gap-1"
-                          style={{ color: needsReview ? "#d97706" : "#16a34a" }}
-                        >
-                          {needsReview ? (
-                            <>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="text-sm font-semibold text-gray-900 truncate">
+                                {visit.patientName}
+                              </p>
+                              {visit.bloodType &&
+                                visit.bloodType !== "unknown" && (
+                                  <span
+                                    className="text-[10px] font-bold px-1.5 py-0.5 rounded-full text-white flex-shrink-0"
+                                    style={{
+                                      background:
+                                        BLOOD_COLORS[visit.bloodType] ??
+                                        "#6b7280",
+                                    }}
+                                  >
+                                    {visit.bloodType}
+                                  </span>
+                                )}
+                            </div>
+                            <p className="text-xs text-gray-400 truncate mt-0.5">
+                              {visit.chiefComplaint}
+                            </p>
+                          </div>
+
+                          <div className="hidden sm:flex flex-col items-end gap-1.5 flex-shrink-0">
+                            <span
+                              className="text-xs font-semibold px-2.5 py-1 rounded-full"
+                              style={{
+                                background: p.bg,
+                                color: p.color,
+                                border: `1px solid ${p.border}`,
+                              }}
+                            >
+                              {p.label}
+                            </span>
+                            <span className="text-xs text-amber-600 flex items-center gap-1">
                               <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />{" "}
-                              Needs review
-                            </>
-                          ) : (
-                            <>
-                              <span className="w-1.5 h-1.5 rounded-full bg-green-500" />{" "}
-                              Consulted
-                            </>
-                          )}
-                        </span>
-                      </div>
+                              Needs consult
+                            </span>
+                          </div>
 
-                      <ChevronRight className="w-4 h-4 text-gray-200 group-hover:text-green-600 transition-colors flex-shrink-0" />
+                          <ChevronRight className="w-4 h-4 text-gray-200 group-hover:text-green-600 transition-colors flex-shrink-0" />
+                        </button>
+                      );
+                    })}
+
+                  {waitingForResults.length > 0 && (
+                    <div className="px-5 py-3 bg-amber-50/60 border-t border-amber-100 flex items-center gap-2">
+                      <Hourglass className="w-3.5 h-3.5 text-amber-500" />
+                      <p className="text-xs text-amber-700 font-medium">
+                        {waitingForResults.length} visit
+                        {waitingForResults.length !== 1 ? "s" : ""} waiting for
+                        results — shown above
+                      </p>
+                    </div>
+                  )}
+
+                  {queue.filter((v) => !v.hasConsultation).length > 6 && (
+                    <button
+                      onClick={() => router.push("/dashboard/doctor/queue")}
+                      className="w-full flex items-center justify-center gap-2 px-5 py-3.5 text-sm font-semibold hover:bg-gray-50 transition-colors"
+                      style={{ color: "#166534" }}
+                    >
+                      View {queue.filter((v) => !v.hasConsultation).length - 6}{" "}
+                      more <ChevronRight className="w-4 h-4" />
                     </button>
-                  );
-                })}
-
-                {queue.length > 7 && (
-                  <button
-                    onClick={() => router.push("/dashboard/doctor/queue")}
-                    className="w-full flex items-center justify-center gap-2 px-5 py-3.5 text-sm font-semibold transition-colors hover:bg-gray-50"
-                    style={{ color: "#166534" }}
-                  >
-                    View {queue.length - 7} more{" "}
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            )}
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Recently consulted */}
           {recentPatients.length > 0 && (
-            <div className="mt-4">
-              <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2.5">
                 Recently Consulted
               </p>
               <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
                 <div className="divide-y divide-gray-50">
                   {recentPatients.map((r) => {
                     const p = getP(r.priority);
+                    const name = r.patient
+                      ? `${r.patient.firstName} ${r.patient.lastName}`
+                      : "Unknown";
+                    const ini = r.patient
+                      ? `${r.patient.firstName?.[0] ?? ""}${r.patient.lastName?.[0] ?? ""}`
+                      : "?";
                     return (
                       <button
                         key={r.visitId}
@@ -670,15 +840,11 @@ export default function DoctorOverview() {
                           className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold flex-shrink-0"
                           style={{ background: `${p.color}15`, color: p.color }}
                         >
-                          {r.patient
-                            ? `${r.patient.firstName?.[0]}${r.patient.lastName?.[0]}`
-                            : "?"}
+                          {ini.toUpperCase()}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-semibold text-gray-900">
-                            {r.patient
-                              ? `${r.patient.firstName} ${r.patient.lastName}`
-                              : "Unknown"}
+                            {name}
                           </p>
                           <p className="text-xs text-gray-400 truncate">
                             {r.chiefComplaint}
@@ -686,12 +852,17 @@ export default function DoctorOverview() {
                         </div>
                         <div className="flex flex-col items-end gap-1 flex-shrink-0">
                           <span
-                            className={`text-xs font-semibold px-2 py-0.5 rounded-full ${r.status === "completed" ? "" : ""}`}
-                            style={
-                              r.status === "completed"
-                                ? { background: "#f0fdf4", color: "#166534" }
-                                : { background: "#eff6ff", color: "#1d4ed8" }
-                            }
+                            className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                            style={{
+                              background:
+                                r.status === "completed"
+                                  ? "#f0fdf4"
+                                  : "#eff6ff",
+                              color:
+                                r.status === "completed"
+                                  ? "#166534"
+                                  : "#1d4ed8",
+                            }}
                           >
                             {r.status === "completed" ? "Discharged" : "Active"}
                           </span>

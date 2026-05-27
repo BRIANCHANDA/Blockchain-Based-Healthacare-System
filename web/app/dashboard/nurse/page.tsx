@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
-import { visitApi } from "@/lib/api";
+import { api, practitionersApi, visitApi } from "@/lib/api";
 import {
   Activity,
   ClipboardList,
@@ -13,41 +13,42 @@ import {
   Zap,
   Clock,
   TrendingUp,
+  Stethoscope,
+  Loader2,
+  X,
+  UserCheck,
+  User,
+  CheckCircle2,
 } from "lucide-react";
 
-interface QueueVisit {
+interface AssignedPatient {
   id: string;
   visitNumber: string;
+  patientName: string;
   chiefComplaint: string;
   priority: string;
   status: string;
   admissionDate: string;
-  patient: {
-    firstName: string;
-    lastName: string;
-    gender: string;
-    bloodType: string;
-  } | null;
+  assignedDoctorId?: string;
+  doctorName?: string | null;
+  // Returned directly by the updated /assigned-to-me endpoint
+  hasVitals: boolean;
 }
 
-const PC: Record<
-  string,
-  {
-    color: string;
-    bg: string;
-    border: string;
-    dot: string;
-    label: string;
-    ring: string;
-  }
-> = {
+interface Doctor {
+  id: string;
+  firstName: string;
+  lastName: string;
+  specialization?: string | null;
+}
+
+const PRIORITY_CONFIG: Record<string, any> = {
   critical: {
     color: "#dc2626",
     bg: "#fef2f2",
     border: "#fecaca",
     dot: "#ef4444",
     label: "Critical",
-    ring: "rgba(220,38,38,0.06)",
   },
   emergency: {
     color: "#ea580c",
@@ -55,7 +56,6 @@ const PC: Record<
     border: "#fed7aa",
     dot: "#f97316",
     label: "Emergency",
-    ring: "rgba(234,88,12,0.06)",
   },
   urgent: {
     color: "#d97706",
@@ -63,7 +63,6 @@ const PC: Record<
     border: "#fde68a",
     dot: "#f59e0b",
     label: "Urgent",
-    ring: "rgba(217,119,6,0.06)",
   },
   routine: {
     color: "#16a34a",
@@ -71,48 +70,92 @@ const PC: Record<
     border: "#bbf7d0",
     dot: "#22c55e",
     label: "Routine",
-    ring: "rgba(22,163,74,0.05)",
   },
 };
-const getP = (p: string) => PC[p] ?? PC.routine;
+const getPriority = (p: string) =>
+  PRIORITY_CONFIG[p] ?? PRIORITY_CONFIG.routine;
+
+function timeSince(dateStr: string) {
+  const mins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
+  if (mins < 60) return `${mins}m`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
 
 function getGreeting() {
   const h = new Date().getHours();
   return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
 }
 
-function timeSince(iso: string) {
-  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (mins < 60) return `${mins}m`;
-  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
-}
-
 export default function NurseOverview() {
   const router = useRouter();
   const { user } = useAuthStore();
-  const [queue, setQueue] = useState<QueueVisit[]>([]);
+
+  const [patients, setPatients] = useState<AssignedPatient[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [selectedVisit, setSelectedVisit] = useState<AssignedPatient | null>(
+    null,
+  );
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [assigning, setAssigning] = useState(false);
+  const [assignError, setAssignError] = useState("");
+
+  const fetchAssignedPatients = async () => {
+    setLoading(true);
+    try {
+      const res = await api.get("/api/visits/assigned-to-me");
+      // Backend now returns hasVitals per visit — no extra calls needed
+      setPatients(res.data.data ?? []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    visitApi
-      .getTodayQueue()
-      .then((res) => setQueue(res.data.data.visits ?? []))
-      .catch(() => setQueue([]))
-      .finally(() => setLoading(false));
+    fetchAssignedPatients();
   }, []);
 
-  const critical = queue.filter((v) =>
-    ["critical", "emergency"].includes(v.priority),
-  );
-  const urgent = queue.filter((v) => v.priority === "urgent");
-  const routine = queue.filter((v) => v.priority === "routine");
-  const alertPts = queue.filter((v) =>
-    ["critical", "emergency", "urgent"].includes(v.priority),
-  );
+  const openAssignModal = async (visit: AssignedPatient) => {
+    setSelectedVisit(visit);
+    setAssignError("");
+    try {
+      const res = await practitionersApi.getOnlineStaff("practitioner");
+      setDoctors(res.data.data?.staff ?? []);
+      setShowAssignModal(true);
+    } catch {
+      setAssignError("Could not load doctors. Please try again.");
+    }
+  };
+
+  const assignDoctor = async (doctorId: string) => {
+    if (!selectedVisit) return;
+    setAssigning(true);
+    try {
+      await visitApi.assignDoctor(selectedVisit.id, doctorId);
+      await fetchAssignedPatients();
+      setShowAssignModal(false);
+      setSelectedVisit(null);
+    } catch (err: any) {
+      setAssignError(
+        err.response?.data?.error?.message || "Failed to assign doctor.",
+      );
+    } finally {
+      setAssigning(false);
+    }
+  };
+
+  const criticalCount = patients.filter((p) =>
+    ["critical", "emergency"].includes(p.priority),
+  ).length;
+  const urgentCount = patients.filter((p) => p.priority === "urgent").length;
+  const routineCount = patients.filter((p) => p.priority === "routine").length;
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      {/* Hero banner */}
+      {/* ── Hero banner ── */}
       <div
         className="relative rounded-3xl overflow-hidden mb-6 px-7 py-6"
         style={{
@@ -132,7 +175,6 @@ export default function NurseOverview() {
             background: "radial-gradient(circle, #dcfce7, transparent)",
           }}
         />
-
         <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
             <p className="text-green-300/70 text-sm font-medium mb-1">
@@ -145,9 +187,9 @@ export default function NurseOverview() {
               {user?.firstName} {user?.lastName}
             </h1>
             <p className="text-green-200/50 text-sm mt-1.5">
-              {queue.length > 0
-                ? `${queue.length} patient${queue.length !== 1 ? "s" : ""} in queue today${critical.length > 0 ? ` · ${critical.length} need immediate attention` : ""}`
-                : "Queue is clear — great work!"}
+              {patients.length > 0
+                ? `${patients.length} assigned patient${patients.length !== 1 ? "s" : ""}${criticalCount > 0 ? ` · ${criticalCount} need immediate attention` : ""}`
+                : "No assigned patients"}
             </p>
           </div>
           <div className="flex gap-2.5">
@@ -176,12 +218,12 @@ export default function NurseOverview() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* ── Stat cards ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         {[
           {
-            label: "Total in Queue",
-            value: queue.length,
+            label: "Assigned to Me",
+            value: patients.length,
             color: "#166534",
             bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
             border: "#bbf7d0",
@@ -189,7 +231,7 @@ export default function NurseOverview() {
           },
           {
             label: "Critical/Emergency",
-            value: critical.length,
+            value: criticalCount,
             color: "#dc2626",
             bg: "linear-gradient(135deg,#fef2f2,#fee2e2)",
             border: "#fecaca",
@@ -197,7 +239,7 @@ export default function NurseOverview() {
           },
           {
             label: "Urgent",
-            value: urgent.length,
+            value: urgentCount,
             color: "#d97706",
             bg: "linear-gradient(135deg,#fffbeb,#fef3c7)",
             border: "#fde68a",
@@ -205,7 +247,7 @@ export default function NurseOverview() {
           },
           {
             label: "Routine",
-            value: routine.length,
+            value: routineCount,
             color: "#1d4ed8",
             bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
             border: "#bfdbfe",
@@ -252,9 +294,167 @@ export default function NurseOverview() {
         ))}
       </div>
 
-      {/* Bottom: quick actions + priority list */}
+      {/* ── Main content ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Quick actions */}
+        {/* Patient list */}
+        <div className="lg:col-span-2">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
+              My Assigned Patients
+            </p>
+            {patients.length > 0 && (
+              <button
+                onClick={() => router.push("/dashboard/nurse/queue")}
+                className="text-xs font-semibold flex items-center gap-1"
+                style={{ color: "#166534" }}
+              >
+                View all <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+            {loading ? (
+              <div className="divide-y divide-gray-50">
+                {[...Array(3)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="flex items-center gap-3 px-5 py-4 animate-pulse"
+                  >
+                    <div className="w-2.5 h-2.5 rounded-full bg-gray-100" />
+                    <div className="flex-1">
+                      <div className="h-3.5 w-32 bg-gray-100 rounded" />
+                      <div className="h-3 w-48 bg-gray-100 rounded mt-1" />
+                    </div>
+                    <div className="w-16 h-6 bg-gray-100 rounded-full" />
+                  </div>
+                ))}
+              </div>
+            ) : patients.length === 0 ? (
+              <div className="py-16 text-center">
+                <div
+                  className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3"
+                  style={{ background: "#f0fdf4" }}
+                >
+                  <TrendingUp className="w-5 h-5 text-green-400" />
+                </div>
+                <p className="text-sm font-semibold text-gray-500">
+                  No assigned patients
+                </p>
+                <p className="text-xs text-gray-400 mt-1">
+                  The receptionist will assign patients to you
+                </p>
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-50">
+                {patients.map((p) => {
+                  const priority = getPriority(p.priority);
+                  const hasDoctor = !!p.assignedDoctorId;
+                  // hasVitals comes from the API — triage is complete when vitals exist
+                  const triageDone = p.hasVitals === true;
+
+                  return (
+                    <div
+                      key={p.id}
+                      className="px-5 py-4 flex items-start gap-3"
+                    >
+                      <span className="relative flex h-2.5 w-2.5 mt-2 flex-shrink-0">
+                        <span
+                          className="relative inline-flex rounded-full h-2.5 w-2.5"
+                          style={{ background: priority.dot }}
+                        />
+                      </span>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <span className="text-sm font-bold text-gray-900">
+                            {p.patientName}
+                          </span>
+                          <span
+                            className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                            style={{
+                              background: priority.bg,
+                              color: priority.color,
+                              border: `1px solid ${priority.border}`,
+                            }}
+                          >
+                            {priority.label}
+                          </span>
+                          {hasDoctor && (
+                            <span className="text-xs text-green-600 flex items-center gap-1">
+                              <UserCheck size={12} /> Dr. {p.doctorName}
+                            </span>
+                          )}
+                          {triageDone && (
+                            <span className="text-xs text-green-700 flex items-center gap-1">
+                              <CheckCircle2 size={12} /> Triage Done
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-gray-500 truncate">
+                          {p.chiefComplaint ||
+                            "No chief complaint recorded yet"}
+                        </p>
+                        <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                          <span className="flex items-center gap-1">
+                            <Clock size={11} /> {timeSince(p.admissionDate)}
+                          </span>
+                          <span>Visit #{p.visitNumber}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                        {/* Assign doctor button */}
+                        <button
+                          onClick={() => openAssignModal(p)}
+                          disabled={hasDoctor}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                            hasDoctor
+                              ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                              : "bg-purple-600 text-white hover:bg-purple-700"
+                          }`}
+                        >
+                          <Stethoscope size={12} />
+                          {hasDoctor ? "Assigned" : "Assign Doctor"}
+                        </button>
+
+                        {/* Triage button — disabled once vitals exist */}
+                        <button
+                          onClick={() =>
+                            router.push(`/dashboard/nurse/triage/${p.id}`)
+                          }
+                          disabled={triageDone}
+                          title={
+                            triageDone
+                              ? "Vitals already recorded for this visit"
+                              : "Record vitals"
+                          }
+                          className={`flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${
+                            triageDone
+                              ? "bg-gray-100 text-gray-400 cursor-not-allowed"
+                              : "bg-green-600 text-white hover:bg-green-700"
+                          }`}
+                        >
+                          {triageDone ? (
+                            <>
+                              <CheckCircle2 size={12} /> Triaged
+                            </>
+                          ) : (
+                            <>
+                              <Activity size={12} /> Triage
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Quick actions sidebar */}
         <div className="space-y-3">
           <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1">
             Quick Actions
@@ -311,130 +511,75 @@ export default function NurseOverview() {
             </button>
           ))}
         </div>
+      </div>
 
-        {/* Priority alerts — 2 cols */}
-        <div className="lg:col-span-2">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
-              {alertPts.length > 0 ? "⚠️  Needs Attention" : "Priority Queue"}
-            </p>
-            {alertPts.length > 0 && (
+      {/* ── Doctor assignment modal ── */}
+      {showAssignModal && selectedVisit && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-bold">Assign Doctor</h3>
               <button
-                onClick={() => router.push("/dashboard/nurse/queue")}
-                className="text-xs font-semibold flex items-center gap-1 transition-colors"
-                style={{ color: "#166534" }}
+                onClick={() => setShowAssignModal(false)}
+                className="text-gray-400 hover:text-gray-600"
               >
-                View all <ChevronRight className="w-3.5 h-3.5" />
+                <X size={20} />
               </button>
-            )}
-          </div>
-
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            {loading ? (
-              <div className="divide-y divide-gray-50">
-                {[...Array(4)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center gap-3 px-5 py-4 animate-pulse"
-                  >
-                    <div className="w-2.5 h-2.5 rounded-full bg-gray-100 flex-shrink-0" />
-                    <div className="flex-1 space-y-2">
-                      <div className="h-3.5 w-32 bg-gray-100 rounded" />
-                      <div className="h-3 w-48 bg-gray-100 rounded" />
-                    </div>
-                    <div className="w-16 h-6 bg-gray-100 rounded-full" />
-                  </div>
-                ))}
+            </div>
+            <p className="text-sm text-gray-600 mb-4">
+              Select a doctor for <strong>{selectedVisit.patientName}</strong>
+            </p>
+            {assignError && (
+              <div className="mb-3 p-2 rounded-lg bg-red-50 text-red-600 text-sm">
+                {assignError}
               </div>
-            ) : alertPts.length === 0 && queue.length === 0 ? (
-              <div className="py-16 text-center">
-                <div
-                  className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3"
-                  style={{ background: "#f0fdf4" }}
+            )}
+            <div className="max-h-64 overflow-y-auto space-y-2">
+              {doctors.map((doc) => (
+                <button
+                  key={doc.id}
+                  onClick={() => assignDoctor(doc.id)}
+                  disabled={assigning}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors text-left"
                 >
-                  <TrendingUp className="w-5 h-5 text-green-400" />
-                </div>
-                <p className="text-sm font-semibold text-gray-500">
-                  No patients yet today
+                  <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
+                    <User size={14} className="text-purple-600" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-900">
+                      Dr. {doc.firstName} {doc.lastName}
+                    </p>
+                    {doc.specialization && (
+                      <p className="text-xs text-gray-400">
+                        {doc.specialization}
+                      </p>
+                    )}
+                  </div>
+                  {assigning && (
+                    <Loader2
+                      size={14}
+                      className="animate-spin text-gray-400 flex-shrink-0"
+                    />
+                  )}
+                </button>
+              ))}
+              {doctors.length === 0 && !assignError && (
+                <p className="text-center text-gray-400 text-sm py-4">
+                  No doctors online at the moment
                 </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  New visits will appear here
-                </p>
-              </div>
-            ) : (
-              <div className="divide-y divide-gray-50">
-                {(alertPts.length > 0 ? alertPts : queue)
-                  .slice(0, 6)
-                  .map((v, i) => {
-                    const p = getP(v.priority);
-                    const isTop =
-                      i === 0 && ["critical", "emergency"].includes(v.priority);
-                    return (
-                      <button
-                        key={v.id}
-                        onClick={() =>
-                          router.push(
-                            `/dashboard/nurse/triage?visitNumber=${v.visitNumber}`,
-                          )
-                        }
-                        className="w-full flex items-center gap-4 px-5 py-4 text-left transition-colors group"
-                        style={{ background: isTop ? p.ring : undefined }}
-                        onMouseEnter={(e) => {
-                          if (!isTop)
-                            e.currentTarget.style.background = "#f9fafb";
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!isTop)
-                            e.currentTarget.style.background = "transparent";
-                        }}
-                      >
-                        <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
-                          {isTop && (
-                            <span
-                              className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-50"
-                              style={{ background: p.dot }}
-                            />
-                          )}
-                          <span
-                            className="relative inline-flex rounded-full h-2.5 w-2.5"
-                            style={{ background: p.dot }}
-                          />
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-900">
-                            {v.patient
-                              ? `${v.patient.firstName} ${v.patient.lastName}`
-                              : "Unknown Patient"}
-                          </p>
-                          <p className="text-xs text-gray-400 truncate mt-0.5">
-                            {v.chiefComplaint}
-                          </p>
-                        </div>
-                        <div className="flex items-center gap-2.5 flex-shrink-0">
-                          <span className="hidden sm:inline-flex items-center gap-1 text-xs text-gray-400">
-                            <Clock className="w-3 h-3" />{" "}
-                            {timeSince(v.admissionDate)}
-                          </span>
-                          <span
-                            className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                            style={{
-                              background: p.bg,
-                              color: p.color,
-                              border: `1px solid ${p.border}`,
-                            }}
-                          >
-                            {p.label}
-                          </span>
-                          <ChevronRight className="w-4 h-4 text-gray-200 group-hover:text-gray-400 transition-colors" />
-                        </div>
-                      </button>
-                    );
-                  })}
-              </div>
-            )}
+              )}
+            </div>
+            <div className="mt-5 flex justify-end">
+              <button
+                onClick={() => setShowAssignModal(false)}
+                className="px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 text-sm font-medium"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }

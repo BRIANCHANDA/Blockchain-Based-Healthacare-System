@@ -1,3 +1,4 @@
+
 import client from './client';
 
 export type AuthUser = {
@@ -49,5 +50,18 @@ export const registerPatient = async (payload: {
 // POST /auth/logout
 export const logout = async () => {
     const res = await client.post('/auth/logout');
+    return res.data;
+};
+
+
+
+// POST /auth/change-password/patient
+// oldPassword: the default 'test1234' on forced first-login change,
+// or the actual current password for voluntary changes.
+export const changePassword = async (oldPassword: string, newPassword: string) => {
+    const res = await client.post('/auth/change-password/patient', {
+        oldPassword,
+        newPassword,
+    });
     return res.data;
 };

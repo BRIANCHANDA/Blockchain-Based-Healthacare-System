@@ -1,19 +1,13 @@
-
-# SPDX-License-Identifier: Apache-2.0
 version: '2.1'
-
-volumes:
-  pgdata:
-  walletstore:
 
 networks:
   mynetwork.com:
-    name: fabric_test
+    external:
+      name: healthcare-network
 
 services:
-
   explorerdb.mynetwork.com:
-    image: ghcr.io/hyperledger-labs/explorer-db:latest
+    image: hyperledger/explorer-db:latest
     container_name: explorerdb.mynetwork.com
     hostname: explorerdb.mynetwork.com
     environment:
@@ -31,7 +25,7 @@ services:
       - mynetwork.com
 
   explorer.mynetwork.com:
-    image: ghcr.io/hyperledger-labs/explorer:latest
+    image: hyperledger/explorer:latest
     container_name: explorer.mynetwork.com
     hostname: explorer.mynetwork.com
     environment:
@@ -44,16 +38,19 @@ services:
       - LOG_LEVEL_CONSOLE=debug
       - LOG_CONSOLE_STDOUT=true
       - DISCOVERY_AS_LOCALHOST=false
-      - PORT=${PORT:-8080}
     volumes:
-      - ${EXPLORER_CONFIG_FILE_PATH}:/opt/explorer/app/platform/fabric/config.json
-      - ${EXPLORER_PROFILE_DIR_PATH}:/opt/explorer/app/platform/fabric/connection-profile
-      - ${FABRIC_CRYPTO_PATH}:/tmp/crypto
+      - ./examples/net1/config.json:/opt/explorer/app/platform/fabric/config.json
+      - ./examples/net1/connection-profile:/opt/explorer/app/platform/fabric/connection-profile
+      - /home/brian/Project/Final_year_project/fabric-network/network/organizations:/tmp/crypto
       - walletstore:/opt/explorer/wallet
     ports:
-      - ${PORT:-8080}:${PORT:-8080}
+      - 8080:8080
     depends_on:
       explorerdb.mynetwork.com:
         condition: service_healthy
     networks:
       - mynetwork.com
+
+volumes:
+  pgdata:
+  walletstore:

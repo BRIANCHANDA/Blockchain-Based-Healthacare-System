@@ -365,7 +365,7 @@ export default function AdminDashboard() {
       <div
         style={{
           background:
-            "linear-gradient(130deg, #0f172a 0%, #1e293b 55%, #1a3a2a 100%)",
+            "linear-gradient(130deg, #0f2a18 0%, #016728 55%, #0d9548 100%)",
           borderRadius: 20,
           padding: "28px 32px",
           marginBottom: 24,

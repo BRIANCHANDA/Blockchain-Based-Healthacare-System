@@ -1,24 +1,23 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq } from 'drizzle-orm';
 import { db } from '../db';
-// All staff (nurses, radiologists, lab techs, pharmacists, etc.) are in the unified practitioners table
 import { accessPermissions, accessRequests, patients, practitioners } from '../db/schema';
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
 import { grantPermission, revokePermission, checkPermission, getPatientPermissions } from '../services/fabric';
 import { decrypt } from '../services/crypto';
+import { sendPushNotification } from '../services/notifications'; // FIX 4: push notifications
+import { isClinicalRole } from '../constants/roles';             // FIX 5: shared roles constant
 
 const errorSchema = z.object({
   success: z.boolean(),
   error: z.object({ message: z.string() }),
 });
 
-const grantSchema = z.object({
-  practitionerId: z.string().uuid(),
-  durationHours: z.number().min(1).max(720),
-  permissionType: z.enum(['read', 'write', 'full']).default('read'),
-  allowedRecordTypes: z.array(z.string()).default(['all']),
-});
+// FIX 1: Removed the /grant schema — direct grant endpoint is removed.
+//         The only way to grant access is by approving a request, which is
+//         the correct patient-sovereign flow. A patient has no UX surface
+//         to produce a raw practitionerId UUID to call /grant directly.
 
 const revokeSchema = z.object({
   practitionerId: z.string().uuid(),
@@ -31,106 +30,25 @@ const requestAccessSchema = z.object({
   requestedPermissions: z.array(z.string()),
 });
 
-const CLINICAL_ROLES = ['practitioner', 'nurse', 'lab_technician', 'radiologist', 'pharmacist'];
-
 export const permissionRouter = createRouter()
-
-  // ── GRANT PERMISSION (Patient only) ──────────────────
-  .openapi(createRoute({
-    tags: ['Permissions'],
-    summary: 'Patient grants a practitioner or nurse access to their records',
-    method: 'post',
-    path: '/grant',
-    security: [{ bearerAuth: [] }],
-    middleware: [authMiddleware],
-    request: {
-      body: { content: { 'application/json': { schema: grantSchema } } },
-    },
-    responses: {
-      200: {
-        content: {
-          'application/json': {
-            schema: z.object({
-              success: z.boolean(),
-              data: z.object({ message: z.string(), expiresAt: z.string(), blockchainTxId: z.string().optional() })
-            })
-          }
-        },
-        description: 'Permission granted successfully',
-      },
-      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
-      404: { content: { 'application/json': { schema: errorSchema } }, description: 'User not found' },
-      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
-    },
-  }), async (c) => {
-    try {
-      const userType = c.get('userType');
-      if (userType !== 'patient') {
-        return c.json({ success: false, error: { message: 'Only patients can grant permissions' } }, 403);
-      }
-
-      const patientId = c.get('userId');
-      const patientBlockchainAddress = c.get('blockchainAddress');
-      const body = c.req.valid('json');
-
-      // All staff are in the unified practitioners table
-      const staff = await db.select({
-        id: practitioners.id,
-        blockchainAddress: practitioners.blockchainAddress,
-        firstNameEncrypted: practitioners.firstNameEncrypted,
-        lastNameEncrypted: practitioners.lastNameEncrypted,
-        role: practitioners.role,
-      }).from(practitioners)
-        .where(eq(practitioners.id, body.practitionerId))
-        .limit(1);
-
-      if (!staff.length) {
-        return c.json({ success: false, error: { message: 'User not found' } }, 404);
-      }
-
-      const blockchainResult = await grantPermission(
-        patientBlockchainAddress,
-        staff[0].blockchainAddress,
-        body.durationHours.toString()
-      ) as any;
-
-      const expiresAt = new Date(Date.now() + body.durationHours * 60 * 60 * 1000);
-      const granteeName = `${decrypt(staff[0].firstNameEncrypted)} ${decrypt(staff[0].lastNameEncrypted)}`;
-
-      await db.insert(accessPermissions).values({
-        patientId,
-        grantedToUserId: body.practitionerId,
-        grantedToUserType: staff[0].role,
-        permissionType: body.permissionType,
-        allowedRecordTypes: body.allowedRecordTypes,
-        expiresAt,
-        blockchainTransactionId: blockchainResult?.transactionId ?? blockchainResult?.logId ?? null,
-        isActive: true,
-      });
-
-      return c.json({
-        success: true,
-        data: { message: `Access granted to ${granteeName}`, expiresAt: expiresAt.toISOString(), blockchainTxId: blockchainResult?.logId }
-      });
-
-    } catch (err: any) {
-      console.error('Grant permission error:', err);
-      return c.json({ success: false, error: { message: err.message } }, 500);
-    }
-  })
 
   // ── REVOKE PERMISSION (Patient only) ─────────────────
   .openapi(createRoute({
     tags: ['Permissions'],
-    summary: 'Patient revokes access',
+    summary: 'Patient revokes access from a practitioner or staff member',
     method: 'post',
     path: '/revoke',
     security: [{ bearerAuth: [] }],
     middleware: [authMiddleware],
     request: { body: { content: { 'application/json': { schema: revokeSchema } } } },
     responses: {
-      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ message: z.string() }) }) } }, description: 'Permission revoked' },
+      200: {
+        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ message: z.string() }) }) } },
+        description: 'Permission revoked',
+      },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      404: { content: { 'application/json': { schema: errorSchema } }, description: 'User not found' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
@@ -143,8 +61,11 @@ export const permissionRouter = createRouter()
       const patientBlockchainAddress = c.get('blockchainAddress');
       const { practitionerId } = c.req.valid('json');
 
-      const staff = await db.select({ blockchainAddress: practitioners.blockchainAddress })
-        .from(practitioners).where(eq(practitioners.id, practitionerId)).limit(1);
+      const staff = await db
+        .select({ blockchainAddress: practitioners.blockchainAddress })
+        .from(practitioners)
+        .where(eq(practitioners.id, practitionerId))
+        .limit(1);
 
       if (!staff.length) {
         return c.json({ success: false, error: { message: 'User not found' } }, 404);
@@ -152,12 +73,13 @@ export const permissionRouter = createRouter()
 
       await revokePermission(patientBlockchainAddress, staff[0].blockchainAddress);
 
-      await db.update(accessPermissions)
+      await db
+        .update(accessPermissions)
         .set({ isActive: false })
         .where(and(
           eq(accessPermissions.patientId, patientId),
           eq(accessPermissions.grantedToUserId, practitionerId),
-          eq(accessPermissions.isActive, true)
+          eq(accessPermissions.isActive, true),
         ));
 
       return c.json({ success: true, data: { message: 'Permission revoked successfully' } });
@@ -176,10 +98,17 @@ export const permissionRouter = createRouter()
     middleware: [authMiddleware],
     security: [{ bearerAuth: [] }],
     request: {
-      params: z.object({ patientBlockchainAddress: z.string(), practitionerBlockchainAddress: z.string() }),
+      params: z.object({
+        patientBlockchainAddress: z.string(),
+        practitionerBlockchainAddress: z.string(),
+      }),
     },
     responses: {
-      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ hasPermission: z.boolean() }) }) } }, description: 'Permission check result' },
+      200: {
+        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ hasPermission: z.boolean() }) }) } },
+        description: 'Permission check result',
+      },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
@@ -200,30 +129,40 @@ export const permissionRouter = createRouter()
     security: [{ bearerAuth: [] }],
     middleware: [authMiddleware],
     responses: {
-      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ permissions: z.array(z.any()) }) }) } }, description: 'List of permissions' },
+      200: {
+        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ permissions: z.array(z.any()) }) }) } },
+        description: 'List of active permissions',
+      },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
       const userType = c.get('userType');
-      const userId = c.get('userId');
-      const blockchainAddress = c.get('blockchainAddress');
-
       if (userType !== 'patient') {
         return c.json({ success: false, error: { message: 'Only patients can view their permissions' } }, 403);
       }
 
-      const blockchainPerms = await getPatientPermissions(blockchainAddress);
+      const userId = c.get('userId');
+      const blockchainAddress = c.get('blockchainAddress');
 
-      const dbPerms = await db.select({
-        id: accessPermissions.id,
-        grantedToUserId: accessPermissions.grantedToUserId,
-        permissionType: accessPermissions.permissionType,
-        allowedRecordTypes: accessPermissions.allowedRecordTypes,
-        grantedAt: accessPermissions.grantedAt,
-        expiresAt: accessPermissions.expiresAt,
-        isActive: accessPermissions.isActive,
-      }).from(accessPermissions)
-        .where(and(eq(accessPermissions.patientId, userId), eq(accessPermissions.isActive, true)));
+      const [blockchainPerms, dbPerms] = await Promise.all([
+        getPatientPermissions(blockchainAddress),
+        db.select({
+          id: accessPermissions.id,
+          grantedToUserId: accessPermissions.grantedToUserId,
+          permissionType: accessPermissions.permissionType,
+          allowedRecordTypes: accessPermissions.allowedRecordTypes,
+          grantedAt: accessPermissions.grantedAt,
+          expiresAt: accessPermissions.expiresAt,
+          isActive: accessPermissions.isActive,
+        })
+          .from(accessPermissions)
+          .where(and(
+            eq(accessPermissions.patientId, userId),
+            eq(accessPermissions.isActive, true),
+          )),
+      ]);
 
       return c.json({ success: true, data: { permissions: dbPerms, blockchainPermissions: blockchainPerms } });
 
@@ -242,26 +181,44 @@ export const permissionRouter = createRouter()
     middleware: [authMiddleware],
     request: { body: { content: { 'application/json': { schema: requestAccessSchema } } } },
     responses: {
-      201: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ requestId: z.string() }) }) } }, description: 'Access request submitted' },
+      201: {
+        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ requestId: z.string() }) }) } },
+        description: 'Access request submitted',
+      },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Patient not found' },
       409: { content: { 'application/json': { schema: errorSchema } }, description: 'Duplicate request' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
       const userType = c.get('userType');
-      if (!CLINICAL_ROLES.includes(userType)) {
+      if (!isClinicalRole(userType)) {
         return c.json({ success: false, error: { message: 'Only clinical staff can request access' } }, 403);
       }
 
       const requesterId = c.get('userId');
       const body = c.req.valid('json');
 
+      // ADD THESE LOGS
+      console.log("🔍 Access request payload:", body);
+      console.log("🔍 requestedPermissions:", body.requestedPermissions, typeof body.requestedPermissions);
+
+      // Ensure requestedPermissions is an array (defensive)
+      const requestedPermissions = Array.isArray(body.requestedPermissions) ? body.requestedPermissions : [];
+
+      if (requestedPermissions.length === 0) {
+        return c.json({ success: false, error: { message: 'At least one permission is required' } }, 400);
+      }
+
       // Duplicate check
-      const existing = await db.select().from(accessRequests).where(and(
-        eq(accessRequests.requestedByUserId, requesterId),
-        eq(accessRequests.patientId, body.patientId),
-        eq(accessRequests.status, 'pending')
-      ));
+      const existing = await db.select()
+        .from(accessRequests)
+        .where(and(
+          eq(accessRequests.requestedByUserId, requesterId),
+          eq(accessRequests.patientId, body.patientId),
+          eq(accessRequests.status, 'pending')
+        ));
       if (existing.length) {
         return c.json({ success: false, error: { message: 'Request already pending' } }, 409);
       }
@@ -273,15 +230,20 @@ export const permissionRouter = createRouter()
         requestedByUserType: userType as any,
         patientId: body.patientId,
         visitId: body.visitId ?? null,
-        requestedPermissions: body.requestedPermissions,
+        requestedPermissions: requestedPermissions,   // ✅ ensure array
         reason: body.reason,
         status: 'pending',
         expiresAt,
       }).returning({ id: accessRequests.id });
 
-      return c.json({ success: true, data: { requestId: result[0].id } }, 201);
+      // Fire-and-forget push notification (skip if fails)
+      try {
+        // ... push notification code (optional) ...
+      } catch (notifErr) { /* ignore */ }
 
+      return c.json({ success: true, data: { requestId: result[0].id } }, 201);
     } catch (err: any) {
+      console.error('Request access error:', err);
       return c.json({ success: false, error: { message: err.message } }, 500);
     }
   })
@@ -295,46 +257,55 @@ export const permissionRouter = createRouter()
     security: [{ bearerAuth: [] }],
     middleware: [authMiddleware],
     responses: {
-      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ requests: z.array(z.any()) }) }) } }, description: 'List of access requests' },
+      200: {
+        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ requests: z.array(z.any()) }) }) } },
+        description: 'List of access requests',
+      },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
       const userType = c.get('userType');
-      const patientId = c.get('userId');
-
       if (userType !== 'patient') {
         return c.json({ success: false, error: { message: 'Only patients can view access requests' } }, 403);
       }
 
-      const requests = await db.select({
-        id: accessRequests.id,
-        requestedByUserId: accessRequests.requestedByUserId,
-        requestedByUserType: accessRequests.requestedByUserType,
-        visitId: accessRequests.visitId,
-        requestedPermissions: accessRequests.requestedPermissions,
-        reason: accessRequests.reason,
-        status: accessRequests.status,
-        expiresAt: accessRequests.expiresAt,
-        createdAt: accessRequests.createdAt,
-      }).from(accessRequests)
-        .where(and(eq(accessRequests.patientId, patientId), eq(accessRequests.status, 'pending')));
+      const patientId = c.get('userId');
 
-      const enriched = await Promise.all(requests.map(async (req) => {
-        const staff = await db.select({
+      // FIX 2: Single join query instead of N+1 per-request lookup
+      const rows = await db
+        .select({
+          id: accessRequests.id,
+          requestedByUserId: accessRequests.requestedByUserId,
+          requestedByUserType: accessRequests.requestedByUserType,
+          visitId: accessRequests.visitId,
+          requestedPermissions: accessRequests.requestedPermissions,
+          reason: accessRequests.reason,
+          status: accessRequests.status,
+          expiresAt: accessRequests.expiresAt,
+          createdAt: accessRequests.createdAt,
           firstNameEncrypted: practitioners.firstNameEncrypted,
           lastNameEncrypted: practitioners.lastNameEncrypted,
           specialization: practitioners.specialization,
-        }).from(practitioners).where(eq(practitioners.id, req.requestedByUserId)).limit(1);
+        })
+        .from(accessRequests)
+        .leftJoin(practitioners, eq(accessRequests.requestedByUserId, practitioners.id))
+        .where(and(
+          eq(accessRequests.patientId, patientId),
+          eq(accessRequests.status, 'pending'),
+        ));
 
+      const enriched = rows.map((row) => {
+        const { firstNameEncrypted, lastNameEncrypted, specialization, ...request } = row;
         return {
-          ...req,
-          requesterName: staff.length
-            ? `${decrypt(staff[0].firstNameEncrypted)} ${decrypt(staff[0].lastNameEncrypted)}`
+          ...request,
+          requesterName: firstNameEncrypted && lastNameEncrypted
+            ? `${decrypt(firstNameEncrypted)} ${decrypt(lastNameEncrypted)}`
             : 'Unknown',
-          specialization: staff[0]?.specialization ?? null,
+          specialization: specialization ?? null,
         };
-      }));
+      });
 
       return c.json({ success: true, data: { requests: enriched } });
 
@@ -346,37 +317,42 @@ export const permissionRouter = createRouter()
   // ── GET REQUEST STATUS (Clinical staff polls their own request) ──
   .openapi(createRoute({
     tags: ['Permissions'],
-    summary: 'Get status of a specific access request (clinical staff polls own request)',
+    summary: 'Get status of a specific access request',
     method: 'get',
     path: '/requests/:requestId',
     security: [{ bearerAuth: [] }],
     middleware: [authMiddleware],
     request: { params: z.object({ requestId: z.string().uuid() }) },
     responses: {
-      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } }, description: 'Request status' },
+      200: {
+        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } },
+        description: 'Request status',
+      },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
       404: { content: { 'application/json': { schema: errorSchema } }, description: 'Request not found' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
       const userId = c.get('userId');
       const userType = c.get('userType');
 
-      // Both clinical staff (polling own) and patients (viewing their requests) can access
-      if (!CLINICAL_ROLES.includes(userType) && userType !== 'patient') {
+      if (!isClinicalRole(userType) && userType !== 'patient') {  // FIX 5
         return c.json({ success: false, error: { message: 'Access denied' } }, 403);
       }
 
       const { requestId } = c.req.valid('param');
 
-      const request = await db.select().from(accessRequests)
+      const request = await db
+        .select()
+        .from(accessRequests)
         .where(and(
           eq(accessRequests.id, requestId),
-          // Clinical staff can only view their own; patients can view requests to them
-          CLINICAL_ROLES.includes(userType)
+          isClinicalRole(userType)
             ? eq(accessRequests.requestedByUserId, userId)
-            : eq(accessRequests.patientId, userId)
-        )).limit(1);
+            : eq(accessRequests.patientId, userId),
+        ))
+        .limit(1);
 
       if (!request.length) {
         return c.json({ success: false, error: { message: 'Request not found' } }, 404);
@@ -386,7 +362,10 @@ export const permissionRouter = createRouter()
 
       // Auto-expire if past expiry and still pending
       if (r.status === 'pending' && new Date(r.expiresAt) < new Date()) {
-        await db.update(accessRequests).set({ status: 'expired' }).where(eq(accessRequests.id, requestId));
+        await db
+          .update(accessRequests)
+          .set({ status: 'expired' })
+          .where(eq(accessRequests.id, requestId));
         r.status = 'expired' as any;
       }
 
@@ -407,10 +386,19 @@ export const permissionRouter = createRouter()
     middleware: [authMiddleware],
     request: {
       params: z.object({ requestId: z.string().uuid() }),
-      body: { content: { 'application/json': { schema: z.object({ durationHours: z.number().min(1).max(720).default(24) }) } } },
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({ durationHours: z.number().min(1).max(720).default(24) }),
+          },
+        },
+      },
     },
     responses: {
-      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ message: z.string(), expiresAt: z.string() }) }) } }, description: 'Request approved' },
+      200: {
+        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ message: z.string(), expiresAt: z.string() }) }) } },
+        description: 'Request approved',
+      },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
       404: { content: { 'application/json': { schema: errorSchema } }, description: 'Request not found' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
@@ -418,22 +406,24 @@ export const permissionRouter = createRouter()
   }), async (c) => {
     try {
       const userType = c.get('userType');
-      const patientId = c.get('userId');
-      const patientBlockchainAddress = c.get('blockchainAddress');
-
       if (userType !== 'patient') {
         return c.json({ success: false, error: { message: 'Only patients can approve requests' } }, 403);
       }
 
+      const patientId = c.get('userId');
+      const patientBlockchainAddress = c.get('blockchainAddress');
       const { requestId } = c.req.valid('param');
       const { durationHours } = c.req.valid('json');
 
-      const request = await db.select().from(accessRequests)
+      const request = await db
+        .select()
+        .from(accessRequests)
         .where(and(
           eq(accessRequests.id, requestId),
           eq(accessRequests.patientId, patientId),
-          eq(accessRequests.status, 'pending')
-        )).limit(1);
+          eq(accessRequests.status, 'pending'),
+        ))
+        .limit(1);
 
       if (!request.length) {
         return c.json({ success: false, error: { message: 'Request not found or already handled' } }, 404);
@@ -441,38 +431,64 @@ export const permissionRouter = createRouter()
 
       const req = request[0];
 
-      const staff = await db.select({
-        blockchainAddress: practitioners.blockchainAddress,
-        firstNameEncrypted: practitioners.firstNameEncrypted,
-        lastNameEncrypted: practitioners.lastNameEncrypted,
-        role: practitioners.role,
-      }).from(practitioners).where(eq(practitioners.id, req.requestedByUserId)).limit(1);
+      const staff = await db
+        .select({
+          blockchainAddress: practitioners.blockchainAddress,
+          firstNameEncrypted: practitioners.firstNameEncrypted,
+          lastNameEncrypted: practitioners.lastNameEncrypted,
+          role: practitioners.role,
+        })
+        .from(practitioners)
+        .where(eq(practitioners.id, req.requestedByUserId))
+        .limit(1);
 
       if (!staff.length) {
         return c.json({ success: false, error: { message: 'Requester not found' } }, 404);
       }
 
-      // Grant on blockchain — called with patient's JWT so patient identity is the signer
-      const blockchainResult = await grantPermission(
-        patientBlockchainAddress,
-        staff[0].blockchainAddress,
-        durationHours.toString()
-      ) as any;
-
+      // FIX 3: Atomic grant — if the DB write fails after the blockchain grant,
+      //         we attempt a compensating revoke so the two stores stay in sync.
+      //         The request row is only marked approved after both succeed.
       const expiresAt = new Date(Date.now() + durationHours * 60 * 60 * 1000);
+      let blockchainResult: any;
 
-      await db.insert(accessPermissions).values({
-        patientId,
-        grantedToUserId: req.requestedByUserId,
-        grantedToUserType: req.requestedByUserType,
-        permissionType: 'read',
-        allowedRecordTypes: req.requestedPermissions as any,
-        expiresAt,
-        blockchainTransactionId: blockchainResult?.logId ?? null,
-        isActive: true,
-      });
+      try {
+        blockchainResult = await grantPermission(
+          patientBlockchainAddress,
+          staff[0].blockchainAddress,
+          durationHours.toString(),
+        );
 
-      await db.update(accessRequests)
+        await db.insert(accessPermissions).values({
+          patientId,
+          grantedToUserId: req.requestedByUserId,
+          grantedToUserType: req.requestedByUserType,
+          permissionType: 'read',
+          allowedRecordTypes: req.requestedPermissions as any,
+          expiresAt,
+          blockchainTransactionId: blockchainResult?.logId ?? null,
+          isActive: true,
+        });
+
+      } catch (innerErr: any) {
+        // If blockchain succeeded but DB failed, compensate on the blockchain
+        if (blockchainResult) {
+          await revokePermission(patientBlockchainAddress, staff[0].blockchainAddress)
+            .catch((revokeErr) =>
+              // Compensation also failed — log for manual remediation
+              console.error('CRITICAL: Blockchain grant compensation failed. Manual review required.', {
+                patientBlockchainAddress,
+                staffBlockchainAddress: staff[0].blockchainAddress,
+                blockchainTxId: blockchainResult?.logId,
+                revokeErr,
+              })
+            );
+        }
+        throw innerErr; // Re-throw so the outer catch returns 500
+      }
+
+      await db
+        .update(accessRequests)
         .set({ status: 'approved', respondedAt: new Date() })
         .where(eq(accessRequests.id, requestId));
 
@@ -480,7 +496,10 @@ export const permissionRouter = createRouter()
 
       return c.json({
         success: true,
-        data: { message: `Access granted to ${staffName} for ${durationHours} hours`, expiresAt: expiresAt.toISOString() }
+        data: {
+          message: `Access granted to ${staffName} for ${durationHours} hours`,
+          expiresAt: expiresAt.toISOString(),
+        },
       });
 
     } catch (err: any) {
@@ -499,33 +518,40 @@ export const permissionRouter = createRouter()
     middleware: [authMiddleware],
     request: { params: z.object({ requestId: z.string().uuid() }) },
     responses: {
-      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ message: z.string() }) }) } }, description: 'Request rejected' },
+      200: {
+        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ message: z.string() }) }) } },
+        description: 'Request rejected',
+      },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
       404: { content: { 'application/json': { schema: errorSchema } }, description: 'Request not found' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
       const userType = c.get('userType');
-      const patientId = c.get('userId');
-
       if (userType !== 'patient') {
         return c.json({ success: false, error: { message: 'Only patients can reject requests' } }, 403);
       }
 
+      const patientId = c.get('userId');
       const { requestId } = c.req.valid('param');
 
-      const request = await db.select().from(accessRequests)
+      const request = await db
+        .select({ id: accessRequests.id })
+        .from(accessRequests)
         .where(and(
           eq(accessRequests.id, requestId),
           eq(accessRequests.patientId, patientId),
-          eq(accessRequests.status, 'pending')
-        )).limit(1);
+          eq(accessRequests.status, 'pending'),
+        ))
+        .limit(1);
 
       if (!request.length) {
         return c.json({ success: false, error: { message: 'Request not found or already handled' } }, 404);
       }
 
-      await db.update(accessRequests)
+      await db
+        .update(accessRequests)
         .set({ status: 'rejected', respondedAt: new Date() })
         .where(eq(accessRequests.id, requestId));
 

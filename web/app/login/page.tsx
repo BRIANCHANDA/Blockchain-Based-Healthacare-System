@@ -352,7 +352,7 @@ export default function LoginPage() {
                 letterSpacing: "0.01em",
               }}
             >
-              HealthChain
+              MedLink
             </span>
           </div>
 
@@ -368,7 +368,9 @@ export default function LoginPage() {
           >
             Zambia's
             <br />
-            <span style={{ color: "rgba(255,255,255,0.55)" }}>Blockchain</span>
+            <span style={{ color: "rgba(255,255,255,0.55)" }}>
+              Digital Health
+            </span>
             <br />
             Healthcare
           </h1>
@@ -380,8 +382,8 @@ export default function LoginPage() {
               maxWidth: 280,
             }}
           >
-            Patient-consented, tamper-proof medical records secured by
-            Hyperledger Fabric.
+            Patient-consented, secure, and real-time access to medical records
+            for better care coordination and outcomes.
           </p>
         </div>
 
@@ -398,7 +400,7 @@ export default function LoginPage() {
             {[
               {
                 icon: "🔗",
-                label: "Blockchain secured",
+                label: "MedLink secured",
                 value: "Every record",
               },
               {
@@ -448,7 +450,7 @@ export default function LoginPage() {
               }}
             />
             <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 12 }}>
-              Hyperledger Fabric · Live Network
+              Protected by MedLink Security
             </span>
           </div>
         </div>
@@ -500,7 +502,7 @@ export default function LoginPage() {
                 </svg>
               </div>
               <span style={{ fontWeight: 700, color: "#166534", fontSize: 15 }}>
-                HealthChain
+                MedLink
               </span>
             </div>
 
@@ -632,7 +634,7 @@ export default function LoginPage() {
           >
             <div className="hc-badge">
               <div className="hc-badge-dot" />
-              Secured by Hyperledger Fabric
+              Protected by MedLink Security
             </div>
           </div>
         </div>

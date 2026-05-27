@@ -21,6 +21,8 @@ const errorSchema = z.object({
     error: z.object({ message: z.string() }),
 });
 
+const successData = z.object({ success: z.boolean(), data: z.any() });
+
 const institutionPublicSchema = z.object({
     id: z.string(),
     institutionCode: z.string(),
@@ -72,6 +74,15 @@ const createWardSchema = z.object({
 
 const updateWardSchema = createWardSchema.partial();
 
+// Helper to check if staff belongs to an institution
+async function getStaffInstitution(staffId: string): Promise<string | null> {
+    const staff = await db.select({ institutionId: practitioners.institutionId })
+        .from(practitioners)
+        .where(eq(practitioners.id, staffId))
+        .limit(1);
+    return staff[0]?.institutionId || null;
+}
+
 // ── Router ───────────────────────────────────────────────
 
 export const institutionRouter = createRouter()
@@ -88,9 +99,7 @@ export const institutionRouter = createRouter()
                     'application/json': {
                         schema: z.object({
                             success: z.boolean(),
-                            data: z.object({
-                                institutions: z.array(institutionPublicSchema),
-                            }),
+                            data: z.object({ institutions: z.array(institutionPublicSchema) }),
                         }),
                     },
                 },
@@ -98,7 +107,6 @@ export const institutionRouter = createRouter()
             },
             500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
         },
-        // @ts-expect-error - Route handler return type inference issue with @hono/zod-openapi
     }), async (c) => {
         try {
             const instList = await db.select({
@@ -161,7 +169,6 @@ export const institutionRouter = createRouter()
             409: { content: { 'application/json': { schema: errorSchema } }, description: 'Institution code or license already exists' },
             500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
         },
-        // @ts-expect-error - Route handler return type inference issue with @hono/zod-openapi
     }), async (c) => {
         try {
             const userType = c.get('userType');
@@ -205,7 +212,6 @@ export const institutionRouter = createRouter()
                 isActive: true,
             }).returning({ id: institutions.id });
 
-            // Blockchain hash for creation
             const creationHash = generateRecordHash({ institutionId: result[0].id, ...body, timestamp: new Date().toISOString() });
             await storeRecordHash(result[0].id, blockchainAddress, creationHash, 'institution').catch(() => { });
 
@@ -216,7 +222,7 @@ export const institutionRouter = createRouter()
         }
     })
 
-    // ========== GET INSTITUTION BY ID (admin or staff with permission) ==========
+    // ========== GET INSTITUTION BY ID (admin or staff of that institution) ==========
     .openapi(createRoute({
         tags: ['Institutions'],
         summary: 'Get institution details (admin or staff of that institution)',
@@ -229,40 +235,33 @@ export const institutionRouter = createRouter()
         },
         responses: {
             200: {
-                content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } },
+                content: { 'application/json': { schema: successData } },
                 description: 'Institution details',
             },
             403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
             404: { content: { 'application/json': { schema: errorSchema } }, description: 'Institution not found' },
             500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
         },
-        // @ts-expect-error - Route handler return type inference issue with @hono/zod-openapi
     }), async (c) => {
         try {
             const userType = c.get('userType');
             const userId = c.get('userId');
             const { institutionId } = c.req.valid('param');
 
-            // Get institution
             const inst = await db.select().from(institutions).where(eq(institutions.id, institutionId)).limit(1);
             if (!inst.length) {
                 return c.json({ success: false, error: { message: 'Institution not found' } }, 404);
             }
 
             // Check access: admin or staff belonging to this institution
-            if (userType !== 'admin') {
-                let staffInstitution = false;
-                if (userType === 'practitioner') {
-                    const p = await db.select({ institutionId: practitioners.institutionId }).from(practitioners).where(eq(practitioners.id, userId)).limit(1);
-                    staffInstitution = p.length > 0 && p[0].institutionId === institutionId;
-                } else if (userType === 'nurse') {
-                    const n = await db.select({ institutionId: nurses.institutionId }).from(nurses).where(eq(nurses.id, userId)).limit(1);
-                    staffInstitution = n.length > 0 && n[0].institutionId === institutionId;
-                } // similar for lab techs, radiologists, pharmacists
+            let hasAccess = userType === 'admin';
+            if (!hasAccess) {
+                const staffInst = await getStaffInstitution(userId);
+                hasAccess = staffInst === institutionId;
+            }
 
-                if (!staffInstitution) {
-                    return c.json({ success: false, error: { message: 'Access denied' } }, 403);
-                }
+            if (!hasAccess) {
+                return c.json({ success: false, error: { message: 'Access denied' } }, 403);
             }
 
             const p = inst[0];
@@ -308,14 +307,13 @@ export const institutionRouter = createRouter()
         },
         responses: {
             200: {
-                content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ message: z.string() }) }) } },
+                content: { 'application/json': { schema: successData } },
                 description: 'Institution updated',
             },
             403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
             404: { content: { 'application/json': { schema: errorSchema } }, description: 'Institution not found' },
             500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
         },
-        // @ts-expect-error - Route handler return type inference issue with @hono/zod-openapi
     }), async (c) => {
         try {
             const userType = c.get('userType');
@@ -375,15 +373,11 @@ export const institutionRouter = createRouter()
             params: z.object({ institutionId: z.string().uuid() }),
         },
         responses: {
-            200: {
-                content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ message: z.string() }) }) } },
-                description: 'Institution deactivated',
-            },
+            200: { content: { 'application/json': { schema: successData } }, description: 'Institution deactivated' },
             403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
             404: { content: { 'application/json': { schema: errorSchema } }, description: 'Institution not found' },
             500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
         },
-        // @ts-expect-error - Route handler return type inference issue with @hono/zod-openapi
     }), async (c) => {
         try {
             const userType = c.get('userType');
@@ -424,14 +418,10 @@ export const institutionRouter = createRouter()
             params: z.object({ institutionId: z.string().uuid() }),
         },
         responses: {
-            200: {
-                content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ departments: z.array(z.any()) }) }) } },
-                description: 'List of departments',
-            },
+            200: { content: { 'application/json': { schema: successData } }, description: 'List of departments' },
             403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
             500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
         },
-        // @ts-expect-error - Route handler return type inference issue with @hono/zod-openapi
     }), async (c) => {
         try {
             const { institutionId } = c.req.valid('param');
@@ -457,15 +447,11 @@ export const institutionRouter = createRouter()
             body: { content: { 'application/json': { schema: createDepartmentSchema } } },
         },
         responses: {
-            201: {
-                content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ departmentId: z.string() }) }) } },
-                description: 'Department created',
-            },
+            201: { content: { 'application/json': { schema: successData } }, description: 'Department created' },
             403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
             409: { content: { 'application/json': { schema: errorSchema } }, description: 'Department code already exists' },
             500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
         },
-        // @ts-expect-error - Route handler return type inference issue with @hono/zod-openapi
     }), async (c) => {
         try {
             const userType = c.get('userType');
@@ -513,15 +499,11 @@ export const institutionRouter = createRouter()
             body: { content: { 'application/json': { schema: updateDepartmentSchema } } },
         },
         responses: {
-            200: {
-                content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ message: z.string() }) }) } },
-                description: 'Department updated',
-            },
+            200: { content: { 'application/json': { schema: successData } }, description: 'Department updated' },
             403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
             404: { content: { 'application/json': { schema: errorSchema } }, description: 'Department not found' },
             500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
         },
-        // @ts-expect-error - Route handler return type inference issue with @hono/zod-openapi
     }), async (c) => {
         try {
             const userType = c.get('userType');
@@ -569,15 +551,11 @@ export const institutionRouter = createRouter()
             params: z.object({ departmentId: z.string().uuid() }),
         },
         responses: {
-            200: {
-                content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ message: z.string() }) }) } },
-                description: 'Department deactivated',
-            },
+            200: { content: { 'application/json': { schema: successData } }, description: 'Department deactivated' },
             403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
             404: { content: { 'application/json': { schema: errorSchema } }, description: 'Department not found' },
             500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
         },
-        // @ts-expect-error - Route handler return type inference issue with @hono/zod-openapi
     }), async (c) => {
         try {
             const userType = c.get('userType');
@@ -614,14 +592,10 @@ export const institutionRouter = createRouter()
             params: z.object({ departmentId: z.string().uuid() }),
         },
         responses: {
-            200: {
-                content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ wards: z.array(z.any()) }) }) } },
-                description: 'List of wards',
-            },
+            200: { content: { 'application/json': { schema: successData } }, description: 'List of wards' },
             403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
             500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
         },
-        // @ts-expect-error - Route handler return type inference issue with @hono/zod-openapi
     }), async (c) => {
         try {
             const { departmentId } = c.req.valid('param');
@@ -647,15 +621,11 @@ export const institutionRouter = createRouter()
             body: { content: { 'application/json': { schema: createWardSchema } } },
         },
         responses: {
-            201: {
-                content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ wardId: z.string() }) }) } },
-                description: 'Ward created',
-            },
+            201: { content: { 'application/json': { schema: successData } }, description: 'Ward created' },
             403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
             409: { content: { 'application/json': { schema: errorSchema } }, description: 'Ward code already exists' },
             500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
         },
-        // @ts-expect-error - Route handler return type inference issue with @hono/zod-openapi
     }), async (c) => {
         try {
             const userType = c.get('userType');
@@ -710,15 +680,11 @@ export const institutionRouter = createRouter()
             body: { content: { 'application/json': { schema: updateWardSchema } } },
         },
         responses: {
-            200: {
-                content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ message: z.string() }) }) } },
-                description: 'Ward updated',
-            },
+            200: { content: { 'application/json': { schema: successData } }, description: 'Ward updated' },
             403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
             404: { content: { 'application/json': { schema: errorSchema } }, description: 'Ward not found' },
             500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
         },
-        // @ts-expect-error - Route handler return type inference issue with @hono/zod-openapi
     }), async (c) => {
         try {
             const userType = c.get('userType');
@@ -766,15 +732,11 @@ export const institutionRouter = createRouter()
             params: z.object({ wardId: z.string().uuid() }),
         },
         responses: {
-            200: {
-                content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ message: z.string() }) }) } },
-                description: 'Ward deactivated',
-            },
+            200: { content: { 'application/json': { schema: successData } }, description: 'Ward deactivated' },
             403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
             404: { content: { 'application/json': { schema: errorSchema } }, description: 'Ward not found' },
             500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
         },
-        // @ts-expect-error - Route handler return type inference issue with @hono/zod-openapi
     }), async (c) => {
         try {
             const userType = c.get('userType');
@@ -796,5 +758,42 @@ export const institutionRouter = createRouter()
         } catch (err: unknown) {
             console.error('Deactivate ward error:', err);
             return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+        }
+    })
+
+    // ========== GET DEPARTMENTS FILTERED BY INSTITUTION (clean endpoint) ==========
+    .openapi(createRoute({
+        tags: ['Institutions'],
+        summary: 'Get departments (filter by institution)',
+        method: 'get',
+        path: '/departments',
+        security: [{ bearerAuth: [] }],
+        middleware: [authMiddleware],
+        request: {
+            query: z.object({
+                institutionId: z.string().uuid().optional(),
+            }),
+        },
+        responses: {
+            200: { content: { 'application/json': { schema: successData } }, description: 'Departments list' },
+            500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+        },
+    }), async (c) => {
+        try {
+            const userType = c.get('userType');
+            if (!['admin', 'receptionist', 'practitioner', 'nurse'].includes(userType)) {
+                return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+            }
+
+            const { institutionId } = c.req.valid('query');
+            let query = db.select().from(departments).where(eq(departments.isActive, true));
+            if (institutionId) {
+                query = query.where(eq(departments.institutionId, institutionId));
+            }
+            const result = await query.orderBy(departments.departmentName);
+            return c.json({ success: true, data: result });
+        } catch (err: any) {
+            console.error(err);
+            return c.json({ success: false, error: { message: err.message } }, 500);
         }
     });

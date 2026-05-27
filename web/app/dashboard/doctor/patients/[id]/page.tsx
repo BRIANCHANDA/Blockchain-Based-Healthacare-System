@@ -58,10 +58,13 @@ export default function PatientDetailPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const patRes = await patientApi.getById(patientId);
-      setPatient(patRes.data.data?.patient ?? null);
-      // If the patient response includes visits, use them; otherwise default to an empty array
-      setVisits(patRes.data.data?.patient?.visits ?? []);
+      const [patRes, visitsRes] = await Promise.all([
+        patientApi.getById(patientId),
+        patientApi.getVisits(patientId),
+      ]);
+      // The backend returns patient data directly under `data`
+      setPatient(patRes.data.data);
+      setVisits(visitsRes.data.data?.visits ?? []);
     } catch (err: any) {
       setError(err.response?.data?.error?.message ?? "Failed to load patient.");
     } finally {
@@ -241,7 +244,7 @@ export default function PatientDetailPage() {
             <div className="px-6 py-4">
               <button
                 onClick={() =>
-                  router.push(`/dashboard/doctor/visits/${activeVisit.id}`)
+                  router.push(`/dashboard/doctor/visit/${activeVisit.id}`)
                 }
                 className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md"
                 style={{
@@ -261,7 +264,7 @@ export default function PatientDetailPage() {
               <button
                 onClick={() =>
                   router.push(
-                    `/dashboard/doctor/visits/new?patientId=${patientId}`,
+                    `/dashboard/doctor/visit/new?patientId=${patientId}`,
                   )
                 }
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-green-200 text-green-700 text-sm font-semibold hover:bg-green-50 transition-colors"
@@ -372,7 +375,7 @@ export default function PatientDetailPage() {
             <button
               onClick={() =>
                 router.push(
-                  `/dashboard/doctor/visits/new?patientId=${patientId}`,
+                  `/dashboard/doctor/visit/new?patientId=${patientId}`,
                 )
               }
               className="flex items-center gap-1.5 text-xs font-semibold text-green-700 hover:text-green-800 transition-colors"
@@ -394,7 +397,7 @@ export default function PatientDetailPage() {
                   <button
                     key={v.id}
                     onClick={() =>
-                      router.push(`/dashboard/doctor/visits/${v.id}`)
+                      router.push(`/dashboard/doctor/visit/${v.id}`)
                     }
                     className="w-full px-5 py-3.5 flex items-center gap-4 hover:bg-gray-50 transition-colors text-left group"
                   >

@@ -43,7 +43,7 @@ export default function Home() {
           style={{ fontFamily: "Playfair Display, serif" }}
           className="text-lg"
         >
-          Loading HealthChain...
+          Loading MedLink...
         </p>
       </div>
     </div>

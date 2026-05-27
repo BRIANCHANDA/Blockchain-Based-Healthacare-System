@@ -8,13 +8,12 @@ import {
   RefreshControl,
   StatusBar,
   Platform,
+  Dimensions,
 } from "react-native";
-import {
-  SafeAreaView,
-  useSafeAreaInsets,
-} from "react-native-safe-area-context";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { MaterialIcons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 
 import { getMyVisits } from "../../api/records";
 import { useAuthStore } from "../../store/authStore";
@@ -23,26 +22,43 @@ import LoadingSpinner from "../../components/common/LoadingSpinner";
 
 type Props = NativeStackScreenProps<RecordsStackParamList, "RecordsList">;
 
-const PRIMARY = "#0A6640";
-const PRIMARY_LIGHT = "#E6F4EE";
+const { width } = Dimensions.get("window");
 
-const PRIORITY_CONFIG: Record<
-  string,
-  { color: string; bg: string; label: string }
-> = {
-  routine: { color: "#0A6640", bg: "#E6F4EE", label: "Routine" },
-  urgent: { color: "#B45309", bg: "#FEF3C7", label: "Urgent" },
-  emergency: { color: "#B91C1C", bg: "#FEE2E2", label: "Emergency" },
-  critical: { color: "#6D28D9", bg: "#EDE9FE", label: "Critical" },
+// ── Design tokens ────────────────────────────────────────────────────────────
+const C = {
+  ink: "#1A1D2E",
+  inkSoft: "#5A5F7A",
+  inkMuted: "#9498B3",
+  teal: "#0D9488",
+  tealDark: "#0F766E",
+  tealDeep: "#115E59",
+  tealLight: "#CCFBF1",
+  tealGhost: "#F0FDFA",
+  amber: "#F59E0B",
+  amberLight: "#FEF3C7",
+  coral: "#EF4444",
+  coralLight: "#FEE2E2",
+  violet: "#7C3AED",
+  violetLight: "#EDE9FE",
+  blue: "#3B82F6",
+  blueLight: "#EFF6FF",
+  bg: "#F8F9FC",
+  card: "#FFFFFF",
+  cardBorder: "#ECEEF4",
+  divider: "#F1F2F6",
 };
 
-const STATUS_CONFIG: Record<
-  string,
-  { color: string; bg: string; label: string }
-> = {
-  "in-progress": { color: "#B45309", bg: "#FEF3C7", label: "In Progress" },
-  completed: { color: "#0A6640", bg: "#E6F4EE", label: "Completed" },
-  cancelled: { color: "#6B7280", bg: "#F3F4F6", label: "Cancelled" },
+const PRIORITY: Record<string, { color: string; bg: string; label: string }> = {
+  routine: { color: C.teal, bg: C.tealGhost, label: "Routine" },
+  urgent: { color: C.amber, bg: C.amberLight, label: "Urgent" },
+  emergency: { color: C.coral, bg: C.coralLight, label: "Emergency" },
+  critical: { color: C.violet, bg: C.violetLight, label: "Critical" },
+};
+
+const STATUS: Record<string, { color: string; bg: string; label: string }> = {
+  "in-progress": { color: C.amber, bg: C.amberLight, label: "In Progress" },
+  completed: { color: C.teal, bg: C.tealGhost, label: "Completed" },
+  cancelled: { color: C.inkMuted, bg: "#F3F4F6", label: "Cancelled" },
 };
 
 function formatDate(iso: string) {
@@ -53,13 +69,101 @@ function formatDate(iso: string) {
   });
 }
 
-function getStatusLabel(status: string) {
+// ── Stat Card ────────────────────────────────────────────────────────────────
+function StatCard({
+  value,
+  label,
+  icon,
+  color,
+}: {
+  value: number;
+  label: string;
+  icon: keyof typeof MaterialIcons.glyphMap;
+  color: string;
+}) {
   return (
-    STATUS_CONFIG[status]?.label ??
-    status.charAt(0).toUpperCase() + status.slice(1)
+    <View style={styles.statCard}>
+      <View style={[styles.statIconWrap, { backgroundColor: `${color}15` }]}>
+        <MaterialIcons name={icon} size={16} color={color} />
+      </View>
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
   );
 }
 
+// ── Visit Card ───────────────────────────────────────────────────────────────
+function VisitCardItem({
+  item,
+  onPress,
+}: {
+  item: Visit;
+  onPress: () => void;
+}) {
+  const priority = PRIORITY[item.priority] ?? PRIORITY.routine;
+  const status = STATUS[item.status] ?? STATUS.completed;
+
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      activeOpacity={0.7}
+      style={styles.card}
+      accessibilityRole="button"
+    >
+      {/* Left accent */}
+      <View style={[styles.cardAccent, { backgroundColor: priority.color }]} />
+
+      <View style={styles.cardBody}>
+        {/* Header row */}
+        <View style={styles.cardHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.cardVisitNum}>{item.visitNumber}</Text>
+            <Text style={styles.cardType}>
+              {item.visitType.replace(/-/g, " ").toUpperCase()}
+            </Text>
+          </View>
+          <View style={[styles.priorityPill, { backgroundColor: priority.bg }]}>
+            <Text style={[styles.priorityText, { color: priority.color }]}>
+              {priority.label}
+            </Text>
+          </View>
+        </View>
+
+        {/* Complaint */}
+        <Text style={styles.cardComplaint} numberOfLines={2}>
+          {item.chiefComplaint || "No complaint recorded"}
+        </Text>
+
+        {/* Footer */}
+        <View style={styles.cardFooter}>
+          <View style={styles.datePill}>
+            <MaterialIcons name="schedule" size={11} color={C.inkMuted} />
+            <Text style={styles.dateText}>
+              {formatDate(item.admissionDate)}
+            </Text>
+          </View>
+          <View style={[styles.statusPill, { backgroundColor: status.bg }]}>
+            <View
+              style={[styles.statusDot, { backgroundColor: status.color }]}
+            />
+            <Text style={[styles.statusText, { color: status.color }]}>
+              {status.label}
+            </Text>
+          </View>
+        </View>
+      </View>
+
+      <MaterialIcons
+        name="chevron-right"
+        size={18}
+        color="#D0D5E0"
+        style={styles.chevron}
+      />
+    </TouchableOpacity>
+  );
+}
+
+// ── Screen ───────────────────────────────────────────────────────────────────
 export default function RecordsListScreen({ navigation }: Props) {
   const user = useAuthStore((s) => s.user);
   const insets = useSafeAreaInsets();
@@ -90,19 +194,48 @@ export default function RecordsListScreen({ navigation }: Props) {
     setRefreshing(false);
   };
 
-  const completedCount = visits.filter((v) => v.status === "completed").length;
-  const inProgressCount = visits.filter(
-    (v) => v.status === "in-progress",
-  ).length;
+  const completed = visits.filter((v) => v.status === "completed").length;
+  const active = visits.filter((v) => v.status === "in-progress").length;
 
   if (loading) return <LoadingSpinner message="Loading your records…" />;
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={PRIMARY} />
+      <StatusBar barStyle="light-content" backgroundColor={C.tealDeep} />
 
       {/* ── Header ── */}
-      <View style={[styles.header, { paddingTop: insets.top + 6 }]}>
+      <LinearGradient
+        colors={[C.tealDeep, C.tealDark, C.teal]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={[styles.header, { paddingTop: insets.top + 8 }]}
+      >
+        {/* Decorative elements */}
+        <View
+          style={[
+            styles.deco,
+            {
+              width: 160,
+              height: 160,
+              top: -40,
+              right: -30,
+              borderColor: "rgba(255,255,255,0.08)",
+            },
+          ]}
+        />
+        <View
+          style={[
+            styles.deco,
+            {
+              width: 100,
+              height: 100,
+              bottom: 10,
+              left: -20,
+              borderColor: "rgba(255,255,255,0.06)",
+            },
+          ]}
+        />
+
         <View style={styles.headerRow}>
           <View>
             <Text style={styles.brandName}>HealthChain</Text>
@@ -110,8 +243,8 @@ export default function RecordsListScreen({ navigation }: Props) {
           </View>
           <TouchableOpacity
             style={styles.avatar}
-            accessibilityLabel="Open profile"
             activeOpacity={0.8}
+            onPress={() => navigation.navigate("Profile")} // ← add this
           >
             <Text style={styles.avatarText}>
               {user?.firstName?.[0]}
@@ -122,29 +255,34 @@ export default function RecordsListScreen({ navigation }: Props) {
 
         <Text style={styles.greeting}>Good day, {user?.firstName} 👋</Text>
         <Text style={styles.subheading}>Your medical visit history</Text>
+      </LinearGradient>
 
-        <View style={styles.statsRow}>
-          <View style={styles.statItem}>
-            <Text style={styles.statNum}>{visits.length}</Text>
-            <Text style={styles.statLbl}>Total</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statNum}>{completedCount}</Text>
-            <Text style={styles.statLbl}>Completed</Text>
-          </View>
-          <View style={styles.statDivider} />
-          <View style={styles.statItem}>
-            <Text style={styles.statNum}>{inProgressCount}</Text>
-            <Text style={styles.statLbl}>Active</Text>
-          </View>
-        </View>
+      {/* ── Stats row (overlapping header) ── */}
+      <View style={styles.statsRow}>
+        <StatCard
+          value={visits.length}
+          label="Total"
+          icon="description"
+          color={C.blue}
+        />
+        <StatCard
+          value={completed}
+          label="Completed"
+          icon="check-circle"
+          color={C.teal}
+        />
+        <StatCard
+          value={active}
+          label="Active"
+          icon="pending"
+          color={C.amber}
+        />
       </View>
 
-      {/* ── Error banner ── */}
+      {/* ── Error ── */}
       {error ? (
         <View style={styles.errorBanner}>
-          <MaterialIcons name="error-outline" size={16} color="#B91C1C" />
+          <MaterialIcons name="error-outline" size={15} color={C.coral} />
           <Text style={styles.errorText}>{error}</Text>
         </View>
       ) : null}
@@ -159,249 +297,233 @@ export default function RecordsListScreen({ navigation }: Props) {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={[PRIMARY]}
-            tintColor={PRIMARY}
+            colors={[C.teal]}
+            tintColor={C.teal}
           />
         }
         ListHeaderComponent={
-          <Text style={styles.listHeader}>Recent visits</Text>
+          <View style={styles.listHeaderRow}>
+            <Text style={styles.listHeaderText}>Recent visits</Text>
+            <Text style={styles.listHeaderCount}>{visits.length}</Text>
+          </View>
         }
         ListEmptyComponent={
           <View style={styles.empty}>
-            <View style={styles.emptyIconWrap}>
-              <MaterialIcons name="folder-open" size={32} color={PRIMARY} />
+            <View style={styles.emptyIcon}>
+              <MaterialIcons name="folder-open" size={28} color={C.teal} />
             </View>
             <Text style={styles.emptyTitle}>No visits yet</Text>
             <Text style={styles.emptyBody}>
-              Your medical records will appear here once created.
+              Your medical records will appear here once created by your
+              healthcare provider.
             </Text>
           </View>
         }
-        renderItem={({ item }) => {
-          const priority =
-            PRIORITY_CONFIG[item.priority] ?? PRIORITY_CONFIG.routine;
-          const status = STATUS_CONFIG[item.status] ?? STATUS_CONFIG.completed;
-
-          return (
-            <TouchableOpacity
-              onPress={() =>
-                navigation.navigate("RecordDetail", {
-                  visitId: item.id,
-                  visitNumber: item.visitNumber,
-                })
-              }
-              activeOpacity={0.7}
-              style={styles.card}
-              accessibilityRole="button"
-              accessibilityLabel={`Visit ${item.visitNumber}, ${item.chiefComplaint}`}
-            >
-              <View
-                style={[styles.accentBar, { backgroundColor: priority.color }]}
-              />
-
-              <View style={styles.cardBody}>
-                {/* Top row */}
-                <View style={styles.cardTop}>
-                  <Text style={[styles.visitNumber, { color: priority.color }]}>
-                    {item.visitNumber}
-                  </Text>
-                  <View style={[styles.pill, { backgroundColor: priority.bg }]}>
-                    <Text style={[styles.pillText, { color: priority.color }]}>
-                      {priority.label}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Visit type */}
-                <Text style={styles.visitType}>
-                  {item.visitType.replace(/-/g, " ").toUpperCase()}
-                </Text>
-
-                {/* Chief complaint */}
-                <Text style={styles.complaint} numberOfLines={2}>
-                  {item.chiefComplaint}
-                </Text>
-
-                {/* Bottom row */}
-                <View style={styles.cardFooter}>
-                  <View style={styles.metaChip}>
-                    <MaterialIcons name="event" size={11} color="#9AAFA8" />
-                    <Text style={styles.metaText}>
-                      {formatDate(item.admissionDate)}
-                    </Text>
-                  </View>
-                  <View
-                    style={[styles.statusPill, { backgroundColor: status.bg }]}
-                  >
-                    <View
-                      style={[
-                        styles.statusDot,
-                        { backgroundColor: status.color },
-                      ]}
-                    />
-                    <Text style={[styles.statusText, { color: status.color }]}>
-                      {getStatusLabel(item.status)}
-                    </Text>
-                  </View>
-                </View>
-              </View>
-
-              <MaterialIcons
-                name="chevron-right"
-                size={20}
-                color="#C8DDD5"
-                style={styles.chevron}
-              />
-            </TouchableOpacity>
-          );
-        }}
+        renderItem={({ item }) => (
+          <VisitCardItem
+            item={item}
+            onPress={() =>
+              navigation.navigate("RecordDetail", {
+                visitId: item.id,
+                visitNumber: item.visitNumber,
+              })
+            }
+          />
+        )}
       />
     </View>
   );
 }
 
+// ── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#F2F5F2" },
+  root: { flex: 1, backgroundColor: C.bg },
 
-  // Header
+  // ── Header ──
   header: {
-    backgroundColor: PRIMARY,
     paddingHorizontal: 20,
-    paddingBottom: 18,
+    paddingBottom: 40,
+    overflow: "hidden",
+  },
+  deco: {
+    position: "absolute",
+    borderRadius: 999,
+    borderWidth: 1,
   },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    marginBottom: 14,
+    marginBottom: 18,
   },
   brandName: {
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: "800",
-    color: "#FFFFFF",
-    letterSpacing: -0.5,
+    color: "#fff",
+    letterSpacing: -0.4,
   },
   brandSub: {
-    fontSize: 9,
-    fontWeight: "700",
+    fontSize: 8,
+    fontWeight: "800",
     color: "#6FCF97",
-    letterSpacing: 2,
+    letterSpacing: 2.5,
     marginTop: 2,
   },
   avatar: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 14,
     backgroundColor: "rgba(255,255,255,0.18)",
     borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.35)",
+    borderColor: "rgba(255,255,255,0.3)",
     justifyContent: "center",
     alignItems: "center",
   },
   avatarText: { fontSize: 13, fontWeight: "700", color: "#fff" },
   greeting: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "800",
-    color: "#FFFFFF",
-    letterSpacing: -0.4,
+    color: "#fff",
+    letterSpacing: -0.5,
   },
   subheading: {
-    fontSize: 12,
-    color: "rgba(255,255,255,0.6)",
+    fontSize: 13,
+    color: "rgba(255,255,255,0.55)",
     marginTop: 3,
-    marginBottom: 16,
-  },
-
-  // Stats
-  statsRow: {
-    flexDirection: "row",
-    backgroundColor: "rgba(255,255,255,0.12)",
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.14)",
-    paddingVertical: 12,
-  },
-  statItem: { flex: 1, alignItems: "center" },
-  statNum: { fontSize: 22, fontWeight: "800", color: "#fff" },
-  statLbl: {
-    fontSize: 10,
-    color: "rgba(255,255,255,0.6)",
-    marginTop: 2,
     fontWeight: "500",
   },
-  statDivider: {
-    width: 1,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    marginVertical: 4,
+
+  // ── Stats ──
+  statsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginHorizontal: 16,
+    marginTop: -22,
+    marginBottom: 8,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: C.card,
+    borderRadius: 16,
+    padding: 14,
+    alignItems: "center",
+    ...Platform.select({
+      ios: {
+        shadowColor: "#1A1D2E",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.06,
+        shadowRadius: 12,
+      },
+      android: { elevation: 3 },
+    }),
+  },
+  statIconWrap: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  statValue: { fontSize: 20, fontWeight: "800", color: C.ink },
+  statLabel: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: C.inkMuted,
+    marginTop: 1,
+    letterSpacing: 0.3,
   },
 
-  // Error
+  // ── Error ──
   errorBanner: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#FEE2E2",
+    backgroundColor: C.coralLight,
     marginHorizontal: 16,
-    marginTop: 12,
-    padding: 10,
-    borderRadius: 10,
+    marginTop: 8,
+    padding: 11,
+    borderRadius: 12,
   },
-  errorText: { color: "#B91C1C", fontSize: 12, flex: 1 },
+  errorText: { color: C.coral, fontSize: 12, flex: 1, fontWeight: "500" },
 
-  // List
-  listContent: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: 110 },
-  listHeader: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#5A7A69",
-    letterSpacing: 0.8,
-    marginBottom: 10,
-  },
-
-  // Card
-  card: {
-    flexDirection: "row",
-    alignItems: "stretch",
-    backgroundColor: "#FFFFFF",
-    borderRadius: 14,
-    marginBottom: 9,
-    overflow: "hidden",
-    ...Platform.select({
-      ios: {
-        shadowColor: PRIMARY,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.07,
-        shadowRadius: 8,
-      },
-      android: { elevation: 2 },
-    }),
-  },
-  accentBar: { width: 3 },
-  cardBody: { flex: 1, padding: 12 },
-  chevron: { alignSelf: "center", marginRight: 10 },
-
-  cardTop: {
+  // ── List ──
+  listContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100 },
+  listHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 3,
+    marginBottom: 10,
   },
-  visitNumber: { fontSize: 11, fontWeight: "700", letterSpacing: 0.3 },
-  pill: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5 },
-  pillText: { fontSize: 9, fontWeight: "700", letterSpacing: 0.5 },
-  visitType: {
+  listHeaderText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: C.inkMuted,
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  listHeaderCount: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: C.teal,
+    backgroundColor: C.tealGhost,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+
+  // ── Card ──
+  card: {
+    flexDirection: "row",
+    alignItems: "stretch",
+    backgroundColor: C.card,
+    borderRadius: 16,
+    marginBottom: 10,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: C.cardBorder,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#1A1D2E",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 8,
+      },
+      android: { elevation: 1 },
+    }),
+  },
+  cardAccent: { width: 3.5 },
+  cardBody: { flex: 1, padding: 14 },
+  chevron: { alignSelf: "center", marginRight: 12 },
+
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 6,
+  },
+  cardVisitNum: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: C.ink,
+    letterSpacing: 0.2,
+  },
+  cardType: {
     fontSize: 9,
     fontWeight: "700",
-    color: "#8AA89C",
-    letterSpacing: 0.9,
-    marginBottom: 4,
+    color: C.inkMuted,
+    letterSpacing: 1,
+    marginTop: 2,
   },
-  complaint: {
-    fontSize: 13,
+  priorityPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  priorityText: { fontSize: 9, fontWeight: "700", letterSpacing: 0.4 },
+
+  cardComplaint: {
+    fontSize: 14,
     fontWeight: "600",
-    color: "#0D1F17",
-    lineHeight: 18,
-    marginBottom: 10,
+    color: C.ink,
+    lineHeight: 19,
+    marginBottom: 12,
   },
 
   cardFooter: {
@@ -409,8 +531,8 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "center",
   },
-  metaChip: { flexDirection: "row", alignItems: "center", gap: 4 },
-  metaText: { fontSize: 11, color: "#9AAFA8" },
+  datePill: { flexDirection: "row", alignItems: "center", gap: 4 },
+  dateText: { fontSize: 11, color: C.inkMuted, fontWeight: "500" },
   statusPill: {
     flexDirection: "row",
     alignItems: "center",
@@ -422,13 +544,13 @@ const styles = StyleSheet.create({
   statusDot: { width: 5, height: 5, borderRadius: 3 },
   statusText: { fontSize: 10, fontWeight: "700" },
 
-  // Empty state
-  empty: { alignItems: "center", marginTop: 64, paddingHorizontal: 40 },
-  emptyIconWrap: {
-    width: 68,
-    height: 68,
+  // ── Empty ──
+  empty: { alignItems: "center", marginTop: 60, paddingHorizontal: 40 },
+  emptyIcon: {
+    width: 64,
+    height: 64,
     borderRadius: 20,
-    backgroundColor: PRIMARY_LIGHT,
+    backgroundColor: C.tealGhost,
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 16,
@@ -436,12 +558,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#0D1F17",
+    color: C.ink,
     marginBottom: 6,
   },
   emptyBody: {
     fontSize: 13,
-    color: "#8AA89C",
+    color: C.inkMuted,
     textAlign: "center",
     lineHeight: 19,
   },

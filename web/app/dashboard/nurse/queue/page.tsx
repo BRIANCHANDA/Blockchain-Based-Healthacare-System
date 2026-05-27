@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { visitApi } from "@/lib/api";
+import { api } from "@/lib/api";
 import {
   RefreshCw,
   ChevronRight,
@@ -13,24 +13,21 @@ import {
   Zap,
   AlertTriangle,
   ClipboardList,
+  CheckCircle2,
 } from "lucide-react";
 import { format } from "date-fns";
 
-interface QueueVisit {
+interface AssignedVisit {
   id: string;
   visitNumber: string;
-  visitType: string;
+  patientName: string;
   chiefComplaint: string;
   priority: string;
   status: string;
-  wardOrRoom: string | null;
   admissionDate: string;
-  patient: {
-    firstName: string;
-    lastName: string;
-    gender: string;
-    bloodType: string;
-  } | null;
+  assignedDoctorId?: string;
+  doctorName?: string | null;
+  hasVitals: boolean; // returned by the updated /assigned-to-me endpoint
 }
 
 const PRIORITY_ORDER: Record<string, number> = {
@@ -87,11 +84,18 @@ function waitColor(iso: string) {
   return "#9ca3af";
 }
 
-type FilterKey = "all" | "critical" | "emergency" | "urgent" | "routine";
+type FilterKey =
+  | "all"
+  | "critical"
+  | "emergency"
+  | "urgent"
+  | "routine"
+  | "pending"
+  | "triaged";
 
 export default function NurseQueuePage() {
   const router = useRouter();
-  const [visits, setVisits] = useState<QueueVisit[]>([]);
+  const [visits, setVisits] = useState<AssignedVisit[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState<FilterKey>("all");
@@ -102,14 +106,16 @@ export default function NurseQueuePage() {
     if (silent) setRefreshing(true);
     else setLoading(true);
     try {
-      const res = await visitApi.getTodayQueue();
-      const sorted = (res.data.data.visits ?? []).sort(
-        (a: QueueVisit, b: QueueVisit) =>
+      const res = await api.get("/api/visits/assigned-to-me");
+      const data: AssignedVisit[] = res.data.data ?? [];
+      const sorted = [...data].sort(
+        (a, b) =>
           (PRIORITY_ORDER[a.priority] ?? 9) - (PRIORITY_ORDER[b.priority] ?? 9),
       );
       setVisits(sorted);
       setLastRefresh(new Date());
-    } catch {
+    } catch (err) {
+      console.error(err);
       setVisits([]);
     } finally {
       setLoading(false);
@@ -123,8 +129,13 @@ export default function NurseQueuePage() {
     return () => clearInterval(i);
   }, [load]);
 
+  const pendingCount = visits.filter((v) => !v.hasVitals).length;
+  const triagedCount = visits.filter((v) => v.hasVitals).length;
+
   const counts = {
     all: visits.length,
+    pending: pendingCount,
+    triaged: triagedCount,
     critical: visits.filter((v) => v.priority === "critical").length,
     emergency: visits.filter((v) => v.priority === "emergency").length,
     urgent: visits.filter((v) => v.priority === "urgent").length,
@@ -132,21 +143,28 @@ export default function NurseQueuePage() {
   };
 
   const filtered = visits.filter((v) => {
-    const matchP = filter === "all" || v.priority === filter;
+    const matchP =
+      filter === "all"
+        ? true
+        : filter === "pending"
+          ? !v.hasVitals
+          : filter === "triaged"
+            ? v.hasVitals
+            : v.priority === filter;
+
     const q = search.toLowerCase();
     const matchS =
       !q ||
-      [
-        v.visitNumber,
-        v.patient?.firstName,
-        v.patient?.lastName,
-        v.chiefComplaint,
-      ].some((f) => f?.toLowerCase().includes(q));
+      [v.visitNumber, v.patientName, v.chiefComplaint, v.doctorName].some((f) =>
+        f?.toLowerCase().includes(q),
+      );
     return matchP && matchS;
   });
 
   const filterTabs: { key: FilterKey; label: string }[] = [
     { key: "all", label: "All" },
+    { key: "pending", label: "Pending" },
+    { key: "triaged", label: "Triaged" },
     { key: "critical", label: "Critical" },
     { key: "emergency", label: "Emergency" },
     { key: "urgent", label: "Urgent" },
@@ -155,14 +173,14 @@ export default function NurseQueuePage() {
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      {/* Header */}
+      {/* ── Header ── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
           <h1
             className="text-2xl font-bold text-gray-900"
             style={{ fontFamily: "'Playfair Display', serif" }}
           >
-            Today's Queue
+            My Assigned Patients
           </h1>
           <p className="text-gray-400 text-sm mt-1">
             {format(new Date(), "EEEE, d MMMM yyyy")}
@@ -173,7 +191,12 @@ export default function NurseQueuePage() {
                 <span className="font-medium text-gray-700">
                   {visits.length}
                 </span>{" "}
-                visit{visits.length !== 1 ? "s" : ""}
+                patient{visits.length !== 1 ? "s" : ""}
+                {pendingCount > 0 && (
+                  <span className="text-amber-500 ml-2">
+                    · {pendingCount} awaiting triage
+                  </span>
+                )}
               </>
             )}
           </p>
@@ -196,7 +219,7 @@ export default function NurseQueuePage() {
         </div>
       </div>
 
-      {/* Summary cards — clickable filters */}
+      {/* ── Priority stat cards ── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
         {[
           {
@@ -272,52 +295,69 @@ export default function NurseQueuePage() {
         ))}
       </div>
 
-      {/* Filter tabs + search */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
+      {/* ── Filter tabs + search ── */}
+      <div className="flex flex-col sm:flex-row gap-3 mb-4 flex-wrap">
         <div
-          className="flex gap-1 p-1 rounded-xl w-fit"
+          className="flex gap-1 p-1 rounded-xl w-fit overflow-x-auto"
           style={{ background: "#e8ede9" }}
         >
-          {filterTabs.map(({ key, label }) => (
-            <button
-              key={key}
-              onClick={() => setFilter(key)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap"
-              style={
-                filter === key
-                  ? {
-                      background: "#fff",
-                      color: key === "all" ? "#166534" : getP(key).color,
-                      boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+          {filterTabs.map(({ key, label }) => {
+            const tabColor =
+              key === "pending"
+                ? "#d97706"
+                : key === "triaged"
+                  ? "#166534"
+                  : key === "all"
+                    ? "#166534"
+                    : getP(key).color;
+            const tabBg =
+              key === "pending"
+                ? "#fffbeb"
+                : key === "triaged"
+                  ? "#f0fdf4"
+                  : key === "all"
+                    ? "#f0fdf4"
+                    : getP(key).bg;
+
+            return (
+              <button
+                key={key}
+                onClick={() => setFilter(key)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all whitespace-nowrap"
+                style={
+                  filter === key
+                    ? {
+                        background: "#fff",
+                        color: tabColor,
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+                      }
+                    : { color: "#6b7280" }
+                }
+              >
+                {label}
+                {counts[key] > 0 && (
+                  <span
+                    className="text-xs font-bold px-1.5 rounded-full"
+                    style={
+                      filter === key
+                        ? { background: tabBg, color: tabColor }
+                        : { background: "rgba(0,0,0,0.06)", color: "#9ca3af" }
                     }
-                  : { color: "#6b7280" }
-              }
-            >
-              {label}
-              {counts[key] > 0 && (
-                <span
-                  className="text-xs font-bold px-1.5 rounded-full"
-                  style={
-                    filter === key
-                      ? {
-                          background: key === "all" ? "#f0fdf4" : getP(key).bg,
-                          color: key === "all" ? "#166534" : getP(key).color,
-                        }
-                      : { background: "rgba(0,0,0,0.06)", color: "#9ca3af" }
-                  }
-                >
-                  {counts[key]}
-                </span>
-              )}
-            </button>
-          ))}
+                  >
+                    {counts[key]}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
+
         <div className="relative max-w-xs">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search patient, visit no…"
+            placeholder="Search patient, visit number, doctor…"
             className="w-full pl-9 pr-8 py-2 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 outline-none
               focus:border-green-500 focus:ring-2 focus:ring-green-500/10 placeholder:text-gray-400 transition-all"
           />
@@ -332,7 +372,7 @@ export default function NurseQueuePage() {
         </div>
       </div>
 
-      {/* List */}
+      {/* ── Patient list ── */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         {loading ? (
           <div className="divide-y divide-gray-50">
@@ -360,12 +400,12 @@ export default function NurseQueuePage() {
             </div>
             <p className="text-sm font-semibold text-gray-500">
               {visits.length === 0
-                ? "Queue is empty"
+                ? "No patients assigned to you"
                 : "No patients match filters"}
             </p>
             <p className="text-xs text-gray-400 mt-1">
               {visits.length === 0
-                ? "Patients will appear as visits are registered"
+                ? "The receptionist will assign patients to you"
                 : "Try clearing your search or filter"}
             </p>
             {(search || filter !== "all") && (
@@ -386,31 +426,32 @@ export default function NurseQueuePage() {
             {filtered.map((v, i) => {
               const p = getP(v.priority);
               const isCritical = ["critical", "emergency"].includes(v.priority);
+              const triageDone = v.hasVitals === true;
+
               return (
                 <button
                   key={v.id}
-                  onClick={() =>
-                    router.push(
-                      `/dashboard/nurse/triage?visitNumber=${v.visitNumber}`,
-                    )
-                  }
+                  onClick={() => router.push(`/dashboard/nurse/triage/${v.id}`)}
                   className="w-full flex items-center gap-4 px-5 py-4 text-left transition-all group"
                   style={{
                     background:
-                      i === 0 && isCritical ? `${p.dot}08` : undefined,
+                      i === 0 && isCritical && !triageDone
+                        ? `${p.dot}08`
+                        : undefined,
+                    opacity: triageDone ? 0.7 : 1,
                   }}
                   onMouseEnter={(e) => {
-                    if (!(i === 0 && isCritical))
+                    if (!(i === 0 && isCritical && !triageDone))
                       e.currentTarget.style.background = "#f9fafb";
                   }}
                   onMouseLeave={(e) => {
-                    if (!(i === 0 && isCritical))
+                    if (!(i === 0 && isCritical && !triageDone))
                       e.currentTarget.style.background = "transparent";
                   }}
                 >
                   {/* Priority dot */}
                   <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
-                    {isCritical && i === 0 && (
+                    {isCritical && i === 0 && !triageDone && (
                       <span
                         className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-50"
                         style={{ background: p.dot }}
@@ -418,38 +459,43 @@ export default function NurseQueuePage() {
                     )}
                     <span
                       className="relative inline-flex rounded-full h-2.5 w-2.5"
-                      style={{ background: p.dot }}
+                      style={{ background: triageDone ? "#d1d5db" : p.dot }}
                     />
                   </span>
 
-                  {/* Patient */}
+                  {/* Content */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-2 flex-wrap">
                       <p className="text-sm font-semibold text-gray-900">
-                        {v.patient
-                          ? `${v.patient.firstName} ${v.patient.lastName}`
-                          : "—"}
+                        {v.patientName}
                       </p>
                       <span className="font-mono text-xs text-gray-400">
                         {v.visitNumber}
                       </span>
+                      {triageDone && (
+                        <span className="flex items-center gap-0.5 text-xs font-semibold text-green-600">
+                          <CheckCircle2 className="w-3 h-3" /> Triaged
+                        </span>
+                      )}
                     </div>
                     <p className="text-xs text-gray-400 truncate mt-0.5 max-w-xs">
                       {v.chiefComplaint}
                     </p>
+                    {v.doctorName && (
+                      <p className="text-xs text-green-600 mt-1">
+                        Doctor: {v.doctorName}
+                      </p>
+                    )}
                   </div>
 
-                  {/* Ward */}
-                  {v.wardOrRoom && (
-                    <span className="hidden md:block text-xs text-gray-400 whitespace-nowrap">
-                      {v.wardOrRoom}
-                    </span>
-                  )}
-
-                  {/* Wait */}
+                  {/* Wait time */}
                   <div
                     className="hidden sm:flex items-center gap-1 text-xs whitespace-nowrap"
-                    style={{ color: waitColor(v.admissionDate) }}
+                    style={{
+                      color: triageDone
+                        ? "#9ca3af"
+                        : waitColor(v.admissionDate),
+                    }}
                   >
                     <Clock className="w-3 h-3" /> {timeSince(v.admissionDate)}
                   </div>
@@ -458,22 +504,33 @@ export default function NurseQueuePage() {
                   <span
                     className="text-xs font-semibold px-2.5 py-1 rounded-full flex-shrink-0"
                     style={{
-                      background: p.bg,
-                      color: p.color,
-                      border: `1px solid ${p.border}`,
+                      background: triageDone ? "#f3f4f6" : p.bg,
+                      color: triageDone ? "#9ca3af" : p.color,
+                      border: `1px solid ${triageDone ? "#e5e7eb" : p.border}`,
                     }}
                   >
                     {p.label}
                   </span>
 
-                  {/* Triage CTA */}
+                  {/* Action indicator */}
                   <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <span
-                      className="hidden lg:flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
-                      style={{ background: "#166534", color: "#fff" }}
-                    >
-                      <Activity className="w-3 h-3" /> Triage
-                    </span>
+                    {triageDone ? (
+                      // Already triaged — show view label on hover
+                      <span
+                        className="hidden lg:flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                        style={{ background: "#f0fdf4", color: "#166534" }}
+                      >
+                        <CheckCircle2 className="w-3 h-3" /> View
+                      </span>
+                    ) : (
+                      // Pending triage — show triage label on hover
+                      <span
+                        className="hidden lg:flex items-center gap-1 text-xs font-semibold px-2.5 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all"
+                        style={{ background: "#166534", color: "#fff" }}
+                      >
+                        <Activity className="w-3 h-3" /> Triage
+                      </span>
+                    )}
                     <ChevronRight className="w-4 h-4 text-gray-200 group-hover:text-green-600 transition-colors" />
                   </div>
                 </button>
@@ -483,10 +540,9 @@ export default function NurseQueuePage() {
         )}
       </div>
 
-      {/* Footer */}
       {!loading && visits.length > 0 && (
         <p className="text-xs text-center text-gray-400 mt-4">
-          Showing {filtered.length} of {visits.length} visit
+          Showing {filtered.length} of {visits.length} assigned patient
           {visits.length !== 1 ? "s" : ""}
           {(search || filter !== "all") && (
             <>

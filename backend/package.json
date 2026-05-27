@@ -14,6 +14,7 @@
     "@scalar/hono-api-reference": "latest",
     "bcryptjs": "latest",
     "drizzle-orm": "latest",
+    "expo-server-sdk": "^6.1.0",
     "fabric-network": "^2.2.20",
     "hono": "latest",
     "jsonwebtoken": "latest",

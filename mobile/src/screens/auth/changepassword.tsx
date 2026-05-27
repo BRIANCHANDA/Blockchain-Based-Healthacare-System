@@ -15,7 +15,7 @@ import Toast from "react-native-toast-message";
 
 import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
-import { updatePatientProfile } from "../../api/patient";
+import { changePassword } from "../../api/auth"; // ← correct import
 import { useAuthStore } from "../../store/authStore";
 import { AuthStackParamList } from "../../types";
 
@@ -24,16 +24,15 @@ const schema = z
     newPassword: z.string().min(8, "Password must be at least 8 characters"),
     confirmPassword: z.string(),
   })
-  .refine((data) => data.newPassword === data.confirmPassword, {
+  .refine((d) => d.newPassword === d.confirmPassword, {
     message: "Passwords do not match",
     path: ["confirmPassword"],
   });
 
 type FormData = z.infer<typeof schema>;
-
 type Props = NativeStackScreenProps<AuthStackParamList, "ChangePassword">;
 
-export default function ChangePasswordScreen({ navigation }: Props) {
+export default function ChangePasswordScreen(_: Props) {
   const [loading, setLoading] = useState(false);
   const { token, user, setAuth } = useAuthStore();
 
@@ -48,17 +47,19 @@ export default function ChangePasswordScreen({ navigation }: Props) {
   const onSubmit = async (data: FormData) => {
     setLoading(true);
     try {
-      const res = await updatePatientProfile({ password: data.newPassword });
-      if (res.data.success) {
-        const updatedUser = { ...user, mustChangePassword: false };
-        await setAuth(token!, updatedUser);
-        Toast.show({
-          type: "success",
-          text1: "Password Changed",
-          text2: "You can now log in with your new password.",
-        });
-        navigation.replace("MainApp");
-      }
+      // On forced first-login, the old password is always the default 'test1234'.
+      // changePassword(oldPassword, newPassword)
+      await changePassword("test1234", data.newPassword);
+
+      // Clear the flag locally so the app doesn't redirect again
+      const updatedUser = { ...user!, mustChangePassword: false };
+      await setAuth(token!, updatedUser);
+
+      Toast.show({
+        type: "success",
+        text1: "Password Changed",
+        text2: "You can now use your new password.",
+      });
     } catch (err: any) {
       const msg =
         err.response?.data?.error?.message ??
@@ -82,9 +83,9 @@ export default function ChangePasswordScreen({ navigation }: Props) {
           <View style={styles.iconCircle}>
             <Text style={styles.iconText}>🔐</Text>
           </View>
-          <Text style={styles.title}>Change Password</Text>
+          <Text style={styles.title}>Set Your Password</Text>
           <Text style={styles.subtitle}>
-            You are required to set a new password for security reasons.
+            For your security, please set a personal password before continuing.
           </Text>
         </View>
 
@@ -95,7 +96,7 @@ export default function ChangePasswordScreen({ navigation }: Props) {
             render={({ field: { onChange, value } }) => (
               <Input
                 label="New Password"
-                placeholder="Enter new password"
+                placeholder="At least 8 characters"
                 value={value}
                 onChangeText={onChange}
                 secureTextEntry
@@ -111,7 +112,7 @@ export default function ChangePasswordScreen({ navigation }: Props) {
             render={({ field: { onChange, value } }) => (
               <Input
                 label="Confirm Password"
-                placeholder="Confirm new password"
+                placeholder="Re-enter new password"
                 value={value}
                 onChangeText={onChange}
                 secureTextEntry
@@ -122,7 +123,7 @@ export default function ChangePasswordScreen({ navigation }: Props) {
           />
 
           <Button
-            label={loading ? "Updating..." : "Update Password"}
+            label={loading ? "Updating..." : "Set Password"}
             onPress={handleSubmit(onSubmit)}
             loading={loading}
             style={{ marginTop: 16 }}

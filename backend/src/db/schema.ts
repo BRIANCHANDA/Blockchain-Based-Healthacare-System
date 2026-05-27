@@ -259,6 +259,7 @@ export const practitioners = pgTable('practitioners', {
     isActive: boolean('is_active').default(true).notNull(),
     passwordHash: text('password_hash').notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
+    lastSeenAt: timestamp('last_seen_at'),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
     blockchainIdx: index('idx_practitioners_blockchain_address').on(table.blockchainAddress),
@@ -270,7 +271,6 @@ export const practitioners = pgTable('practitioners', {
 }));
 
 // ==================== PATIENT-INSTITUTION LINK ====================
-
 export const patientInstitutionRegistrations = pgTable('patient_institution_registrations', {
     id: uuid('id').defaultRandom().primaryKey(),
     patientId: uuid('patient_id').notNull().references(() => patients.id),
@@ -279,16 +279,22 @@ export const patientInstitutionRegistrations = pgTable('patient_institution_regi
     registeredAt: timestamp('registered_at').defaultNow().notNull(),
     lastVisitAt: timestamp('last_visit_at'),
     isActive: boolean('is_active').default(true).notNull(),
+
+    isHomeInstitution: boolean('is_home_institution').default(false).notNull(),
+    // ─────────────────────────────────────────────────────────────────────────
+
     createdAt: timestamp('created_at').defaultNow().notNull(),
 }, (table) => ({
     patientIdx: index('idx_patient_inst_reg_patient_id').on(table.patientId),
     institutionIdx: index('idx_patient_inst_reg_institution_id').on(table.institutionId),
     hospitalNumberIdx: index('idx_patient_inst_reg_hospital_number').on(table.hospitalPatientNumber),
+    // Add index for fast home institution lookup
+    homeIdx: index('idx_patient_inst_reg_is_home').on(table.patientId, table.isHomeInstitution),
     uniquePatientInst: unique('unique_patient_institution').on(table.patientId, table.institutionId),
     uniqueInstNumber: unique('unique_institution_number').on(table.institutionId, table.hospitalPatientNumber),
 }));
 
-// ==================== VISITS & ENCOUNTERS ====================
+
 
 export const visits = pgTable('visits', {
     id: uuid('id').defaultRandom().primaryKey(),
@@ -300,7 +306,7 @@ export const visits = pgTable('visits', {
     visitType: visitTypeEnum('visit_type').notNull(),
     admissionDate: timestamp('admission_date').notNull(),
     dischargeDate: timestamp('discharge_date'),
-    chiefComplaint: text('chief_complaint').notNull(),
+    chiefComplaint: text('chief_complaint'),
     admittingDiagnosis: text('admitting_diagnosis'),
     dischargeDiagnosis: text('discharge_diagnosis'),
     wardOrRoom: text('ward_or_room'),
@@ -310,9 +316,11 @@ export const visits = pgTable('visits', {
     dischargeSummary: text('discharge_summary'),
     dischargeInstructions: text('discharge_instructions'),
     followUpDate: timestamp('follow_up_date'),
-    // Blockchain integrity fields
-    blockchainHash: text('blockchain_hash').notNull(),                // hash of the visit creation
-    dischargeBlockchainHash: text('discharge_blockchain_hash'),      // hash of the discharge event
+    blockchainHash: text('blockchain_hash').notNull(),
+    dischargeBlockchainHash: text('discharge_blockchain_hash'),
+    assignedNurseId: uuid('assigned_nurse_id').references(() => practitioners.id),
+    assignedDoctorId: uuid('assigned_doctor_id').references(() => practitioners.id),
+    createdByPractitionerId: uuid('created_by_practitioner_id').references(() => practitioners.id),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
@@ -321,6 +329,9 @@ export const visits = pgTable('visits', {
     visitNumberIdx: index('idx_visits_visit_number').on(table.visitNumber),
     statusIdx: index('idx_visits_status').on(table.status),
     admissionIdx: index('idx_visits_admission_date').on(table.admissionDate),
+    nurseIdx: index('idx_visits_assigned_nurse').on(table.assignedNurseId),
+    doctorIdx: index('idx_visits_assigned_doctor').on(table.assignedDoctorId),
+
 }));
 
 // ==================== NURSING RECORDS ====================
@@ -469,6 +480,7 @@ export const labTestOrders = pgTable('lab_test_orders', {
     orderedAt: timestamp('ordered_at').defaultNow().notNull(),
     sampleCollectedAt: timestamp('sample_collected_at'),
     collectedByNurseId: uuid('collected_by_nurse_id').references(() => practitioners.id), // now references practitioners
+    assignedTo: uuid('assigned_to').references(() => practitioners.id),
     blockchainHash: text('blockchain_hash').notNull(),
     blockchainTransactionId: text('blockchain_transaction_id'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -513,6 +525,7 @@ export const imagingOrders = pgTable('imaging_orders', {
     status: imagingStatusEnum('status').default('ordered').notNull(),
     scheduledDateTime: timestamp('scheduled_date_time'),
     orderedAt: timestamp('ordered_at').defaultNow().notNull(),
+    assignedTo: uuid('assigned_to').references(() => practitioners.id),
     blockchainHash: text('blockchain_hash').notNull(),
     blockchainTransactionId: text('blockchain_transaction_id'),
     createdAt: timestamp('created_at').defaultNow().notNull(),

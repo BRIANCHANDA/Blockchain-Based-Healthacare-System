@@ -1,8 +1,17 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { sql } from 'drizzle-orm';
+import { sql, eq, and, ne, count, desc } from 'drizzle-orm';
 import { db } from '../db';
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
+import { practitioners, visits, prescriptions, prescriptionItems } from '../db/schema';
+
+async function getStaffInstitution(userId: string): Promise<string | null> {
+    const staff = await db.select({ institutionId: practitioners.institutionId })
+        .from(practitioners)
+        .where(eq(practitioners.id, userId))
+        .limit(1);
+    return staff[0]?.institutionId || null;
+}
 
 type AppContext = {
     Variables: {
@@ -17,7 +26,7 @@ const successData = z.object({ success: z.boolean(), data: z.any() });
 
 export const pharmacyStatsRouter = createRouter<AppContext>()
 
-    // ── GET /pharmacy-stats/overview ─────────────────────────────────────────────
+    // ── GET /pharmacy-stats/overview ─────────────────────────────────────
     .openapi(createRoute({
         tags: ['Pharmacy Stats'],
         summary: 'Pharmacy dashboard overview stats',
@@ -30,121 +39,199 @@ export const pharmacyStatsRouter = createRouter<AppContext>()
             403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
             500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
         },
-        // @ts-expect-error
     }), async (c) => {
         try {
             const userType = c.get('userType');
+            const userId = c.get('userId');
+
             if (userType !== 'pharmacist' && userType !== 'admin') {
                 return c.json({ success: false, error: { message: 'Access denied' } }, 403);
             }
 
+            const institutionId = await getStaffInstitution(userId);
+            if (!institutionId && userType !== 'admin') {
+                return c.json({ success: false, error: { message: 'No institution assigned' } }, 403);
+            }
+
             const todayStart = new Date();
             todayStart.setHours(0, 0, 0, 0);
-
             const weekStart = new Date();
             weekStart.setDate(weekStart.getDate() - 7);
+            weekStart.setHours(0, 0, 0, 0);
 
-            const [
-                pendingCount,
-                dispensedToday,
-                dispensedWeek,
-                statusBreakdown,
-                topMedications,
-                weeklyActivity,
-                avgDispenseTime,
-            ] = await Promise.all([
+            // -----------------------------------------------------------------
+            // 1. Pending count (prescribed or dispensing) using Drizzle ORM
+            // -----------------------------------------------------------------
+            const pendingConditions: any[] = [
+                sql`${prescriptions.status} IN ('prescribed', 'dispensing')`
+            ];
+            if (institutionId) {
+                pendingConditions.push(eq(visits.institutionId, institutionId));
+            }
 
-                // Pending prescriptions (prescribed or dispensing)
-                db.execute(sql`
-          SELECT COUNT(*) as count
-          FROM prescriptions
-          WHERE status IN ('prescribed', 'dispensing')
-        `),
+            const pendingResult = await db
+                .select({ count: count() })
+                .from(prescriptions)
+                .innerJoin(visits, eq(prescriptions.visitId, visits.id))
+                .where(and(...pendingConditions));
 
-                // Dispensed today
-                db.execute(sql`
-          SELECT COUNT(*) as count
-          FROM prescriptions
-          WHERE status = 'dispensed'
-          AND updated_at >= ${todayStart.toISOString()}
-        `),
+            const pendingCount = pendingResult[0]?.count || 0;
 
-                // Dispensed this week
-                db.execute(sql`
-          SELECT COUNT(*) as count
-          FROM prescriptions
-          WHERE status = 'dispensed'
-          AND updated_at >= ${weekStart.toISOString()}
-        `),
+            // -----------------------------------------------------------------
+            // 2. Dispensed today
+            // -----------------------------------------------------------------
+            const dispensedTodayConditions: any[] = [
+                sql`${prescriptionItems.isDispensed} = true`,
+                sql`${prescriptionItems.dispensedAt} >= ${todayStart.toISOString()}`
+            ];
+            if (institutionId) {
+                dispensedTodayConditions.push(eq(visits.institutionId, institutionId));
+            }
 
-                // All status breakdown
-                db.execute(sql`
-          SELECT status, COUNT(*) as count
-          FROM prescriptions
-          GROUP BY status
-          ORDER BY count DESC
-        `),
+            const dispensedTodayResult = await db
+                .selectDistinct({ prescriptionId: prescriptions.id })
+                .from(prescriptionItems)
+                .innerJoin(prescriptions, eq(prescriptionItems.prescriptionId, prescriptions.id))
+                .innerJoin(visits, eq(prescriptions.visitId, visits.id))
+                .where(and(...dispensedTodayConditions));
 
-                // Top 5 most prescribed medications
-                db.execute(sql`
-          SELECT medication_name, COUNT(*) as count
-          FROM prescription_items
-          WHERE created_at >= ${weekStart.toISOString()}
-          GROUP BY medication_name
-          ORDER BY count DESC
-          LIMIT 5
-        `),
+            const dispensedToday = dispensedTodayResult.length;
 
-                // 7-day activity
-                db.execute(sql`
-          SELECT
-            DATE(prescribed_at) as date,
-            COUNT(*) as prescribed,
-            COUNT(CASE WHEN status = 'dispensed' THEN 1 END) as dispensed
-          FROM prescriptions
-          WHERE prescribed_at >= ${weekStart.toISOString()}
-          GROUP BY DATE(prescribed_at)
-          ORDER BY date ASC
-        `),
+            // -----------------------------------------------------------------
+            // 3. Dispensed this week
+            // -----------------------------------------------------------------
+            const dispensedWeekConditions: any[] = [
+                sql`${prescriptionItems.isDispensed} = true`,
+                sql`${prescriptionItems.dispensedAt} >= ${weekStart.toISOString()}`
+            ];
+            if (institutionId) {
+                dispensedWeekConditions.push(eq(visits.institutionId, institutionId));
+            }
 
-                // Avg time from prescribed to dispensed (minutes)
-                db.execute(sql`
-          SELECT
-            AVG(
-              EXTRACT(EPOCH FROM (updated_at - prescribed_at)) / 60
-            )::numeric(10,1) as avg_minutes
-          FROM prescriptions
-          WHERE status = 'dispensed'
-          AND prescribed_at >= ${weekStart.toISOString()}
-        `),
-            ]);
+            const dispensedWeekResult = await db
+                .selectDistinct({ prescriptionId: prescriptions.id })
+                .from(prescriptionItems)
+                .innerJoin(prescriptions, eq(prescriptionItems.prescriptionId, prescriptions.id))
+                .innerJoin(visits, eq(prescriptions.visitId, visits.id))
+                .where(and(...dispensedWeekConditions));
 
-            // Status map
+            const dispensedWeek = dispensedWeekResult.length;
+
+            // -----------------------------------------------------------------
+            // 4. Status breakdown
+            // -----------------------------------------------------------------
+            const statusConditions: any[] = [];
+            if (institutionId) {
+                statusConditions.push(eq(visits.institutionId, institutionId));
+            }
+
+            const statusResult = await db
+                .select({
+                    status: prescriptions.status,
+                    count: count()
+                })
+                .from(prescriptions)
+                .innerJoin(visits, eq(prescriptions.visitId, visits.id))
+                .where(and(...statusConditions))
+                .groupBy(prescriptions.status)
+                .orderBy(desc(count()));
+
             const byStatus: Record<string, number> = {};
-            (statusBreakdown.rows as any[]).forEach((r) => {
-                byStatus[r.status] = parseInt(r.count);
+            statusResult.forEach((r: any) => {
+                byStatus[r.status] = r.count || 0;
             });
+
+            // -----------------------------------------------------------------
+            // 5. Top medications (last 7 days)
+            // -----------------------------------------------------------------
+            const topMedsConditions: any[] = [
+                sql`${prescriptionItems.createdAt} >= ${weekStart.toISOString()}`
+            ];
+            if (institutionId) {
+                topMedsConditions.push(eq(visits.institutionId, institutionId));
+            }
+
+            const topMedsResult = await db
+                .select({
+                    medicationName: prescriptionItems.medicationName,
+                    count: count()
+                })
+                .from(prescriptionItems)
+                .innerJoin(prescriptions, eq(prescriptionItems.prescriptionId, prescriptions.id))
+                .innerJoin(visits, eq(prescriptions.visitId, visits.id))
+                .where(and(...topMedsConditions))
+                .groupBy(prescriptionItems.medicationName)
+                .orderBy(desc(count()))
+                .limit(5);
+
+            const topMedications = topMedsResult.map(m => ({
+                medicationName: m.medicationName,
+                count: m.count || 0
+            }));
+
+            // -----------------------------------------------------------------
+            // 6. Weekly activity (prescribed vs dispensed) - raw SQL for complex query
+            // -----------------------------------------------------------------
+            const weeklyResult: any[] = await db.execute(sql`
+                SELECT
+                    DATE(${prescriptions.prescribedAt}) as date,
+                    COUNT(*) as prescribed,
+                    COUNT(DISTINCT CASE WHEN ${prescriptionItems.dispensedAt} IS NOT NULL AND ${prescriptionItems.isDispensed} = true THEN ${prescriptions.id} END) as dispensed
+                FROM ${prescriptions}
+                JOIN ${visits} ON ${visits.id} = ${prescriptions.visitId}
+                LEFT JOIN ${prescriptionItems} ON ${prescriptionItems.prescriptionId} = ${prescriptions.id}
+                WHERE ${prescriptions.prescribedAt} >= ${weekStart.toISOString()}
+                ${institutionId ? sql`AND ${visits.institutionId} = ${institutionId}` : sql``}
+                GROUP BY DATE(${prescriptions.prescribedAt})
+                ORDER BY date ASC
+            `);
+
+            // Handle the result correctly - it returns array directly or with .rows
+            const weeklyActivity = Array.isArray(weeklyResult) ? weeklyResult : weeklyResult?.rows || [];
+
+            // -----------------------------------------------------------------
+            // 7. Average dispense time (minutes) - raw SQL for complex aggregation
+            // -----------------------------------------------------------------
+            const avgTimeResult: any = await db.execute(sql`
+                SELECT
+                    AVG(EXTRACT(EPOCH FROM (${prescriptionItems.dispensedAt} - ${prescriptions.prescribedAt})) / 60)::numeric(10,1) as avg_minutes
+                FROM ${prescriptions}
+                JOIN ${prescriptionItems} ON ${prescriptionItems.prescriptionId} = ${prescriptions.id}
+                JOIN ${visits} ON ${visits.id} = ${prescriptions.visitId}
+                WHERE ${prescriptionItems.dispensedAt} >= ${weekStart.toISOString()}
+                  AND ${prescriptionItems.isDispensed} = true
+                ${institutionId ? sql`AND ${visits.institutionId} = ${institutionId}` : sql``}
+            `);
+
+            // Safe access to result
+            const avgDispenseMinutes = avgTimeResult && avgTimeResult.length > 0 && avgTimeResult[0]?.avg_minutes
+                ? parseFloat(avgTimeResult[0].avg_minutes)
+                : 0;
 
             return c.json({
                 success: true,
                 data: {
-                    pendingCount: parseInt((pendingCount.rows[0] as any)?.count ?? '0'),
-                    dispensedToday: parseInt((dispensedToday.rows[0] as any)?.count ?? '0'),
-                    dispensedWeek: parseInt((dispensedWeek.rows[0] as any)?.count ?? '0'),
+                    pendingCount: typeof pendingCount === 'number' ? pendingCount : parseInt(String(pendingCount)),
+                    dispensedToday,
+                    dispensedWeek,
                     statusBreakdown: byStatus,
-                    topMedications: topMedications.rows,
-                    weeklyActivity: weeklyActivity.rows,
-                    avgDispenseMinutes: parseFloat((avgDispenseTime.rows[0] as any)?.avg_minutes ?? '0'),
+                    topMedications,
+                    weeklyActivity: weeklyActivity.map((w: any) => ({
+                        date: w.date,
+                        prescribed: parseInt(String(w.prescribed)) || 0,
+                        dispensed: parseInt(String(w.dispensed)) || 0
+                    })),
+                    avgDispenseMinutes,
                 },
             });
-
         } catch (err: any) {
-            console.error('Pharmacy stats overview error:', err);
+            console.error('Pharmacy stats overview error:', err.message);
+            console.error('Full error:', err);
             return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
         }
     })
 
-    // ── GET /pharmacy-stats/my-stats ─────────────────────────────────────────────
+    // ── GET /pharmacy-stats/my-stats ──────────────────────────────────────
     .openapi(createRoute({
         tags: ['Pharmacy Stats'],
         summary: 'Stats for the currently logged-in pharmacist',
@@ -157,65 +244,77 @@ export const pharmacyStatsRouter = createRouter<AppContext>()
             403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
             500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
         },
-        // @ts-expect-error
     }), async (c) => {
         try {
             const userType = c.get('userType');
             const userId = c.get('userId');
-
             if (userType !== 'pharmacist') {
                 return c.json({ success: false, error: { message: 'Pharmacists only' } }, 403);
             }
 
             const todayStart = new Date();
             todayStart.setHours(0, 0, 0, 0);
-
             const monthStart = new Date();
             monthStart.setDate(1);
             monthStart.setHours(0, 0, 0, 0);
 
-            const [todayItems, monthItems, avgTime] = await Promise.all([
+            // -----------------------------------------------------------------
+            // Items dispensed today
+            // -----------------------------------------------------------------
+            const todayResult = await db
+                .select({ count: count() })
+                .from(prescriptionItems)
+                .where(
+                    and(
+                        eq(prescriptionItems.dispensedByPharmacistId, userId),
+                        sql`${prescriptionItems.dispensedAt} >= ${todayStart.toISOString()}`
+                    )
+                );
 
-                // Items I dispensed today
-                db.execute(sql`
-          SELECT COUNT(*) as count
-          FROM prescription_items
-          WHERE dispensed_by_pharmacist_id = ${userId}
-          AND dispensed_at >= ${todayStart.toISOString()}
-        `),
+            const todayItems = todayResult[0]?.count || 0;
 
-                // Items I dispensed this month
-                db.execute(sql`
-          SELECT COUNT(*) as count
-          FROM prescription_items
-          WHERE dispensed_by_pharmacist_id = ${userId}
-          AND dispensed_at >= ${monthStart.toISOString()}
-        `),
+            // -----------------------------------------------------------------
+            // Items dispensed this month
+            // -----------------------------------------------------------------
+            const monthResult = await db
+                .select({ count: count() })
+                .from(prescriptionItems)
+                .where(
+                    and(
+                        eq(prescriptionItems.dispensedByPharmacistId, userId),
+                        sql`${prescriptionItems.dispensedAt} >= ${monthStart.toISOString()}`
+                    )
+                );
 
-                // My avg dispense time this month
-                db.execute(sql`
-          SELECT
-            AVG(
-              EXTRACT(EPOCH FROM (pi.dispensed_at - p.prescribed_at)) / 60
-            )::numeric(10,1) as avg_minutes
-          FROM prescription_items pi
-          JOIN prescriptions p ON p.id = pi.prescription_id
-          WHERE pi.dispensed_by_pharmacist_id = ${userId}
-          AND pi.dispensed_at >= ${monthStart.toISOString()}
-        `),
-            ]);
+            const monthItems = monthResult[0]?.count || 0;
+
+            // -----------------------------------------------------------------
+            // Average dispense time (minutes) this month
+            // -----------------------------------------------------------------
+            const avgResult: any = await db.execute(sql`
+                SELECT
+                    AVG(EXTRACT(EPOCH FROM (${prescriptionItems.dispensedAt} - ${prescriptions.prescribedAt})) / 60)::numeric(10,1) as avg_minutes
+                FROM ${prescriptionItems}
+                JOIN ${prescriptions} ON ${prescriptions.id} = ${prescriptionItems.prescriptionId}
+                WHERE ${prescriptionItems.dispensedByPharmacistId} = ${userId}
+                  AND ${prescriptionItems.dispensedAt} >= ${monthStart.toISOString()}
+            `);
+
+            const avgDispenseMinutes = avgResult && avgResult.length > 0 && avgResult[0]?.avg_minutes
+                ? parseFloat(avgResult[0].avg_minutes)
+                : 0;
 
             return c.json({
                 success: true,
                 data: {
-                    todayItems: parseInt((todayItems.rows[0] as any)?.count ?? '0'),
-                    monthItems: parseInt((monthItems.rows[0] as any)?.count ?? '0'),
-                    avgDispenseMinutes: parseFloat((avgTime.rows[0] as any)?.avg_minutes ?? '0'),
+                    todayItems: typeof todayItems === 'number' ? todayItems : parseInt(String(todayItems)),
+                    monthItems: typeof monthItems === 'number' ? monthItems : parseInt(String(monthItems)),
+                    avgDispenseMinutes,
                 },
             });
-
         } catch (err: any) {
-            console.error('Pharmacy my-stats error:', err);
+            console.error('Pharmacy my-stats error:', err.message);
+            console.error('Full error:', err);
             return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
         }
     });

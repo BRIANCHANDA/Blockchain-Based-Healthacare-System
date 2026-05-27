@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { api, practitionersApi, visitApi } from "@/lib/api";
 import {
   Clock,
   Users,
@@ -15,8 +15,11 @@ import {
   Zap,
   Search,
   X,
+  User,
+  UserCheck,
+  AlertCircle,
 } from "lucide-react";
-import { format } from "date-fns";
+import { format, formatDistanceToNow } from "date-fns";
 
 interface QueueItem {
   id: string;
@@ -28,13 +31,17 @@ interface QueueItem {
   doctor: string | null;
   waitMins: number;
   status: string;
+  assignedNurseId?: string;
+  assignedNurseName?: string;
 }
 
-function safeDateDistance(dateStr: string | null | undefined): string {
-  if (!dateStr) return "—";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return "—";
-  return formatDistanceToNow(d, { addSuffix: true });
+interface Nurse {
+  id: string;
+  firstName: string;
+  lastName: string;
+  role: string;
+  specialization: string | null;
+  lastSeenAt: string | null;
 }
 
 const PRIORITY: Record<
@@ -91,12 +98,9 @@ const P_FALLBACK = {
   dot: "#9ca3af",
   label: "—",
 };
-function getP(p: string) {
-  return PRIORITY[p] ?? P_FALLBACK;
-}
-function waitColor(m: number) {
-  return m > 60 ? "#dc2626" : m > 30 ? "#d97706" : "#6b7280";
-}
+const getP = (p: string) => PRIORITY[p] ?? P_FALLBACK;
+const waitColor = (m: number) =>
+  m > 60 ? "#dc2626" : m > 30 ? "#d97706" : "#6b7280";
 
 function PulseDot({
   color,
@@ -162,32 +166,88 @@ export default function QueuePage() {
   const router = useRouter();
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [search, setSearch] = useState("");
-  const [starting, setStarting] = useState<string | null>(null);
+  const [assigning, setAssigning] = useState<string | null>(null);
+  const [onlineNurses, setOnlineNurses] = useState<Nurse[]>([]);
+  const [showNurseDropdown, setShowNurseDropdown] = useState<string | null>(
+    null,
+  );
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
+  // ── Fetch queue only (used for silent refresh and initial load) ────────────
   const fetchQueue = useCallback(async (silent = false) => {
-    if (silent) setRefreshing(true);
-    else setLoading(true);
+    if (!silent) setLoading(true);
+    else setRefreshing(true);
+    setError(null);
+
     try {
       const res = await api.get("/api/dashboard/receptionist");
-      setQueue(res.data.data.queue ?? []);
+      console.log("[Queue] dashboard response:", res.data);
+
+      // Handle both { data: { queue: [] } } and { queue: [] } shapes
+      const q = res.data?.data?.queue ?? res.data?.queue ?? [];
+      setQueue(q);
       setLastRefresh(new Date());
-    } catch (_) {
+    } catch (err: any) {
+      console.error(
+        "[Queue] fetch error:",
+        err.response?.status,
+        err.response?.data,
+      );
+      setError(
+        err.response?.data?.error?.message ??
+          err.message ??
+          "Failed to load queue.",
+      );
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchQueue();
-    const i = setInterval(() => fetchQueue(true), 30_000);
-    return () => clearInterval(i);
-  }, [fetchQueue]);
+  // ── Fetch nurses separately so a nurse API failure doesn't block the queue ─
+  const fetchNurses = useCallback(async () => {
+    try {
+      const res = await practitionersApi.getOnlineStaff("nurse");
+      setOnlineNurses(res.data?.data?.staff ?? res.data?.staff ?? []);
+    } catch (err) {
+      console.warn("[Queue] Could not fetch online nurses (non-fatal):", err);
+      // Non-fatal — queue still works without nurse list
+    }
+  }, []);
 
+  // ── Initial load: run both independently so neither blocks the other ───────
+  useEffect(() => {
+    fetchQueue(false); // shows loading spinner
+    fetchNurses(); // silent, non-blocking
+
+    const interval = setInterval(() => {
+      fetchQueue(true); // silent refresh every 30s
+    }, 30_000);
+
+    return () => clearInterval(interval);
+  }, [fetchQueue, fetchNurses]);
+
+  // ── Assign nurse ───────────────────────────────────────────────────────────
+  const assignNurse = async (visitId: string, nurseId: string) => {
+    if (!nurseId) return;
+    setAssigning(visitId);
+    try {
+      await visitApi.assignNurse(visitId, nurseId);
+      await fetchQueue(true);
+      setShowNurseDropdown(null);
+    } catch (err) {
+      console.error("Failed to assign nurse", err);
+      alert("Failed to assign nurse. Please try again.");
+    } finally {
+      setAssigning(null);
+    }
+  };
+
+  // ── Derived counts ─────────────────────────────────────────────────────────
   const counts = {
     waiting: queue.filter((q) => q.status === "waiting").length,
     inProgress: queue.filter((q) => q.status === "in-progress").length,
@@ -225,7 +285,7 @@ export default function QueuePage() {
     { key: "all", label: "All", count: queue.length },
     { key: "waiting", label: "Waiting", count: counts.waiting },
     { key: "in-progress", label: "In Progress", count: counts.inProgress },
-    { key: "completed", label: "Done", count: counts.done },
+    { key: "completed", label: "Completed", count: counts.done },
   ];
 
   return (
@@ -256,7 +316,7 @@ export default function QueuePage() {
           </span>
           <button
             onClick={() => fetchQueue(true)}
-            disabled={refreshing}
+            disabled={refreshing || loading}
             className="p-2.5 rounded-xl border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-40"
           >
             <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
@@ -270,6 +330,20 @@ export default function QueuePage() {
           </button>
         </div>
       </div>
+
+      {/* Error banner */}
+      {error && (
+        <div className="mb-5 flex items-center gap-2.5 px-4 py-3 rounded-xl bg-red-50 border border-red-100">
+          <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+          <p className="text-sm text-red-700 flex-1">{error}</p>
+          <button
+            onClick={() => fetchQueue(false)}
+            className="text-xs font-semibold text-red-700 underline"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Summary strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
@@ -375,8 +449,7 @@ export default function QueuePage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search ticket, name, reason…"
-            className="w-full pl-9 pr-8 py-2 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 outline-none
-              focus:border-green-500 focus:ring-2 focus:ring-green-500/10 placeholder:text-gray-400 transition-all"
+            className="w-full pl-9 pr-8 py-2 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/10 placeholder:text-gray-400 transition-all"
           />
           {search && (
             <button
@@ -446,6 +519,8 @@ export default function QueuePage() {
             const isDone = item.status === "completed";
             const isActive = item.status === "in-progress";
             const isUrgent = ["critical", "emergency"].includes(item.priority);
+            const isWaiting = item.status === "waiting";
+
             return (
               <div
                 key={item.id}
@@ -454,7 +529,6 @@ export default function QueuePage() {
                   borderColor: isActive || isUrgent ? p.border : "#f1f5f9",
                 }}
               >
-                {/* Priority top bar */}
                 <div
                   className="h-0.5 w-full"
                   style={{ background: isDone ? "#e5e7eb" : p.dot }}
@@ -535,32 +609,90 @@ export default function QueuePage() {
                             Dr. {item.doctor}
                           </span>
                         )}
+                        {item.assignedNurseName && (
+                          <span className="text-xs text-gray-400 flex items-center gap-1">
+                            <UserCheck size={12} /> Nurse:{" "}
+                            {item.assignedNurseName}
+                          </span>
+                        )}
                       </div>
                     </div>
 
                     {/* Actions */}
                     <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                      {!isDone && (
+                      {isWaiting && (
+                        <div className="relative">
+                          {showNurseDropdown === item.id ? (
+                            <div className="absolute right-0 top-0 mt-8 z-10 bg-white rounded-xl shadow-lg border border-gray-200 min-w-[200px]">
+                              <div className="p-2">
+                                <div className="text-xs font-semibold text-gray-500 mb-2 px-2">
+                                  Select Nurse
+                                </div>
+                                {onlineNurses.length === 0 ? (
+                                  <div className="text-xs text-gray-400 px-2 py-2">
+                                    No nurses online
+                                  </div>
+                                ) : (
+                                  onlineNurses.map((nurse) => (
+                                    <button
+                                      key={nurse.id}
+                                      onClick={() =>
+                                        assignNurse(item.id, nurse.id)
+                                      }
+                                      disabled={assigning === item.id}
+                                      className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-50 flex items-center gap-2"
+                                    >
+                                      <User
+                                        size={14}
+                                        className="text-gray-400"
+                                      />
+                                      <span>
+                                        {nurse.firstName} {nurse.lastName}
+                                      </span>
+                                      {assigning === item.id && (
+                                        <Loader2
+                                          size={12}
+                                          className="animate-spin ml-auto"
+                                        />
+                                      )}
+                                    </button>
+                                  ))
+                                )}
+                                <div className="border-t border-gray-100 my-1" />
+                                <button
+                                  onClick={() => setShowNurseDropdown(null)}
+                                  className="w-full text-left px-3 py-2 text-xs text-gray-400 hover:bg-gray-50 rounded-lg"
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setShowNurseDropdown(item.id)}
+                              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:shadow-md"
+                              style={{
+                                background:
+                                  "linear-gradient(135deg,#7C3AED,#6D28D9)",
+                              }}
+                            >
+                              <User size={13} /> Assign Nurse
+                            </button>
+                          )}
+                        </div>
+                      )}
+                      {isActive && (
                         <button
                           onClick={() =>
-                            router.push(
-                              `/dashboard/receptionist/visits/new?patientId=${item.id}&ticket=${item.ticket}`,
-                            )
+                            router.push(`/dashboard/visits/${item.id}`)
                           }
-                          disabled={!!starting}
-                          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:shadow-md disabled:opacity-50"
+                          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:shadow-md"
                           style={{
-                            background: isActive
-                              ? `linear-gradient(135deg,${p.color},${p.dot})`
-                              : "linear-gradient(135deg,#166534,#15803d)",
+                            background:
+                              "linear-gradient(135deg,#166534,#15803d)",
                           }}
                         >
-                          {starting === item.id ? (
-                            <Loader2 size={13} className="animate-spin" />
-                          ) : (
-                            <Play size={13} />
-                          )}
-                          {isActive ? "Continue" : "Start"}
+                          <Play size={13} /> Continue
                         </button>
                       )}
                       <button
