@@ -135,7 +135,7 @@ function Steps({ current }: { current: 1 | 2 | 3 | 4 }) {
 }
 
 // ── Inner component ───────────────────────────────────────────────────────────
-function NewVisitInner() {
+function NewVisitPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
 

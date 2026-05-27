@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { visitApi, permissionApi } from "@/lib/api";
 import {
@@ -33,11 +33,10 @@ type PermissionStatus =
   | "rejected"
   | "expired";
 
-export default function NurseTriagePage() {
+// ── Inner component (uses useSearchParams — must be inside Suspense) ──────────
+function NurseTriagePageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-
-  // If ?visitNumber= is present, we came from the queue
   const queueVisitNumber = searchParams.get("visitNumber");
 
   const [visitNumber, setVisitNumber] = useState("");
@@ -58,7 +57,6 @@ export default function NurseTriagePage() {
 
   useEffect(() => () => stopPolling(), []);
 
-  // ── FROM QUEUE: auto-load visit + immediately request access ──
   useEffect(() => {
     if (!queueVisitNumber) return;
     (async () => {
@@ -79,7 +77,6 @@ export default function NurseTriagePage() {
     })();
   }, []);
 
-  // ── POLLING: check every 5s if patient approved ──
   useEffect(() => {
     if (permStatus !== "pending" || !requestId || !result) return;
     stopPolling();
@@ -104,7 +101,6 @@ export default function NurseTriagePage() {
     return stopPolling;
   }, [permStatus, requestId]);
 
-  // ── MANUAL SEARCH ──
   const handleSearch = async () => {
     const trimmed = visitNumber.trim().toUpperCase();
     if (!trimmed) return;
@@ -129,7 +125,6 @@ export default function NurseTriagePage() {
     }
   };
 
-  // ── REQUEST ACCESS (used by both paths) ──
   const sendAccessRequest = async (visitData: any) => {
     setPermStatus("requesting");
     setError("");
@@ -175,7 +170,6 @@ export default function NurseTriagePage() {
         </p>
       </div>
 
-      {/* ── MANUAL SEARCH BOX — only shown when NOT coming from queue ── */}
       {!queueVisitNumber && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-4">
           <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
@@ -227,14 +221,12 @@ export default function NurseTriagePage() {
               )}
             </button>
           </div>
-
           {error && (
             <div className="flex items-start gap-2 mt-3 p-3 rounded-xl bg-red-50 border border-red-100">
               <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
               <p className="text-sm text-red-700">{error}</p>
             </div>
           )}
-
           <p className="text-xs text-gray-400 mt-3">
             💡 You can also click any patient in the{" "}
             <button
@@ -248,7 +240,6 @@ export default function NurseTriagePage() {
         </div>
       )}
 
-      {/* ── LOADING SPINNER (queue auto-load) ── */}
       {loading && queueVisitNumber && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 flex flex-col items-center gap-3 text-gray-400">
           <Loader2 className="w-7 h-7 animate-spin text-green-700" />
@@ -256,7 +247,6 @@ export default function NurseTriagePage() {
         </div>
       )}
 
-      {/* ── ERROR (queue auto-load) ── */}
       {!loading && error && queueVisitNumber && (
         <div className="flex items-start gap-2 p-4 rounded-2xl bg-red-50 border border-red-100">
           <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
@@ -264,10 +254,8 @@ export default function NurseTriagePage() {
         </div>
       )}
 
-      {/* ── PATIENT RESULT CARD ── */}
       {result && (
         <div className="bg-white rounded-2xl border border-green-100 shadow-sm overflow-hidden">
-          {/* Header */}
           <div
             className="px-6 py-4 border-b border-gray-100 flex items-center gap-3"
             style={{ background: "linear-gradient(135deg, #f0fdf4, #dcfce7)" }}
@@ -305,7 +293,6 @@ export default function NurseTriagePage() {
             </div>
           </div>
 
-          {/* Visit details */}
           <div className="px-6 py-4 grid grid-cols-2 gap-4 text-sm border-b border-gray-100">
             <div>
               <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">
@@ -357,9 +344,7 @@ export default function NurseTriagePage() {
             </div>
           </div>
 
-          {/* Permission flow */}
           <div className="px-6 py-4">
-            {/* IDLE — manual path: nurse clicks Begin Triage to trigger access request */}
             {permStatus === "idle" && (
               <button
                 onClick={() => sendAccessRequest(result)}
@@ -368,21 +353,16 @@ export default function NurseTriagePage() {
                   background: "linear-gradient(135deg, #166534, #15803d)",
                 }}
               >
-                <Activity className="w-4 h-4" />
-                Begin Triage
+                <Activity className="w-4 h-4" /> Begin Triage{" "}
                 <ChevronRight className="w-4 h-4" />
               </button>
             )}
-
-            {/* REQUESTING */}
             {permStatus === "requesting" && (
               <div className="flex items-center justify-center gap-3 py-4 text-gray-500 text-sm">
-                <Loader2 className="w-5 h-5 animate-spin text-green-700" />
+                <Loader2 className="w-5 h-5 animate-spin text-green-700" />{" "}
                 Sending access request to patient…
               </div>
             )}
-
-            {/* PENDING */}
             {permStatus === "pending" && (
               <div className="space-y-3">
                 <div className="flex items-start gap-3 p-4 rounded-xl bg-blue-50 border border-blue-100">
@@ -401,13 +381,11 @@ export default function NurseTriagePage() {
                   </div>
                 </div>
                 <div className="flex items-center justify-center gap-2 py-1 text-xs text-gray-400">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Checking for response… ({pollCount * 5}s elapsed)
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Checking for
+                  response… ({pollCount * 5}s elapsed)
                 </div>
               </div>
             )}
-
-            {/* APPROVED */}
             {permStatus === "approved" && (
               <div className="space-y-3">
                 <div className="flex items-start gap-3 p-4 rounded-xl bg-green-50 border border-green-200">
@@ -431,14 +409,11 @@ export default function NurseTriagePage() {
                     background: "linear-gradient(135deg, #166534, #15803d)",
                   }}
                 >
-                  <Activity className="w-4 h-4" />
-                  Begin Triage
+                  <Activity className="w-4 h-4" /> Begin Triage{" "}
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
             )}
-
-            {/* REJECTED */}
             {permStatus === "rejected" && (
               <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 border border-red-100">
                 <XCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
@@ -453,8 +428,6 @@ export default function NurseTriagePage() {
                 </div>
               </div>
             )}
-
-            {/* EXPIRED */}
             {permStatus === "expired" && (
               <div className="space-y-3">
                 <div className="flex items-start gap-3 p-4 rounded-xl bg-gray-50 border border-gray-200">
@@ -484,5 +457,20 @@ export default function NurseTriagePage() {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Suspense wrapper ──────────────────────────────────────────────────────────
+export default function NurseTriagePage() {
+  return (
+    <Suspense
+      fallback={
+        <div style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>
+          Loading…
+        </div>
+      }
+    >
+      <NurseTriagePageInner />
+    </Suspense>
   );
 }
