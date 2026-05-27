@@ -2,8 +2,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { apiReference } from '@scalar/hono-api-reference';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { serveStatic } from 'hono/bun'; // ✅ Bun‑compatible static server
-
+import { serveStatic } from 'hono/bun';
 
 import { authRouter } from './routes/auth';
 import { patientRouter } from './routes/patients';
@@ -20,19 +19,25 @@ import { labStatsRouter } from './routes/lab-stats';
 import { radiologyStatsRouter } from './routes/radiology-stats';
 import { adminStatsRouter } from './routes/admin-stats';
 import { pharmacyStatsRouter } from './routes/pharmacy';
-import { appointmentRouter } from "./routes/appointments";
+import { appointmentRouter } from './routes/appointments';
 
 const app = new OpenAPIHono();
 
-// Middleware
-app.use('*', cors());
+// ── CORS — must be before all routes ─────────────────────────────────────────
+app.use('*', cors({
+  origin: (_origin) => _origin ?? '*',   // allow all origins; tighten in production if needed
+  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowHeaders: ['Content-Type', 'Authorization'],
+  credentials: true,
+}));
+
+// ── Logger ────────────────────────────────────────────────────────────────────
 app.use('*', logger());
 
-// ✅ Serve uploaded radiology images from the 'uploads' folder at project root
-//    A request to /uploads/radiology/abc.jpg will serve ./uploads/radiology/abc.jpg
+// ── Static files (radiology uploads) ─────────────────────────────────────────
 app.use('/uploads/*', serveStatic({ root: './' }));
 
-// API routes
+// ── Routes ────────────────────────────────────────────────────────────────────
 app.route('/api/auth', authRouter);
 app.route('/api/patients', patientRouter);
 app.route('/api/practitioners', practitionerRouter);
@@ -49,11 +54,14 @@ app.route('/api/radiology-stats', radiologyStatsRouter);
 app.route('/api/dashboard/admin', adminStatsRouter);
 app.route('/api/pharmacy-stats', pharmacyStatsRouter);
 app.route('/api/appointments', appointmentRouter);
-// OpenAPI documentation
+
+// ── OpenAPI docs ──────────────────────────────────────────────────────────────
+const serverUrl = process.env.RENDER_EXTERNAL_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
+
 app.doc('/doc', {
   openapi: '3.0.0',
   info: {
-    title: 'Healthcare Blockchain API',
+    title: 'HealthChain API',
     version: '1.0.0',
     description: `
 ## Blockchain-based Healthcare Information System
@@ -69,10 +77,10 @@ app.doc('/doc', {
 7. **Pharmacy** — Doctor prescribes, Pharmacist dispenses
 8. **Discharge** — Doctor discharges with summary
 
-Every step stores a hash on the **Hyperledger Fabric blockchain** for tamper-proof audit.
+Every write stores a hash on **Hyperledger Fabric** for tamper-proof audit.
     `,
   },
-  servers: [{ url: 'http://localhost:3000', description: 'Development' }],
+  servers: [{ url: serverUrl, description: 'API Server' }],
   components: {
     securitySchemes: {
       bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
@@ -80,30 +88,21 @@ Every step stores a hash on the **Hyperledger Fabric blockchain** for tamper-pro
   },
 });
 
-app.get('/reference', apiReference({
-  theme: 'purple',
-  spec: { url: '/doc' },
-}));
+app.get('/reference', apiReference({ theme: 'purple', spec: { url: '/doc' } }));
 
 app.get('/', (c) => c.json({
   status: 'ok',
-  message: 'Healthcare Blockchain API',
-  docs: 'http://localhost:3000/reference',
+  message: 'HealthChain API — Copperbelt University',
+  docs: `${serverUrl}/reference`,
 }));
 
-const port = parseInt(process.env.PORT || '3000');
-console.log(`Healthcare API running on http://localhost:${port}`);
-console.log(`API Reference: http://localhost:${port}/reference`);
+// ── Start ─────────────────────────────────────────────────────────────────────
+const port = parseInt(process.env.PORT ?? '3000');
+console.log(`HealthChain API running on port ${port}`);
+console.log(`API Reference: ${serverUrl}/reference`);
 
 export default {
   port,
   fetch: app.fetch,
-  idleTimeout: 60, // seconds — prevents Bun from killing slow blockchain queries
+  idleTimeout: 60,
 };
-
-app.use('/*', cors({
-  origin: ['http://localhost:3000', 'http://localhost:3001'], // or your frontend URL
-  allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
-  credentials: true,
-}));
