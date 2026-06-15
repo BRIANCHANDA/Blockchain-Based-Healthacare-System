@@ -4,4 +4,6 @@ export declare class AuditContract extends Contract {
     logAccess(ctx: Context, patientId: string, recordId: string, action: string, success: string): Promise<string>;
     getPatientAuditLog(ctx: Context, patientId: string): Promise<string>;
     getAuditEntry(ctx: Context, patientId: string, logId: string): Promise<string>;
+    getAuditLogByDateRange(ctx: Context, patientId: string, startDate: string, // ISO
+    endDate: string): Promise<string>;
 }

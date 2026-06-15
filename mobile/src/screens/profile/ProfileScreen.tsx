@@ -14,66 +14,53 @@ import {
 } from "react-native";
 import { MaterialIcons as Icon } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { LinearGradient } from "expo-linear-gradient";
 import Toast from "react-native-toast-message";
+import QRCode from "react-native-qrcode-svg";
 
 import { logout, changePassword } from "../../api/auth";
 import { getMyReferrals } from "../../api/records";
+import { getMyHealth, getPatientProfile } from "../../api/patient";
 import { useAuthStore } from "../../store/authStore";
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
-  ink: "#1A1D2E",
-  inkSoft: "#5A5F7A",
-  inkMuted: "#9498B3",
-  teal: "#0D9488",
-  tealDark: "#0F766E",
-  tealDeep: "#115E59",
-  tealGhost: "#F0FDFA",
-  tealLight: "#CCFBF1",
+  primary: "#059669",
+  primaryDark: "#047857",
+  primaryGhost: "#ECFDF5",
+  primaryLight: "#D1FAE5",
+  coral: "#FF5757",
+  coralLight: "#FFE4E4",
   amber: "#F59E0B",
   amberLight: "#FEF3C7",
-  coral: "#EF4444",
-  coralLight: "#FEE2E2",
-  violet: "#7C3AED",
   blue: "#3B82F6",
-  green: "#16A34A",
-  greenLight: "#F0FDF4",
-  greenBorder: "#BBF7D0",
-  bg: "#F8F9FC",
+  blueLight: "#DBEAFE",
+  violet: "#8B5CF6",
+  violetLight: "#EDE9FE",
+  ink: "#0A0E1A",
+  inkSoft: "#4B5563",
+  inkMuted: "#9CA3AF",
+  inkSubtle: "#D1D5DB",
+  bg: "#FAFAFB",
+  bgAlt: "#F4F5F7",
   card: "#FFFFFF",
-  cardBorder: "#ECEEF4",
-  divider: "#F1F2F6",
+  cardBorder: "#E5E7EB",
+  divider: "#F3F4F6",
 };
 
-// ── Referral urgency colours ──────────────────────────────────────────────────
-const URGENCY: Record<
-  string,
-  { color: string; bg: string; dot: string; label: string }
-> = {
-  routine: { color: C.green, bg: C.greenLight, dot: C.green, label: "Routine" },
-  urgent: { color: C.amber, bg: C.amberLight, dot: C.amber, label: "Urgent" },
-  emergency: {
-    color: "#EA580C",
-    bg: "#FFF7ED",
-    dot: "#F97316",
-    label: "Emergency",
-  },
-  critical: {
-    color: C.coral,
-    bg: C.coralLight,
-    dot: C.coral,
-    label: "Critical",
-  },
+const URGENCY: Record<string, { color: string; bg: string; label: string }> = {
+  routine: { color: C.primary, bg: C.primaryGhost, label: "Routine" },
+  urgent: { color: C.amber, bg: C.amberLight, label: "Urgent" },
+  emergency: { color: "#EA580C", bg: "#FFF7ED", label: "Emergency" },
+  critical: { color: C.coral, bg: C.coralLight, label: "Critical" },
 };
 const getU = (u: string) => URGENCY[u] ?? URGENCY.routine;
 
 const STATUS: Record<string, { color: string; bg: string; label: string }> = {
   pending: { color: C.amber, bg: C.amberLight, label: "Pending" },
-  accepted: { color: C.blue, bg: "#EFF6FF", label: "Accepted" },
-  completed: { color: C.green, bg: C.greenLight, label: "Completed" },
+  accepted: { color: C.blue, bg: C.blueLight, label: "Accepted" },
+  completed: { color: C.primary, bg: C.primaryGhost, label: "Completed" },
   rejected: { color: C.coral, bg: C.coralLight, label: "Rejected" },
-  cancelled: { color: "#6B7280", bg: "#F9FAFB", label: "Cancelled" },
+  cancelled: { color: C.inkMuted, bg: C.bgAlt, label: "Cancelled" },
 };
 const getS = (s: string) => STATUS[s] ?? STATUS.pending;
 
@@ -85,22 +72,22 @@ const MENU_SECTIONS = [
         icon: "lock",
         label: "Change Password",
         sublabel: "Update your credentials",
-        color: C.teal,
-        bg: C.tealGhost,
+        color: C.primary,
+        bg: C.primaryGhost,
       },
       {
         icon: "notifications",
         label: "Notification Settings",
         sublabel: "Manage alerts",
         color: C.violet,
-        bg: "#EDE9FE",
+        bg: C.violetLight,
       },
       {
         icon: "shield",
         label: "Privacy & Security",
         sublabel: "Control your data",
         color: C.blue,
-        bg: "#EFF6FF",
+        bg: C.blueLight,
       },
     ],
   },
@@ -116,16 +103,16 @@ const MENU_SECTIONS = [
       },
       {
         icon: "info-outline",
-        label: "About MeDLink",
+        label: "About MedLink",
         sublabel: "Version 1.0.0",
         color: C.inkSoft,
-        bg: "#F3F4F6",
+        bg: C.bgAlt,
       },
     ],
   },
 ];
 
-// ── Referral card (detailed) ─────────────────────────────────────────────────
+// ── Referral row ──────────────────────────────────────────────────────────────
 function ReferralRow({ referral }: { referral: any }) {
   const u = getU(referral.urgency);
   const st = getS(referral.status);
@@ -139,8 +126,7 @@ function ReferralRow({ referral }: { referral: any }) {
     : null;
 
   return (
-    <View style={[rStyles.card, { borderLeftColor: u.dot }]}>
-      {/* Header: ref number + status pill */}
+    <View style={rStyles.card}>
       <View style={rStyles.headerRow}>
         <Text style={rStyles.refNum}>{referral.referralNumber}</Text>
         <View style={[rStyles.statusPill, { backgroundColor: st.bg }]}>
@@ -150,135 +136,97 @@ function ReferralRow({ referral }: { referral: any }) {
         </View>
       </View>
 
-      {/* Receiving institution — most prominent */}
       {referral.receivingInstitutionName && (
         <View style={rStyles.instRow}>
-          <Icon name="local-hospital" size={13} color={u.color} />
-          <Text
-            style={[rStyles.instName, { color: u.color }]}
-            numberOfLines={1}
-          >
+          <Icon name="local-hospital" size={14} color={u.color} />
+          <Text style={[rStyles.instName, { color: C.ink }]} numberOfLines={1}>
             {referral.receivingInstitutionName}
           </Text>
         </View>
       )}
 
-      {/* Reason */}
       <Text style={rStyles.reason} numberOfLines={2}>
         {referral.reason}
       </Text>
 
-      {/* Clinical summary if different from reason */}
-      {referral.clinicalSummary &&
-        referral.clinicalSummary !== referral.reason && (
-          <Text style={rStyles.summary} numberOfLines={2}>
-            {referral.clinicalSummary}
-          </Text>
-        )}
-
-      {/* Footer: urgency + date */}
       <View style={rStyles.footerRow}>
         <View style={[rStyles.urgencyPill, { backgroundColor: u.bg }]}>
-          <View style={[rStyles.urgencyDot, { backgroundColor: u.dot }]} />
+          <View style={[rStyles.urgencyDot, { backgroundColor: u.color }]} />
           <Text style={[rStyles.urgencyText, { color: u.color }]}>
             {u.label}
           </Text>
         </View>
         {dateStr && <Text style={rStyles.dateText}>{dateStr}</Text>}
       </View>
-
-      {/* Accepted/completed timestamps */}
-      {referral.acceptedAt && (
-        <Text style={[rStyles.timestampText, { color: C.blue }]}>
-          ✓ Accepted{" "}
-          {new Date(referral.acceptedAt).toLocaleDateString("en-ZM", {
-            day: "numeric",
-            month: "short",
-          })}
-        </Text>
-      )}
-      {referral.completedAt && (
-        <Text style={[rStyles.timestampText, { color: C.green }]}>
-          ✓ Completed{" "}
-          {new Date(referral.completedAt).toLocaleDateString("en-ZM", {
-            day: "numeric",
-            month: "short",
-          })}
-        </Text>
-      )}
-      {referral.responseNotes &&
-        !referral.responseNotes.startsWith("Converted") && (
-          <Text style={rStyles.noteText} numberOfLines={2}>
-            "{referral.responseNotes}"
-          </Text>
-        )}
     </View>
   );
 }
 
 const rStyles = StyleSheet.create({
   card: {
-    paddingVertical: 13,
+    paddingVertical: 14,
     paddingHorizontal: 14,
     borderBottomWidth: 1,
     borderBottomColor: C.divider,
-    borderLeftWidth: 3,
   },
   headerRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 4,
+    marginBottom: 8,
   },
   refNum: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: "700",
     color: C.inkMuted,
     fontFamily: Platform.OS === "android" ? "monospace" : "Courier",
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
   },
-  statusPill: { paddingHorizontal: 7, paddingVertical: 2.5, borderRadius: 6 },
-  statusText: { fontSize: 9, fontWeight: "800" },
+  statusPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 7,
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
   instRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    marginBottom: 4,
+    gap: 6,
+    marginBottom: 6,
   },
-  instName: { fontSize: 13, fontWeight: "700", flex: 1 },
-  reason: { fontSize: 12, color: C.ink, fontWeight: "500", lineHeight: 17 },
-  summary: {
-    fontSize: 11,
+  instName: {
+    fontSize: 14,
+    fontWeight: "700",
+    flex: 1,
+    letterSpacing: -0.2,
+  },
+  reason: {
+    fontSize: 13,
     color: C.inkSoft,
-    lineHeight: 16,
-    fontStyle: "italic",
-    marginTop: 2,
+    fontWeight: "500",
+    lineHeight: 19,
+    marginBottom: 10,
   },
   footerRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 6,
   },
   urgencyPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 7,
+    gap: 5,
+    paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 8,
+    borderRadius: 7,
   },
   urgencyDot: { width: 5, height: 5, borderRadius: 3 },
-  urgencyText: { fontSize: 9, fontWeight: "700" },
-  dateText: { fontSize: 10, color: C.inkMuted },
-  timestampText: { fontSize: 10, marginTop: 3 },
-  noteText: {
-    fontSize: 10,
-    color: C.inkSoft,
-    fontStyle: "italic",
-    marginTop: 3,
-    lineHeight: 14,
-  },
+  urgencyText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.2 },
+  dateText: { fontSize: 11, color: C.inkMuted, fontWeight: "500" },
 });
 
 // ── Main screen ───────────────────────────────────────────────────────────────
@@ -289,21 +237,29 @@ export default function ProfileScreen() {
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [pwLoading, setPwLoading] = useState(false);
+  const [qrExpanded, setQrExpanded] = useState(false);
 
-  // Referrals state
   const [referrals, setReferrals] = useState<any[]>([]);
   const [refLoading, setRefLoading] = useState(true);
   const [refExpanded, setRefExpanded] = useState(false);
 
+  // Health summary — blood type + allergies
+  const [health, setHealth] = useState<{
+    bloodType: string;
+    allergies: { id: string; allergen: string; allergyType: string; severity: string; reaction?: string }[];
+  } | null>(null);
+  const [demographics, setDemographics] = useState<{
+    dateOfBirth?: string; gender?: string; phoneNumber?: string;
+    maritalStatus?: string; occupation?: string;
+  } | null>(null);
+
   const { user, clearAuth } = useAuthStore();
   const insets = useSafeAreaInsets();
 
-  // Load referrals on mount
   const loadReferrals = useCallback(async () => {
     try {
       const res = await getMyReferrals();
       const raw: any[] = res?.referrals ?? res?.data?.referrals ?? [];
-      // Sort: active first, then by date desc
       const sorted = [...raw].sort((a, b) => {
         const order: Record<string, number> = {
           pending: 0,
@@ -327,28 +283,32 @@ export default function ProfileScreen() {
 
   useEffect(() => {
     loadReferrals();
+    // Load blood type + allergies
+    getMyHealth()
+      .then((res: any) => setHealth(res.data?.data ?? res.data ?? null))
+      .catch(() => {});
+    // Load demographics (DOB, gender, phone)
+    getPatientProfile()
+      .then((res: any) => setDemographics(res.data?.data ?? res.data ?? null))
+      .catch(() => {});
   }, [loadReferrals]);
 
   const handleLogout = () => {
-    Alert.alert(
-      "Sign Out",
-      "Are you sure you want to sign out of HealthChain?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Sign Out",
-          style: "destructive",
-          onPress: async () => {
-            setLoggingOut(true);
-            try {
-              await logout();
-            } catch {}
-            await clearAuth();
-            Toast.show({ type: "success", text1: "Signed out successfully" });
-          },
+    Alert.alert("Sign Out", "Are you sure you want to sign out of MedLink?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Sign Out",
+        style: "destructive",
+        onPress: async () => {
+          setLoggingOut(true);
+          try {
+            await logout();
+          } catch {}
+          await clearAuth();
+          Toast.show({ type: "success", text1: "Signed out successfully" });
         },
-      ],
-    );
+      },
+    ]);
   };
 
   const handleChangePassword = async () => {
@@ -367,6 +327,7 @@ export default function ProfileScreen() {
       Toast.show({ type: "error", text1: "New passwords do not match" });
       return;
     }
+
     setPwLoading(true);
     try {
       await changePassword(oldPw, newPw);
@@ -396,6 +357,7 @@ export default function ProfileScreen() {
   };
 
   const initials = `${user?.firstName?.[0] ?? ""}${user?.lastName?.[0] ?? ""}`;
+  const qrPayload = JSON.stringify({ t: "hc-patient", id: user?.id });
   const activeCount = referrals.filter((r) =>
     ["pending", "accepted"].includes(r.status),
   ).length;
@@ -403,43 +365,23 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={C.tealDeep} />
+      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
       <ScrollView
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 110 }}
+        contentContainerStyle={{
+          paddingBottom: 110,
+          paddingTop: insets.top + 16,
+        }}
       >
-        {/* ── Hero ─────────────────────────────────────────────────────── */}
-        <LinearGradient
-          colors={[C.tealDeep, C.tealDark, C.teal]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={[styles.hero, { paddingTop: insets.top + 16 }]}
-        >
-          <View
-            style={[
-              styles.deco,
-              { width: 180, height: 180, top: -50, right: -50 },
-            ]}
-          />
-          <View
-            style={[
-              styles.deco,
-              { width: 100, height: 100, bottom: 0, left: -20 },
-            ]}
-          />
-
-          <View style={styles.brandRow}>
-            <Text style={styles.brandName}>MedLink</Text>
-            <Text style={styles.brandSub}>ZAMBIA</Text>
-          </View>
-
+        {/* ── Profile card ─────────────────────────────────────────────── */}
+        <View style={styles.profileCard}>
           <View style={styles.avatarOuter}>
             <View style={styles.avatarInner}>
               <Text style={styles.avatarText}>{initials}</Text>
             </View>
             <View style={styles.verifiedBadge}>
-              <Icon name="verified" size={14} color={C.teal} />
+              <Icon name="check" size={12} color="#fff" />
             </View>
           </View>
 
@@ -451,14 +393,226 @@ export default function ProfileScreen() {
             <View style={styles.roleDot} />
             <Text style={styles.roleText}>PATIENT</Text>
           </View>
-        </LinearGradient>
+        </View>
 
-        {/* ── Referrals card ───────────────────────────────────────────── */}
+        {/* ── Health summary — DS safety-critical pattern ──────────────── */}
+        <View style={styles.sectionOuter}>
+          <Text style={styles.sectionLabel}>Health Summary</Text>
+          <View style={[styles.menuCard, styles.healthCard]}>
+
+            {/* Blood type + DOB row */}
+            <View style={styles.healthRow}>
+              <View style={styles.healthItem}>
+                <Text style={styles.healthItemLabel}>BLOOD TYPE</Text>
+                <View style={styles.healthItemValueRow}>
+                  <Icon name="water-drop" size={14} color={C.coral} />
+                  <Text style={[styles.healthItemValue, { color: C.coral }]}>
+                    {health?.bloodType && health.bloodType !== "unknown"
+                      ? health.bloodType
+                      : "—"}
+                  </Text>
+                </View>
+              </View>
+              {demographics?.dateOfBirth && (
+                <View style={styles.healthItem}>
+                  <Text style={styles.healthItemLabel}>DATE OF BIRTH</Text>
+                  <View style={styles.healthItemValueRow}>
+                    <Icon name="cake" size={14} color={C.inkSoft} />
+                    <Text style={styles.healthItemValue}>
+                      {new Date(demographics.dateOfBirth).toLocaleDateString(
+                        "en-GB",
+                        { day: "numeric", month: "short", year: "numeric" },
+                      )}
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.healthDivider} />
+
+            {/* Allergies section */}
+            <View style={styles.allergiesSection}>
+              <View style={styles.allergiesHeader}>
+                <Icon name="warning" size={14} color={C.coral} />
+                <Text style={styles.allergiesTitle}>Allergies</Text>
+                {health && health.allergies.length > 0 && (
+                  <View style={styles.allergyCountBadge}>
+                    <Text style={styles.allergyCountText}>
+                      {health.allergies.length}
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {!health ? (
+                <ActivityIndicator
+                  size="small"
+                  color={C.coral}
+                  style={{ marginTop: 8 }}
+                />
+              ) : health.allergies.length === 0 ? (
+                <Text style={styles.noAllergyText}>
+                  No allergies on record
+                </Text>
+              ) : (
+                <View style={styles.allergyList}>
+                  {health.allergies.map((a) => (
+                    <View key={a.id} style={styles.allergyRow}>
+                      <View style={styles.allergyLeft}>
+                        <Text style={styles.allergenName}>{a.allergen}</Text>
+                        <Text style={styles.allergyType}>
+                          {a.allergyType.replace("_", " ")}
+                          {a.reaction ? ` · ${a.reaction}` : ""}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.severityPill,
+                          {
+                            backgroundColor:
+                              a.severity === "life_threatening" || a.severity === "severe"
+                                ? C.coralLight
+                                : C.amberLight,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.severityText,
+                            {
+                              color:
+                                a.severity === "life_threatening" || a.severity === "severe"
+                                  ? C.coral
+                                  : C.amber,
+                            },
+                          ]}
+                        >
+                          {a.severity.replace("_", " ")}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+
+            {/* Demographics row — gender, phone */}
+            {demographics && (demographics.gender || demographics.phoneNumber) && (
+              <>
+                <View style={styles.healthDivider} />
+                <View style={styles.healthRow}>
+                  {demographics.gender && (
+                    <View style={styles.healthItem}>
+                      <Text style={styles.healthItemLabel}>GENDER</Text>
+                      <View style={styles.healthItemValueRow}>
+                        <Icon name="person" size={14} color={C.inkSoft} />
+                        <Text style={styles.healthItemValue}>
+                          {demographics.gender.charAt(0).toUpperCase() +
+                            demographics.gender.slice(1)}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                  {demographics.phoneNumber && (
+                    <View style={styles.healthItem}>
+                      <Text style={styles.healthItemLabel}>PHONE</Text>
+                      <View style={styles.healthItemValueRow}>
+                        <Icon name="phone" size={14} color={C.inkSoft} />
+                        <Text style={styles.healthItemValue}>
+                          {demographics.phoneNumber}
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+
+        {/* ── Hospital QR ID ───────────────────────────────────────────── */}
+        <View style={styles.sectionOuter}>
+          <Text style={styles.sectionLabel}>My Hospital ID</Text>
+          <View style={styles.menuCard}>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => setQrExpanded((e) => !e)}
+              activeOpacity={0.6}
+            >
+              <View
+                style={[
+                  styles.menuIconWrap,
+                  { backgroundColor: C.primaryGhost },
+                ]}
+              >
+                <Icon name="qr-code" size={18} color={C.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.menuLabel}>
+                  {qrExpanded ? "Hide QR code" : "Show QR code"}
+                </Text>
+                <Text style={styles.menuSublabel}>
+                  Scan at reception for instant check-in
+                </Text>
+              </View>
+              <Icon
+                name={qrExpanded ? "expand-less" : "expand-more"}
+                size={20}
+                color={C.inkSubtle}
+              />
+            </TouchableOpacity>
+
+            {qrExpanded && (
+              <>
+                <View style={qrStyles.body}>
+                  <Text style={qrStyles.name}>
+                    {user?.firstName} {user?.lastName}
+                  </Text>
+                  <Text style={qrStyles.brand}>MedLink Zambia</Text>
+
+                  <View style={qrStyles.qrWrap}>
+                    {user?.id ? (
+                      <QRCode
+                        value={qrPayload}
+                        size={200}
+                        color={C.ink}
+                        backgroundColor="#fff"
+                      />
+                    ) : (
+                      <Text style={qrStyles.error}>Could not load your ID</Text>
+                    )}
+                  </View>
+
+                  <View style={qrStyles.hintRow}>
+                    <Icon name="qr-code-scanner" size={14} color={C.primary} />
+                    <Text style={qrStyles.hintText}>
+                      The receptionist scans this code to pull up your record —
+                      no card or national ID needed.
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={qrStyles.privacy}>
+                  <Icon name="lock" size={13} color={C.inkMuted} />
+                  <Text style={qrStyles.privacyText}>
+                    This code contains only your patient ID — no medical
+                    information. Staff still need permission to view your
+                    records.
+                  </Text>
+                </View>
+              </>
+            )}
+          </View>
+        </View>
+
+        {/* ── Referrals ─────────────────────────────────────────────────── */}
         <View style={styles.sectionOuter}>
           <View style={styles.sectionHeaderRow}>
-            <Text style={styles.sectionLabel}>MY REFERRALS</Text>
+            <Text style={styles.sectionLabel}>My Referrals</Text>
             {activeCount > 0 && (
               <View style={styles.activeBadge}>
+                <View style={styles.activeBadgeDot} />
                 <Text style={styles.activeBadgeText}>{activeCount} active</Text>
               </View>
             )}
@@ -467,20 +621,20 @@ export default function ProfileScreen() {
           <View style={styles.menuCard}>
             {refLoading ? (
               <View style={styles.refEmpty}>
-                <ActivityIndicator size="small" color={C.teal} />
+                <ActivityIndicator size="small" color={C.primary} />
               </View>
             ) : referrals.length === 0 ? (
               <View style={styles.refEmpty}>
                 <Icon
                   name="local-hospital"
-                  size={24}
-                  color={C.inkMuted}
-                  style={{ marginBottom: 6 }}
+                  size={28}
+                  color={C.inkSubtle}
+                  style={{ marginBottom: 8 }}
                 />
                 <Text style={styles.refEmptyText}>No referrals yet</Text>
                 <Text style={styles.refEmptySubtext}>
-                  When your doctor refers you to another hospital,{"\n"}your
-                  referral details will appear here.
+                  When your doctor refers you to another hospital, the details
+                  will appear here.
                 </Text>
               </View>
             ) : (
@@ -502,7 +656,7 @@ export default function ProfileScreen() {
                     <Icon
                       name={refExpanded ? "expand-less" : "expand-more"}
                       size={16}
-                      color={C.teal}
+                      color={C.primary}
                     />
                   </TouchableOpacity>
                 )}
@@ -511,12 +665,10 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        {/* ── Menu sections ────────────────────────────────────────────── */}
+        {/* ── Menu sections ─────────────────────────────────────────────── */}
         {MENU_SECTIONS.map((section) => (
           <View key={section.title} style={styles.sectionOuter}>
-            <Text style={styles.sectionLabel}>
-              {section.title.toUpperCase()}
-            </Text>
+            <Text style={styles.sectionLabel}>{section.title}</Text>
             <View style={styles.menuCard}>
               {section.items.map((item, idx) => (
                 <TouchableOpacity
@@ -529,14 +681,14 @@ export default function ProfileScreen() {
                     if (item.label === "Change Password") setPwModal(true);
                     else Toast.show({ type: "info", text1: "Coming soon" });
                   }}
-                  activeOpacity={0.7}
+                  activeOpacity={0.6}
                 >
                   <View
                     style={[styles.menuIconWrap, { backgroundColor: item.bg }]}
                   >
                     <Icon
                       name={item.icon as any}
-                      size={17}
+                      size={18}
                       color={item.color}
                     />
                   </View>
@@ -546,33 +698,38 @@ export default function ProfileScreen() {
                       <Text style={styles.menuSublabel}>{item.sublabel}</Text>
                     )}
                   </View>
-                  <Icon name="chevron-right" size={17} color="#D0D5E0" />
+                  <Icon name="chevron-right" size={20} color={C.inkSubtle} />
                 </TouchableOpacity>
               ))}
             </View>
           </View>
         ))}
 
-        {/* ── Sign out ─────────────────────────────────────────────────── */}
+        {/* ── Sign out ──────────────────────────────────────────────────── */}
         <View style={styles.sectionOuter}>
           <TouchableOpacity
             style={styles.signOutBtn}
             onPress={handleLogout}
-            activeOpacity={0.8}
+            activeOpacity={0.7}
+            disabled={loggingOut}
           >
             <View style={styles.signOutIcon}>
-              <Icon name="logout" size={17} color={C.coral} />
+              {loggingOut ? (
+                <ActivityIndicator size="small" color={C.coral} />
+              ) : (
+                <Icon name="logout" size={18} color={C.coral} />
+              )}
             </View>
             <Text style={styles.signOutText}>Sign Out</Text>
-            <Icon name="chevron-right" size={17} color="#D0D5E0" />
+            <Icon name="chevron-right" size={20} color={C.inkSubtle} />
           </TouchableOpacity>
         </View>
 
-        {/* ── Footer ───────────────────────────────────────────────────── */}
+        {/* ── Footer ────────────────────────────────────────────────────── */}
         <View style={styles.footer}>
           <Text style={styles.footerBrand}>MedLink · Zambia</Text>
           <Text style={styles.footerVersion}>
-            v1.0.0 · Final Year Project · CBU
+            v1.0.0 · CBU Final Year Project
           </Text>
         </View>
       </ScrollView>
@@ -596,7 +753,7 @@ export default function ProfileScreen() {
                 onPress={() => setPwModal(false)}
                 style={styles.modalClose}
               >
-                <Icon name="close" size={18} color={C.inkMuted} />
+                <Icon name="close" size={18} color={C.inkSoft} />
               </TouchableOpacity>
             </View>
 
@@ -634,22 +791,19 @@ export default function ProfileScreen() {
             ))}
 
             <TouchableOpacity
-              style={[styles.updateBtn, pwLoading && { opacity: 0.7 }]}
+              style={[styles.updateBtn, pwLoading && { opacity: 0.6 }]}
               onPress={handleChangePassword}
               disabled={pwLoading}
+              activeOpacity={0.9}
             >
-              <LinearGradient
-                colors={[C.tealDark, C.teal]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.updateBtnGradient}
-              >
-                {pwLoading ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
+              {pwLoading ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <>
                   <Text style={styles.updateBtnText}>Update Password</Text>
-                )}
-              </LinearGradient>
+                  <Icon name="arrow-forward" size={16} color="#fff" />
+                </>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -662,215 +816,346 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
 
-  hero: {
+  // Profile card
+  profileCard: {
     alignItems: "center",
     paddingHorizontal: 20,
-    paddingBottom: 36,
-    overflow: "hidden",
+    paddingBottom: 8,
   },
-  deco: {
-    position: "absolute",
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-  },
-  brandRow: { alignSelf: "flex-start", marginBottom: 24 },
-  brandName: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#fff",
-    letterSpacing: -0.4,
-  },
-  brandSub: {
-    fontSize: 8,
-    fontWeight: "800",
-    color: "#6FCF97",
-    letterSpacing: 2.5,
-    marginTop: 2,
-  },
-
-  avatarOuter: { position: "relative", marginBottom: 14 },
+  avatarOuter: { position: "relative", marginBottom: 16 },
   avatarInner: {
     width: 88,
     height: 88,
-    borderRadius: 44,
-    backgroundColor: "rgba(255,255,255,0.18)",
+    borderRadius: 28,
+    backgroundColor: C.primary,
+    justifyContent: "center",
+    alignItems: "center",
+    ...Platform.select({
+      ios: {
+        shadowColor: C.primary,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.25,
+        shadowRadius: 16,
+      },
+      android: { elevation: 6 },
+    }),
+  },
+  avatarText: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: "#fff",
+    letterSpacing: -0.5,
+  },
+  verifiedBadge: {
+    position: "absolute",
+    bottom: -2,
+    right: -2,
+    width: 28,
+    height: 28,
+    borderRadius: 10,
+    backgroundColor: C.primary,
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 3,
-    borderColor: "rgba(255,255,255,0.3)",
-  },
-  avatarText: { fontSize: 32, fontWeight: "800", color: "#fff" },
-  verifiedBadge: {
-    position: "absolute",
-    bottom: 0,
-    right: 0,
-    width: 26,
-    height: 26,
-    borderRadius: 13,
-    backgroundColor: "#fff",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: C.tealGhost,
+    borderColor: C.bg,
   },
   fullName: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "800",
-    color: "#fff",
-    letterSpacing: -0.4,
+    color: C.ink,
+    letterSpacing: -0.6,
     marginBottom: 8,
   },
   rolePill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "rgba(255,255,255,0.14)",
-    paddingHorizontal: 14,
+    backgroundColor: C.primaryGhost,
+    paddingHorizontal: 12,
     paddingVertical: 5,
-    borderRadius: 20,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    borderColor: C.primaryLight,
   },
-  roleDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#6FCF97" },
+  roleDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: C.primary },
   roleText: {
     fontSize: 11,
-    fontWeight: "700",
-    color: "rgba(255,255,255,0.85)",
-    letterSpacing: 1.2,
+    fontWeight: "800",
+    color: C.primaryDark,
+    letterSpacing: 1,
   },
 
-  // Section wrapper (replaces old menuSection)
-  sectionOuter: { paddingHorizontal: 16, marginTop: 16 },
+  // Section
+  sectionOuter: { paddingHorizontal: 20, marginTop: 24 },
   sectionHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 8,
+    marginBottom: 10,
+    paddingHorizontal: 2,
   },
   sectionLabel: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: C.inkMuted,
-    letterSpacing: 1.2,
+    fontSize: 12,
+    fontWeight: "800",
+    color: C.inkSoft,
+    letterSpacing: 0.4,
     textTransform: "uppercase",
+    marginBottom: 10,
+    paddingHorizontal: 2,
   },
   activeBadge: {
-    backgroundColor: C.greenLight,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: C.primaryGhost,
     paddingHorizontal: 8,
     paddingVertical: 3,
-    borderRadius: 8,
+    borderRadius: 7,
     borderWidth: 1,
-    borderColor: C.greenBorder,
+    borderColor: C.primaryLight,
   },
-  activeBadgeText: { fontSize: 9, fontWeight: "700", color: C.green },
-
+  activeBadgeDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: C.primary,
+  },
+  activeBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: C.primaryDark,
+    letterSpacing: 0.2,
+  },
   menuCard: {
     backgroundColor: C.card,
-    borderRadius: 18,
+    borderRadius: 16,
     overflow: "hidden",
     borderWidth: 1,
     borderColor: C.cardBorder,
-    ...Platform.select({
-      ios: {
-        shadowColor: "#1A1D2E",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.04,
-        shadowRadius: 8,
-      },
-      android: { elevation: 1 },
-    }),
+  },
+
+  // ── Health summary card ──
+  healthCard: {
+    borderRadius: 16,
+    overflow: "hidden",
+    borderColor: "rgba(255,87,87,0.22)", // DS: coral tint border for safety-critical
+  },
+  healthRow: {
+    flexDirection: "row",
+    gap: 0,
+  },
+  healthItem: {
+    flex: 1,
+    padding: 16,
+  },
+  healthItemLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: C.inkMuted,
+    letterSpacing: 0.6,
+    marginBottom: 6,
+  },
+  healthItemValueRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  healthItemValue: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: C.ink,
+    letterSpacing: -0.1,
+  },
+  healthDivider: {
+    height: 1,
+    backgroundColor: C.divider,
+    marginHorizontal: 16,
+  },
+
+  // Allergies
+  allergiesSection: {
+    padding: 16,
+  },
+  allergiesHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 12,
+  },
+  allergiesTitle: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "700",
+    color: C.coral,
+    letterSpacing: -0.1,
+  },
+  allergyCountBadge: {
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: C.coralLight,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 5,
+  },
+  allergyCountText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: C.coral,
+  },
+  noAllergyText: {
+    fontSize: 13,
+    color: C.inkMuted,
+    fontWeight: "500",
+    fontStyle: "italic",
+  },
+  allergyList: {
+    gap: 10,
+  },
+  allergyRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  allergyLeft: {
+    flex: 1,
+  },
+  allergenName: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: C.ink,
+    letterSpacing: -0.2,
+  },
+  allergyType: {
+    fontSize: 12,
+    color: C.inkMuted,
+    fontWeight: "500",
+    marginTop: 2,
+    textTransform: "capitalize",
+  },
+  severityPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    alignSelf: "flex-start",
+    marginTop: 2,
+  },
+  severityText: {
+    fontSize: 10,
+    fontWeight: "700",
+    textTransform: "capitalize",
+    letterSpacing: 0.2,
   },
 
   // Referrals empty state
   refEmpty: {
     alignItems: "center",
-    paddingVertical: 28,
-    paddingHorizontal: 20,
+    paddingVertical: 32,
+    paddingHorizontal: 24,
   },
   refEmptyText: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: "700",
-    color: C.inkSoft,
+    color: C.ink,
     marginBottom: 4,
+    letterSpacing: -0.2,
   },
   refEmptySubtext: {
-    fontSize: 11,
+    fontSize: 12,
     color: C.inkMuted,
     textAlign: "center",
-    lineHeight: 16,
+    lineHeight: 18,
+    fontWeight: "500",
   },
-
-  // Show more
   showMoreBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 4,
-    paddingVertical: 11,
+    paddingVertical: 12,
     borderTopWidth: 1,
     borderTopColor: C.divider,
+    backgroundColor: C.primaryGhost,
   },
-  showMoreText: { fontSize: 12, fontWeight: "700", color: C.teal },
+  showMoreText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: C.primaryDark,
+  },
 
+  // Menu item
   menuItem: {
     flexDirection: "row",
     alignItems: "center",
     padding: 14,
     gap: 12,
   },
-  menuDivider: { borderBottomWidth: 1, borderBottomColor: C.divider },
+  menuDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: C.divider,
+  },
   menuIconWrap: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
     borderRadius: 11,
     justifyContent: "center",
     alignItems: "center",
   },
-  menuLabel: { fontSize: 14, fontWeight: "600", color: C.ink },
-  menuSublabel: { fontSize: 11, color: C.inkMuted, marginTop: 1 },
+  menuLabel: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: C.ink,
+    letterSpacing: -0.2,
+  },
+  menuSublabel: {
+    fontSize: 12,
+    color: C.inkMuted,
+    marginTop: 1,
+    fontWeight: "500",
+  },
 
+  // Sign out
   signOutBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     backgroundColor: C.card,
-    borderRadius: 18,
+    borderRadius: 16,
     padding: 14,
     borderWidth: 1,
     borderColor: "#FECACA",
-    ...Platform.select({
-      ios: {
-        shadowColor: C.coral,
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.06,
-        shadowRadius: 8,
-      },
-      android: { elevation: 1 },
-    }),
   },
   signOutIcon: {
-    width: 36,
-    height: 36,
+    width: 38,
+    height: 38,
     borderRadius: 11,
     backgroundColor: C.coralLight,
     justifyContent: "center",
     alignItems: "center",
   },
-  signOutText: { flex: 1, fontSize: 14, fontWeight: "700", color: C.coral },
-
-  footer: { alignItems: "center", paddingVertical: 28 },
-  footerBrand: { fontSize: 13, fontWeight: "700", color: C.inkMuted },
-  footerVersion: {
-    fontSize: 11,
-    color: C.inkMuted,
-    marginTop: 3,
-    opacity: 0.6,
+  signOutText: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "700",
+    color: C.coral,
+    letterSpacing: -0.2,
   },
 
+  // Footer
+  footer: { alignItems: "center", paddingVertical: 32, gap: 4 },
+  footerBrand: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: C.inkSoft,
+    letterSpacing: -0.2,
+  },
+  footerVersion: { fontSize: 11, color: C.inkMuted, fontWeight: "500" },
+
+  // Modal
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: "rgba(10,14,26,0.5)",
     justifyContent: "flex-end",
   },
   modalContent: {
@@ -895,50 +1180,135 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   modalTitle: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: "800",
     color: C.ink,
-    letterSpacing: -0.3,
+    letterSpacing: -0.5,
   },
-  modalSub: { fontSize: 12, color: C.inkMuted, marginTop: 2 },
+  modalSub: {
+    fontSize: 13,
+    color: C.inkMuted,
+    marginTop: 2,
+    fontWeight: "500",
+  },
   modalClose: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: C.bg,
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    backgroundColor: C.bgAlt,
     justifyContent: "center",
     alignItems: "center",
   },
-
   inputGroup: { marginBottom: 14 },
   inputLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "700",
     color: C.inkSoft,
     marginBottom: 6,
-    letterSpacing: 0.3,
+    letterSpacing: 0.1,
   },
   input: {
     borderWidth: 1,
     borderColor: C.cardBorder,
     borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 13,
     fontSize: 14,
     color: C.ink,
     backgroundColor: C.bg,
+    fontWeight: "500",
   },
-
-  updateBtn: { borderRadius: 14, overflow: "hidden", marginTop: 8 },
-  updateBtnGradient: {
-    paddingVertical: 14,
+  updateBtn: {
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: C.primary,
+    paddingVertical: 15,
     borderRadius: 14,
+    marginTop: 8,
+    ...Platform.select({
+      ios: {
+        shadowColor: C.primary,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.22,
+        shadowRadius: 16,
+      },
+      android: { elevation: 6 },
+    }),
   },
   updateBtnText: {
     fontSize: 15,
     fontWeight: "700",
     color: "#fff",
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
+  },
+});
+
+// ── QR section styles ─────────────────────────────────────────────────────────
+const qrStyles = StyleSheet.create({
+  body: {
+    alignItems: "center",
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: C.divider,
+  },
+  name: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: C.ink,
+    letterSpacing: -0.4,
+    marginBottom: 2,
+  },
+  brand: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: C.primary,
+    letterSpacing: 1,
+    textTransform: "uppercase",
+    marginBottom: 18,
+  },
+  qrWrap: {
+    padding: 14,
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: C.cardBorder,
+  },
+  error: {
+    fontSize: 13,
+    color: "#dc2626",
+    fontWeight: "600",
+    padding: 40,
+  },
+  hintRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginTop: 18,
+    paddingHorizontal: 4,
+  },
+  hintText: {
+    flex: 1,
+    fontSize: 12,
+    color: C.inkSoft,
+    lineHeight: 17,
+    fontWeight: "500",
+  },
+  privacy: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    padding: 14,
+    borderTopWidth: 1,
+    borderTopColor: C.divider,
+    backgroundColor: C.bgAlt,
+  },
+  privacyText: {
+    flex: 1,
+    fontSize: 11,
+    color: C.inkMuted,
+    lineHeight: 16,
+    fontWeight: "500",
   },
 });

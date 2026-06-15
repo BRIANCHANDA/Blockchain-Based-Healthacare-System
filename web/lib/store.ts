@@ -1,29 +1,33 @@
 import { create } from 'zustand';
 
 export interface User {
-    institutionId: any;
-
     id: string;
-    type: 'patient' | 'practitioner' | 'nurse' | 'admin' | 'receptionist';
+    type: 'patient' | 'practitioner' | 'nurse' | 'admin' | 'receptionist' | 'lab_technician' | 'radiologist' | 'pharmacist';
     blockchainAddress: string;
     firstName: string;
     lastName: string;
-    institutionName?: string;
+    institutionId?: string | null;
+    institutionName?: string | null;
+    mustChangePassword?: boolean;
 }
 
 interface AuthState {
     user: User | null;
     token: string | null;
     isAuthenticated: boolean;
+    isLoading: boolean;
+
     setAuth: (user: User, token: string) => void;
     clearAuth: () => void;
     initFromStorage: () => void;
+    setMustChange: (val: boolean) => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
     user: null,
     token: null,
     isAuthenticated: false,
+    isLoading: false,
 
     setAuth: (user, token) => {
         if (typeof window !== 'undefined') {
@@ -55,5 +59,16 @@ export const useAuthStore = create<AuthState>((set) => ({
                 }
             }
         }
+    },
+
+    // Called after password is successfully changed — clears the flag
+    setMustChange: (val: boolean) => {
+        const user = get().user;
+        if (!user) return;
+        const updated = { ...user, mustChangePassword: val };
+        if (typeof window !== 'undefined') {
+            localStorage.setItem('hc_user', JSON.stringify(updated));
+        }
+        set({ user: updated });
     },
 }));

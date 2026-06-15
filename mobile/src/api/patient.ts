@@ -1,11 +1,22 @@
-// src/api/patients.ts
-import api from './client'; // your axios instance (make sure path matches your project)
+// mobile/src/api/patients.ts
+import client from './client';
 
-export const updatePatientProfile = async (data: { password?: string; firstName?: string; lastName?: string }) => {
-    const res = await api.patch('/api/patients/me', data);
+// BASE_URL already includes /api — don't prefix with /api again
+export const updatePatientProfile = async (data: {
+    password?: string;
+    firstName?: string;
+    lastName?: string;
+}) => {
+    // ⚠ was '/api/patients/me' — fixed: BASE_URL already has /api
+    const res = await client.patch('/patients/me', data);
     return res;
 };
 
-// You can also add other patient-related API calls here, e.g.:
-// export const getPatientProfile = () => api.get('/api/patients/me');
-// export const registerPatient = (data) => api.post('/api/auth/register/patient', data);
+export const getPatientProfile = () =>
+    client.get('/patients/me');
+
+export const getMyVitalsTrends = () =>
+    client.get("/api/patients/my-vitals-trends");
+
+export const getMyHealth = () =>
+    client.get("/patients/my-health");

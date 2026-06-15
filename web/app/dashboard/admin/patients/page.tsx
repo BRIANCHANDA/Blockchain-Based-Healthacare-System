@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useAuthStore } from "@/lib/store";
 import { patientApi } from "@/lib/api";
 import { Search, X, Users, ChevronRight, RefreshCw } from "lucide-react";
 
@@ -38,6 +39,10 @@ function SkeletonRow() {
 
 export default function AdminPatientsPage() {
   const router = useRouter();
+  const { user } = useAuthStore();
+  const isSuperAdmin = !(user as any)?.institutionId;
+  const institutionId = (user as any)?.institutionId ?? null;
+
   const [patients, setPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -52,13 +57,26 @@ export default function AdminPatientsPage() {
       if (silent) setRefreshing(true);
       else setLoading(true);
       try {
-        const res = await patientApi.searchPaginated({
-          q: search,
-          limit: PER_PAGE,
-          offset: (page - 1) * PER_PAGE,
-        });
-        setPatients(res.data.data?.patients ?? []);
-        setTotal(res.data.data?.total ?? 0);
+        let res;
+        if (isSuperAdmin) {
+          // Super admin — search all patients
+          res = await patientApi.searchPaginated({
+            q: search,
+            limit: PER_PAGE,
+            offset: (page - 1) * PER_PAGE,
+          });
+          setPatients(res.data.data?.patients ?? []);
+          setTotal(res.data.data?.total ?? 0);
+        } else {
+          // Hospital admin — patients registered at their institution only
+          res = await patientApi.getAllByInstitution(institutionId, {
+            search,
+            limit: PER_PAGE,
+            offset: (page - 1) * PER_PAGE,
+          });
+          setPatients(res.data.data?.patients ?? []);
+          setTotal(res.data.data?.total ?? 0);
+        }
       } catch {
         setPatients([]);
       } finally {
@@ -66,7 +84,7 @@ export default function AdminPatientsPage() {
         setRefreshing(false);
       }
     },
-    [search, page],
+    [search, page, isSuperAdmin, institutionId],
   );
 
   useEffect(() => {
@@ -90,7 +108,8 @@ export default function AdminPatientsPage() {
             Patients
           </h1>
           <p className="text-sm text-gray-400 mt-0.5">
-            {total} registered patient{total !== 1 ? "s" : ""}
+            {total} {isSuperAdmin ? "registered" : "institution"} patient
+            {total !== 1 ? "s" : ""}
           </p>
         </div>
         <button
@@ -104,7 +123,6 @@ export default function AdminPatientsPage() {
         </button>
       </div>
 
-      {/* Search */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-4">
         <div className="flex gap-3">
           <div className="flex-1 relative">
@@ -138,7 +156,6 @@ export default function AdminPatientsPage() {
         </div>
       </div>
 
-      {/* Table */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -169,7 +186,7 @@ export default function AdminPatientsPage() {
                   </td>
                 </tr>
               ) : (
-                patients.map((p, i) => {
+                patients.map((p) => {
                   const gc = GENDER_COLOR[p.gender] ?? {
                     bg: "#f3f4f6",
                     color: "#6b7280",
@@ -180,7 +197,7 @@ export default function AdminPatientsPage() {
                       onClick={() =>
                         router.push(`/dashboard/admin/patients/${p.id}`)
                       }
-                      className={`border-b border-gray-50 hover:bg-gray-50/60 transition-colors cursor-pointer group`}
+                      className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors cursor-pointer group"
                     >
                       <td className="py-3.5 pl-5 pr-3">
                         <div className="flex items-center gap-3">
@@ -244,7 +261,6 @@ export default function AdminPatientsPage() {
           </table>
         </div>
 
-        {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100">
             <p className="text-xs text-gray-400">

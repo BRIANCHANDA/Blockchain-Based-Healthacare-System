@@ -1,3 +1,7 @@
+// backend/src/services/fabric.ts
+// REPLACE your existing fabric.ts with this version.
+// Adds failure tracking + diagnostic logging for the admin dashboard.
+
 import * as grpc from '@grpc/grpc-js';
 import { connect, Contract, Gateway, Identity, Signer, signers } from '@hyperledger/fabric-gateway';
 import * as crypto from 'crypto';
@@ -9,7 +13,6 @@ const CHANNEL = process.env.FABRIC_CHANNEL!;
 const CHAINCODE = process.env.FABRIC_CHAINCODE!;
 
 // ── Org configs ───────────────────────────────────────────────────────────────
-
 type OrgConfig = {
   mspId: string;
   peerEndpoint: string;
@@ -18,7 +21,9 @@ type OrgConfig = {
   adminMspPath: string;
 };
 
-function orgConfig(org: 'hospital' | 'patient' | 'practitioner'): OrgConfig {
+export type OrgKey = 'hospital' | 'patient' | 'practitioner';
+
+function orgConfig(org: OrgKey): OrgConfig {
   const base = NETWORK_PATH;
   switch (org) {
     case 'hospital':
@@ -49,9 +54,6 @@ function orgConfig(org: 'hospital' | 'patient' | 'practitioner'): OrgConfig {
 }
 
 // ── Connection pool ───────────────────────────────────────────────────────────
-// Reuse grpc.Client and Gateway instances instead of creating a new one per
-// call. Creating a gRPC channel is expensive and was contributing to timeouts.
-
 type PoolEntry = { client: grpc.Client; gateway: Gateway; contract: Contract };
 const pool = new Map<string, PoolEntry>();
 
@@ -61,7 +63,7 @@ function getFirstFile(dirPath: string): string {
   return path.join(dirPath, files[0]);
 }
 
-function getConnection(org: 'hospital' | 'patient' | 'practitioner'): PoolEntry {
+function getConnection(org: OrgKey): PoolEntry {
   const cached = pool.get(org);
   if (cached) return cached;
 
@@ -71,7 +73,6 @@ function getConnection(org: 'hospital' | 'patient' | 'practitioner'): PoolEntry 
 
   const client = new grpc.Client(cfg.peerEndpoint, credentials, {
     'grpc.ssl_target_name_override': cfg.hostAlias,
-    // Keep-alive so idle connections don't drop
     'grpc.keepalive_time_ms': 10_000,
     'grpc.keepalive_timeout_ms': 5_000,
     'grpc.keepalive_permit_without_calls': 1,
@@ -83,17 +84,14 @@ function getConnection(org: 'hospital' | 'patient' | 'practitioner'): PoolEntry 
   const keyPath = getFirstFile(path.join(cfg.adminMspPath, 'keystore'));
   const identity: Identity = { mspId: cfg.mspId, credentials: fs.readFileSync(certPath) };
   const signer: Signer = signers.newPrivateKeySigner(
-    crypto.createPrivateKey(fs.readFileSync(keyPath))
+    crypto.createPrivateKey(fs.readFileSync(keyPath)),
   );
 
   const gateway = connect({
-    client,
-    identity,
-    signer,
-    // Generous deadlines — evaluated once at gateway level
+    client, identity, signer,
     evaluateOptions: () => ({ deadline: Date.now() + 10_000 }),
     endorseOptions: () => ({ deadline: Date.now() + 15_000 }),
-    submitOptions: () => ({ deadline: Date.now() + 15_000 }), // was 5s — too tight
+    submitOptions: () => ({ deadline: Date.now() + 15_000 }),
     commitStatusOptions: () => ({ deadline: Date.now() + 60_000 }),
   });
 
@@ -103,24 +101,12 @@ function getConnection(org: 'hospital' | 'patient' | 'practitioner'): PoolEntry 
   return entry;
 }
 
-/**
- * Race a Fabric call against a timeout.
- * On timeout or any error, calls onFailure (default: throws).
- */
-async function withTimeout<T>(
-  fn: () => Promise<T>,
-  timeoutMs: number,
-  label: string,
-  onTimeout: () => T,
-): Promise<T> {
-  const timer = new Promise<T>((resolve) =>
-    setTimeout(() => resolve(onTimeout()), timeoutMs)
-  );
+async function withTimeout<T>(fn: () => Promise<T>, timeoutMs: number, label: string, onTimeout: () => T): Promise<T> {
+  const timer = new Promise<T>(resolve => setTimeout(() => resolve(onTimeout()), timeoutMs));
   try {
     return await Promise.race([fn(), timer]);
   } catch (err: any) {
-    // If the pooled connection broke, clear it so next call gets a fresh one
-    if (err?.code === 4 /* DEADLINE_EXCEEDED */ || err?.code === 14 /* UNAVAILABLE */) {
+    if (err?.code === 4 || err?.code === 14) {
       console.warn(`[FABRIC] ${label}: peer unreachable (code=${err.code}), clearing pool`);
       pool.clear();
     } else {
@@ -130,60 +116,86 @@ async function withTimeout<T>(
   }
 }
 
-// ── ACCESS CONTROL ────────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+// ── FAILURE TRACKING ──────────────────────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+//
+// Every blockchain write goes through here. Failures are categorised and kept
+// in an in-memory ring buffer, accessible from the admin dashboard.
 
-/**
- * Grant permission — must be PatientOrg (chaincode enforces MSP check).
- */
-export async function grantPermission(
-  patientId: string,
-  practitionerId: string,
-  durationHours: string,
-): Promise<object> {
+type FailureEntry = {
+  recordId: string;
+  recordType: string;
+  category: string;
+  message: string;
+  timestamp: string;
+};
+
+const failureLog: FailureEntry[] = [];
+const MAX_FAILURE_LOG = 200;
+
+function logFailure(recordId: string, recordType: string, category: string, message: string) {
+  failureLog.push({
+    recordId,
+    recordType,
+    category,
+    message: message.slice(0, 300),
+    timestamp: new Date().toISOString(),
+  });
+  if (failureLog.length > MAX_FAILURE_LOG) failureLog.shift();
+}
+
+export function getRecentFailures(): FailureEntry[] {
+  return [...failureLog].reverse();
+}
+
+export function clearFailureLog() {
+  failureLog.length = 0;
+}
+
+function categorizeError(err: any): string {
+  const reason = err?.message ?? String(err);
+  if (reason.includes('already exists')) return 'duplicate';
+  if (reason.includes('timed out')) return 'timeout';
+  if (reason.includes('UNAVAILABLE')) return 'peer_unreachable';
+  if (reason.includes('Access denied')) return 'unauthorized';
+  if (reason.includes('endorsement')) return 'endorsement_failed';
+  if (reason.includes('DEADLINE')) return 'peer_timeout';
+  if (err?.code === 4) return 'peer_timeout';
+  if (err?.code === 14) return 'peer_unreachable';
+  return 'unknown';
+}
+
+// ── ACCESS CONTROL ────────────────────────────────────────────────────────────
+export async function grantPermission(patientId: string, practitionerId: string, durationHours: string): Promise<object> {
   const { contract } = getConnection('patient');
   const result = await contract.submitTransaction(
     'AccessControlContract:grantPermission',
-    patientId, practitionerId, durationHours
+    patientId, practitionerId, durationHours,
   );
   return JSON.parse(Buffer.from(result).toString());
 }
 
-/**
- * Revoke permission — must be PatientOrg.
- */
-export async function revokePermission(
-  patientId: string,
-  practitionerId: string,
-): Promise<object> {
+export async function revokePermission(patientId: string, practitionerId: string): Promise<object> {
   const { contract } = getConnection('patient');
   const result = await contract.submitTransaction(
     'AccessControlContract:revokePermission',
-    patientId, practitionerId
+    patientId, practitionerId,
   );
   return JSON.parse(Buffer.from(result).toString());
 }
 
-/**
- * Check permission — read-only evaluate.
- * Returns false on timeout or any error rather than throwing.
- * Callers should never crash because Fabric is slow.
- */
-export async function checkPermission(
-  patientId: string,
-  practitionerId: string,
-): Promise<boolean> {
+export async function checkPermission(patientId: string, practitionerId: string): Promise<boolean> {
   return withTimeout(
     async () => {
       const { contract } = getConnection('hospital');
       const result = await contract.evaluateTransaction(
         'AccessControlContract:checkPermission',
-        patientId, practitionerId
+        patientId, practitionerId,
       );
       return Buffer.from(result).toString() === 'true';
     },
-    8_000,
-    'checkPermission',
-    () => false,  // deny on timeout — conservative
+    8_000, 'checkPermission', () => false,
   );
 }
 
@@ -193,36 +205,26 @@ export async function getPatientPermissions(patientAddress: string): Promise<any
       const { contract } = getConnection('patient');
       const result = await contract.evaluateTransaction(
         'AccessControlContract:getPatientPermissions',
-        patientAddress
+        patientAddress,
       );
       return JSON.parse(Buffer.from(result).toString());
     },
-    8_000,
-    'getPatientPermissions',
-    () => [],
+    8_000, 'getPatientPermissions', () => [],
   );
 }
 
 // ── AUDIT ─────────────────────────────────────────────────────────────────────
-
-export async function logAccess(
-  patientId: string,
-  recordId: string,
-  action: string,
-  success: boolean,
-): Promise<object> {
+export async function logAccess(patientId: string, recordId: string, action: string, success: boolean): Promise<object> {
   return withTimeout(
     async () => {
       const { contract } = getConnection('hospital');
       const result = await contract.submitTransaction(
         'AuditContract:logAccess',
-        patientId, recordId, action, success.toString()
+        patientId, recordId, action, success.toString(),
       );
       return JSON.parse(Buffer.from(result).toString());
     },
-    12_000,
-    'logAccess',
-    () => ({ success: false, skipped: true }),
+    12_000, 'logAccess', () => ({ success: false, skipped: true }),
   );
 }
 
@@ -232,58 +234,178 @@ export async function getPatientAuditLog(patientId: string): Promise<object[]> {
       const { contract } = getConnection('hospital');
       const result = await contract.evaluateTransaction(
         'AuditContract:getPatientAuditLog',
-        patientId
+        patientId,
       );
       return JSON.parse(Buffer.from(result).toString());
     },
-    8_000,
-    'getPatientAuditLog',
-    () => [],
+    8_000, 'getPatientAuditLog', () => [],
   );
 }
 
 // ── RECORDS ───────────────────────────────────────────────────────────────────
-
-/**
- * Store a record hash on-chain.
- * Non-fatal — if Fabric is down, logs a warning and returns silently.
- * Never throws. Always call with .catch(() => {}) or fire-and-forget.
- */
 export async function storeRecordHash(
   recordId: string,
   patientId: string,
   sha256Hash: string,
   recordType: string,
-): Promise<void> {
-  await withTimeout(
-    async () => {
-      const { contract } = getConnection('hospital');
-      await contract.submitTransaction(
+): Promise<{ success: boolean; category?: string; error?: string }> {
+  try {
+    const { contract } = getConnection('hospital');
+    const timer = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Fabric submit timed out after 12s')), 12_000),
+    );
+    await Promise.race([
+      contract.submitTransaction(
         'RecordContract:storeRecordHash',
-        recordId, patientId, sha256Hash, recordType
-      );
-    },
-    12_000,
-    `storeRecordHash(${recordType}:${recordId})`,
-    () => undefined,  // silent no-op on timeout
-  );
+        recordId, patientId, sha256Hash, recordType,
+      ),
+      timer,
+    ]);
+    console.log(`[FABRIC ✓] Anchored ${recordType}:${recordId}`);
+    return { success: true };
+  } catch (err: any) {
+    const category = categorizeError(err);
+    const message = err?.message ?? String(err);
+    console.warn(`[FABRIC ✗] ${recordType}:${recordId} — ${category}: ${message.slice(0, 200)}`);
+    logFailure(recordId, recordType, category, message);
+
+    if (category === 'peer_unreachable' || category === 'peer_timeout') {
+      pool.clear();
+    }
+    return { success: false, category, error: message };
+  }
 }
 
-export async function verifyRecordHash(
-  recordId: string,
-  sha256Hash: string,
-): Promise<boolean> {
+export async function verifyRecordHash(recordId: string, sha256Hash: string): Promise<boolean> {
   return withTimeout(
     async () => {
       const { contract } = getConnection('hospital');
       const result = await contract.evaluateTransaction(
         'RecordContract:verifyRecordHash',
-        recordId, sha256Hash
+        recordId, sha256Hash,
       );
       return Buffer.from(result).toString() === 'true';
     },
-    8_000,
-    'verifyRecordHash',
-    () => false,
+    8_000, 'verifyRecordHash', () => false,
+  );
+}
+
+export async function getRecordHash(recordId: string): Promise<any | null> {
+  return withTimeout(
+    async () => {
+      const { contract } = getConnection('hospital');
+      const result = await contract.evaluateTransaction(
+        'RecordContract:getRecordHash',
+        recordId,
+      );
+      return JSON.parse(Buffer.from(result).toString());
+    },
+    8_000, 'getRecordHash', () => null,
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── NETWORK / ADMIN DASHBOARD HELPERS ────────────────────────────────────────
+// ══════════════════════════════════════════════════════════════════════════════
+const ORGS = [
+  { key: 'hospital' as OrgKey, label: 'Hospital Org', endpoint: 'peer0.hospital.healthcare.com:7051', mspId: 'HospitalOrgMSP' },
+  { key: 'patient' as OrgKey, label: 'Patient Org', endpoint: 'peer0.patient.healthcare.com:11051', mspId: 'PatientOrgMSP' },
+  { key: 'practitioner' as OrgKey, label: 'Practitioner Org', endpoint: 'peer0.practitioner.healthcare.com:9051', mspId: 'PractitionerOrgMSP' },
+];
+
+export async function getPeerStatus() {
+  return Promise.all(ORGS.map(async (org) => {
+    const start = Date.now();
+    try {
+      const { contract } = getConnection(org.key);
+      await contract.evaluateTransaction(
+        'AccessControlContract:checkPermission',
+        '__ping__', '__ping__',
+      );
+      return { ...org, status: 'online' as const, latencyMs: Date.now() - start, error: null };
+    } catch (err: any) {
+      return { ...org, status: 'offline' as const, latencyMs: Date.now() - start, error: err?.message?.slice(0, 200) ?? 'unreachable' };
+    }
+  }));
+}
+
+export async function getChannelInfo(org: OrgKey = 'hospital') {
+  return withTimeout(
+    async () => {
+      const { gateway } = getConnection(org);
+      const qscc = gateway.getNetwork(CHANNEL).getContract('qscc');
+      const result = await qscc.evaluateTransaction('GetChainInfo', CHANNEL);
+      const bytes = Buffer.from(result);
+      let height = 0;
+      try {
+        if (bytes[0] === 0x08) {
+          let i = 1, shift = 0;
+          while (i < bytes.length && i < 12) {
+            const b = bytes[i++];
+            height += (b & 0x7f) << shift;
+            if ((b & 0x80) === 0) break;
+            shift += 7;
+          }
+        }
+      } catch { }
+      return { channel: CHANNEL, chaincode: CHAINCODE, height, rawBytes: bytes.length };
+    },
+    8_000, 'getChannelInfo',
+    () => ({ channel: CHANNEL, chaincode: CHAINCODE, height: 0, rawBytes: 0 }),
+  );
+}
+
+export async function getBlockByNumber(blockNum: number, org: OrgKey = 'hospital') {
+  return withTimeout(
+    async () => {
+      const { gateway } = getConnection(org);
+      const qscc = gateway.getNetwork(CHANNEL).getContract('qscc');
+      const result = await qscc.evaluateTransaction('GetBlockByNumber', CHANNEL, blockNum.toString());
+      const bytes = Buffer.from(result);
+      return {
+        blockNumber: blockNum,
+        sizeBytes: bytes.length,
+        dataHash: crypto.createHash('sha256').update(bytes).digest('hex'),
+      };
+    },
+    8_000, `getBlockByNumber(${blockNum})`, () => null,
+  );
+}
+
+export async function getNetworkOverview() {
+  const [peers, chain] = await Promise.all([getPeerStatus(), getChannelInfo('hospital')]);
+  const onlinePeers = peers.filter(p => p.status === 'online').length;
+  const totalPeers = peers.length;
+  const status = onlinePeers === totalPeers && chain.height > 0
+    ? 'healthy'
+    : onlinePeers > 0 ? 'degraded' : 'down';
+  return {
+    health: { status, onlinePeers, totalPeers, blockHeight: chain.height },
+    channel: { name: chain.channel, chaincode: chain.chaincode, height: chain.height },
+    peers,
+    organizations: ORGS,
+  };
+}
+
+
+// ── Append to backend/src/services/fabric.ts ─────────────────────────────────
+//
+// Add this function alongside the other RecordContract wrappers
+// (next to getRecordHash). Uses the new getRecordHistory chaincode method
+// to return every version of a record from the ledger's built-in key history.
+
+export async function getRecordHistory(recordId: string): Promise<any[]> {
+  return withTimeout(
+    async () => {
+      const { contract } = getConnection('hospital');
+      const result = await contract.evaluateTransaction(
+        'RecordContract:getRecordHistory',
+        recordId,
+      );
+      return JSON.parse(Buffer.from(result).toString());
+    },
+    10_000,
+    `getRecordHistory(${recordId})`,
+    () => [],
   );
 }

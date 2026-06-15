@@ -19,6 +19,7 @@
     "hono": "latest",
     "jsonwebtoken": "latest",
     "postgres": "latest",
+    "resend": "^6.12.4",
     "stoker": "latest",
     "zod": "latest"
   },

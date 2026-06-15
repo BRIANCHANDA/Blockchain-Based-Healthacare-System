@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback, Suspense } from "react";
+import { useAuthStore } from "@/lib/store";
 import { useRouter, useSearchParams } from "next/navigation";
 import { api } from "@/lib/api";
 import {
@@ -73,6 +74,9 @@ function StaffPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initFilter = searchParams.get("filter") ?? "";
+  const { user } = useAuthStore();
+  const isSuperAdmin = !(user as any)?.institutionId;
+  const myInstitutionId = (user as any)?.institutionId ?? null;
 
   const [staff, setStaff] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -98,6 +102,10 @@ function StaffPageInner() {
           ...(roleFilter ? { role: roleFilter } : {}),
           ...(verifiedFilter
             ? { verified: verifiedFilter === "verified" ? "true" : "false" }
+            : {}),
+          // Hospital admins only see their institution's staff
+          ...(!isSuperAdmin && myInstitutionId
+            ? { institutionId: myInstitutionId }
             : {}),
         });
         const res = await api.get(`/api/practitioners?${params}`);

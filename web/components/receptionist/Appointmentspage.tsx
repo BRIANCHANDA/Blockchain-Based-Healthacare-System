@@ -11,15 +11,15 @@ import {
   Plus,
   Search,
   AlertCircle,
-  Building2,
   Stethoscope,
-  ChevronRight,
   User,
   AlertTriangle,
   Loader2,
   X,
-  ArrowRight,
   RotateCcw,
+  Inbox,
+  MessageSquare,
+  Send,
 } from "lucide-react";
 import {
   format,
@@ -38,6 +38,7 @@ interface Appointment {
   status: string;
   admissionDate: string;
   chiefComplaint: string;
+  admittingDiagnosis?: string; // department hint for patient requests
   wardOrRoom?: string;
   patientId: string;
   patientName: string;
@@ -45,6 +46,7 @@ interface Appointment {
   bloodType: string;
   assignedDoctorId?: string;
   doctorName?: string;
+  createdByPractitionerId?: string | null;
 }
 
 interface FollowUp {
@@ -122,7 +124,6 @@ function AppointmentCard({
       className="bg-white rounded-2xl border overflow-hidden transition-all hover:shadow-md"
       style={{ borderColor: overdue ? "#fca5a5" : p.border }}
     >
-      {/* Header strip */}
       <div
         className="flex items-center justify-between px-4 py-2.5"
         style={{ background: overdue ? "#fef2f2" : p.bg }}
@@ -145,15 +146,12 @@ function AppointmentCard({
       </div>
 
       <div className="px-4 py-4 space-y-3">
-        {/* Patient */}
         <div>
           <p className="text-sm font-bold text-gray-900">{appt.patientName}</p>
           <p className="text-xs text-gray-500 capitalize mt-0.5">
             {appt.gender} · {appt.bloodType}
           </p>
         </div>
-
-        {/* Date + time */}
         <div className="flex items-center gap-2">
           <Calendar className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
           <div>
@@ -171,29 +169,21 @@ function AppointmentCard({
             </p>
           </div>
         </div>
-
-        {/* Reason */}
         <p className="text-xs text-gray-600 leading-relaxed">
           {appt.chiefComplaint}
         </p>
-
-        {/* Doctor */}
         {appt.doctorName && (
           <div className="flex items-center gap-1.5 text-xs text-gray-500">
             <Stethoscope className="w-3 h-3 text-gray-400" />
             Dr. {appt.doctorName}
           </div>
         )}
-
-        {/* Actions */}
         {appt.status === "scheduled" && (
           <div className="flex items-center gap-2 pt-1">
             <button
               onClick={() => onConfirm(appt)}
-              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold text-white transition-all hover:shadow-sm"
-              style={{
-                background: "linear-gradient(135deg, #166534, #15803d)",
-              }}
+              className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold text-white"
+              style={{ background: "linear-gradient(135deg,#166534,#15803d)" }}
             >
               <CheckCircle2 className="w-3.5 h-3.5" /> Check In
             </button>
@@ -213,6 +203,284 @@ function AppointmentCard({
             </button>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+// ── Patient Request card ──────────────────────────────────────────────────────
+function RequestCard({
+  appt,
+  onRespond,
+  onReject,
+}: {
+  appt: Appointment;
+  onRespond: (a: Appointment) => void;
+  onReject: (a: Appointment) => void;
+}) {
+  const p = getP(appt.priority);
+
+  return (
+    <div className="bg-white rounded-2xl border border-amber-200 overflow-hidden transition-all hover:shadow-md">
+      {/* Header */}
+      <div className="flex items-center justify-between px-4 py-2.5 bg-amber-50">
+        <div className="flex items-center gap-2">
+          <Inbox className="w-3.5 h-3.5 text-amber-600" />
+          <span className="text-xs font-bold text-amber-700">
+            Patient Request
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <span
+            className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full capitalize"
+            style={{ background: p.bg, color: p.color }}
+          >
+            {p.label}
+          </span>
+          <span className="text-xs font-mono text-gray-400">
+            {appt.visitNumber}
+          </span>
+        </div>
+      </div>
+
+      <div className="px-4 py-4 space-y-3">
+        {/* Patient */}
+        <div>
+          <p className="text-sm font-bold text-gray-900">{appt.patientName}</p>
+          <p className="text-xs text-gray-500 capitalize mt-0.5">
+            {appt.gender} · {appt.bloodType}
+          </p>
+        </div>
+
+        {/* Preferred date */}
+        <div className="flex items-center gap-2">
+          <Calendar className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
+          <div>
+            <p className="text-[10px] text-gray-400 uppercase tracking-wide font-semibold">
+              Preferred date
+            </p>
+            <p className="text-xs font-semibold text-gray-800">
+              {format(new Date(appt.admissionDate), "EEE, d MMM yyyy · h:mm a")}
+            </p>
+          </div>
+        </div>
+
+        {/* Reason */}
+        <div className="p-3 rounded-xl bg-gray-50 border border-gray-100">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-gray-400 mb-1">
+            Reason
+          </p>
+          <p className="text-xs text-gray-700 leading-relaxed">
+            {appt.chiefComplaint}
+          </p>
+        </div>
+
+        {/* Department if set */}
+        {appt.admittingDiagnosis && (
+          <div className="flex items-center gap-1.5 text-xs text-gray-500">
+            <Stethoscope className="w-3 h-3 text-gray-400" />
+            Requested dept:{" "}
+            <span className="font-semibold text-gray-700">
+              {appt.admittingDiagnosis}
+            </span>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div className="flex items-center gap-2 pt-1">
+          <button
+            onClick={() => onRespond(appt)}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-xs font-semibold text-white"
+            style={{ background: "linear-gradient(135deg,#166534,#15803d)" }}
+          >
+            <Send className="w-3.5 h-3.5" /> Confirm & Schedule
+          </button>
+          <button
+            onClick={() => onReject(appt)}
+            className="p-2 rounded-xl border border-red-100 text-red-400 hover:text-red-600 hover:bg-red-50 transition-all"
+            title="Reject request"
+          >
+            <XCircle className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Respond to request modal ──────────────────────────────────────────────────
+// Receptionist picks confirmed date/time and optionally assigns a doctor.
+// On submit it calls reschedule (to update the date) — the visit stays scheduled.
+function RespondModal({
+  appt,
+  doctors,
+  onClose,
+  onResponded,
+}: {
+  appt: Appointment;
+  doctors: Doctor[];
+  onClose: () => void;
+  onResponded: () => void;
+}) {
+  const [confirmedDate, setConfirmedDate] = useState(
+    format(new Date(appt.admissionDate), "yyyy-MM-dd'T'HH:mm"),
+  );
+  const [selectedDoctor, setSelectedDoctor] = useState(
+    appt.assignedDoctorId ?? "",
+  );
+  const [wardOrRoom, setWardOrRoom] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async () => {
+    if (!confirmedDate) {
+      setError("Select a confirmed date and time.");
+      return;
+    }
+    setError(null);
+    setSubmitting(true);
+    try {
+      // Step 1 — update the date to the confirmed one (and optionally assign doctor)
+      await appointmentApi.reschedule(appt.id, {
+        appointmentDate: new Date(confirmedDate).toISOString(),
+        assignedDoctorId: selectedDoctor || undefined,
+        reason: "Confirmed by receptionist",
+      });
+
+      // Step 2 — if wardOrRoom provided, patch it in (reuse confirm endpoint without changing status)
+      // The visit stays "scheduled" — it becomes a normal appointment at this point.
+      // The APT-REQ- prefix remains but it will show up in upcoming appointments.
+      onResponded();
+    } catch (err: any) {
+      setError(
+        err.response?.data?.error?.message ?? "Failed to confirm appointment.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-2xl w-full max-w-md"
+        style={{ fontFamily: "'DM Sans',sans-serif" }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div>
+            <h2 className="text-base font-bold text-gray-900">
+              Confirm Appointment Request
+            </h2>
+            <p className="text-xs text-gray-400 mt-0.5">{appt.patientName}</p>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-xl text-gray-400 hover:bg-gray-100"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {/* Patient preferred date — read-only reference */}
+          <div className="px-4 py-3 rounded-xl bg-amber-50 border border-amber-100">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-amber-600 mb-1">
+              Patient's preferred date
+            </p>
+            <p className="text-sm font-semibold text-amber-900">
+              {format(new Date(appt.admissionDate), "EEE, d MMM yyyy · h:mm a")}
+            </p>
+            <p className="text-xs text-amber-700 mt-1 italic">
+              "{appt.chiefComplaint}"
+            </p>
+          </div>
+
+          {/* Confirmed date */}
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-1.5">
+              Confirmed Date & Time *
+            </label>
+            <input
+              type="datetime-local"
+              value={confirmedDate}
+              onChange={(e) => setConfirmedDate(e.target.value)}
+              min={format(new Date(), "yyyy-MM-dd'T'HH:mm")}
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/10 transition-all"
+            />
+            <p className="text-[10px] text-gray-400 mt-1">
+              You can adjust the date/time to match your schedule. The patient
+              should be informed.
+            </p>
+          </div>
+
+          {/* Assign doctor */}
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-1.5">
+              Assign Doctor{" "}
+              <span className="normal-case font-normal">(optional)</span>
+            </label>
+            <select
+              value={selectedDoctor}
+              onChange={(e) => setSelectedDoctor(e.target.value)}
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 outline-none focus:border-green-500 transition-all bg-white"
+            >
+              <option value="">Unassigned — assign on arrival</option>
+              {doctors.map((d) => (
+                <option key={d.id} value={d.id}>
+                  Dr. {d.name}
+                  {d.specialization ? ` · ${d.specialization}` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Ward/room */}
+          <div>
+            <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-1.5">
+              Ward / Room{" "}
+              <span className="normal-case font-normal">(optional)</span>
+            </label>
+            <input
+              value={wardOrRoom}
+              onChange={(e) => setWardOrRoom(e.target.value)}
+              placeholder="e.g. OPD Room 3"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 outline-none focus:border-green-500 transition-all"
+            />
+          </div>
+
+          {error && (
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-red-50 border border-red-100">
+              <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+              <p className="text-xs text-red-700">{error}</p>
+            </div>
+          )}
+        </div>
+
+        <div className="px-6 pb-6 flex gap-3">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-gray-500 border border-gray-200 hover:bg-gray-50 transition-all"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={submitting}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+            style={{ background: "linear-gradient(135deg,#166534,#15803d)" }}
+          >
+            {submitting ? (
+              <Loader2 className="w-4 h-4 animate-spin" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4" />
+            )}
+            {submitting ? "Confirming…" : "Confirm Appointment"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -253,7 +521,6 @@ function BookModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Patient search
   useEffect(() => {
     if (!patientSearch.trim() || selectedPatient) return;
     const t = setTimeout(async () => {
@@ -283,7 +550,6 @@ function BookModal({
       setError("Reason must be at least 5 characters.");
       return;
     }
-
     setError(null);
     setSubmitting(true);
     try {
@@ -312,9 +578,8 @@ function BookModal({
     >
       <div
         className="bg-white rounded-2xl shadow-2xl w-full max-w-lg flex flex-col"
-        style={{ fontFamily: "'DM Sans', sans-serif", maxHeight: "90vh" }}
+        style={{ fontFamily: "'DM Sans',sans-serif", maxHeight: "90vh" }}
       >
-        {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
           <div>
             <h2 className="text-base font-bold text-gray-900">
@@ -328,14 +593,13 @@ function BookModal({
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl text-gray-400 hover:bg-gray-100 transition-all"
+            className="p-2 rounded-xl text-gray-400 hover:bg-gray-100"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
-          {/* Patient picker */}
           {!prefill && (
             <div>
               <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-1.5">
@@ -364,7 +628,7 @@ function BookModal({
                     value={patientSearch}
                     onChange={(e) => setPatientSearch(e.target.value)}
                     placeholder="Search by name or national ID…"
-                    className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/10 placeholder:text-gray-400 transition-all"
+                    className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 outline-none focus:border-green-500 placeholder:text-gray-400 transition-all"
                   />
                   {patientResults.length > 0 && (
                     <div className="absolute top-full left-0 right-0 mt-1 bg-white rounded-xl border border-gray-100 shadow-lg z-10 overflow-hidden">
@@ -376,7 +640,7 @@ function BookModal({
                             setPatientSearch("");
                             setPatientResults([]);
                           }}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 text-left transition-colors border-b border-gray-50 last:border-0"
+                          className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-gray-50 text-left border-b border-gray-50 last:border-0"
                         >
                           <div className="w-7 h-7 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0">
                             <span className="text-[10px] font-bold text-green-700">
@@ -404,7 +668,6 @@ function BookModal({
             </div>
           )}
 
-          {/* Date + time */}
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-1.5">
               Date & Time *
@@ -414,11 +677,10 @@ function BookModal({
               value={apptDate}
               onChange={(e) => setApptDate(e.target.value)}
               min={format(new Date(), "yyyy-MM-dd'T'HH:mm")}
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/10 transition-all"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 outline-none focus:border-green-500 transition-all"
             />
           </div>
 
-          {/* Visit type */}
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-2">
               Visit Type
@@ -451,7 +713,6 @@ function BookModal({
             </div>
           </div>
 
-          {/* Reason */}
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-1.5">
               Reason / Chief Complaint *
@@ -461,11 +722,10 @@ function BookModal({
               onChange={(e) => setChiefComplaint(e.target.value)}
               rows={2}
               placeholder="Why is the patient coming in?"
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/10 resize-none placeholder:text-gray-400 transition-all"
+              className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-900 outline-none focus:border-green-500 resize-none placeholder:text-gray-400 transition-all"
             />
           </div>
 
-          {/* Doctor */}
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-1.5">
               Assign Doctor{" "}
@@ -476,7 +736,7 @@ function BookModal({
             <select
               value={selectedDoctor}
               onChange={(e) => setSelectedDoctor(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/10 transition-all bg-white"
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 outline-none focus:border-green-500 transition-all bg-white"
             >
               <option value="">Unassigned — assign on arrival</option>
               {doctors.map((d) => (
@@ -496,7 +756,6 @@ function BookModal({
           )}
         </div>
 
-        {/* Footer */}
         <div className="px-6 py-4 border-t border-gray-100 flex gap-3 flex-shrink-0">
           <button
             onClick={onClose}
@@ -507,8 +766,8 @@ function BookModal({
           <button
             onClick={handleBook}
             disabled={submitting}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50"
-            style={{ background: "linear-gradient(135deg, #166534, #15803d)" }}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+            style={{ background: "linear-gradient(135deg,#166534,#15803d)" }}
           >
             {submitting ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -567,7 +826,7 @@ function ConfirmModal({
     >
       <div
         className="bg-white rounded-2xl shadow-2xl w-full max-w-md"
-        style={{ fontFamily: "'DM Sans', sans-serif" }}
+        style={{ fontFamily: "'DM Sans',sans-serif" }}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
           <div>
@@ -580,14 +839,13 @@ function ConfirmModal({
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl text-gray-400 hover:bg-gray-100 transition-all"
+            className="p-2 rounded-xl text-gray-400 hover:bg-gray-100"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
         <div className="p-6 space-y-4">
-          {/* Patient recap */}
           <div className="px-4 py-3 rounded-xl bg-green-50 border border-green-100">
             <p className="text-sm font-bold text-green-900">
               {appt.patientName}
@@ -601,7 +859,6 @@ function ConfirmModal({
             </p>
           </div>
 
-          {/* Doctor */}
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-1.5">
               Assign Doctor
@@ -620,7 +877,6 @@ function ConfirmModal({
             </select>
           </div>
 
-          {/* Ward */}
           <div>
             <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-1.5">
               Ward / Room{" "}
@@ -645,7 +901,7 @@ function ConfirmModal({
         <div className="px-6 pb-6 flex gap-3">
           <button
             onClick={onClose}
-            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-gray-500 border border-gray-200 hover:bg-gray-50 transition-all"
+            className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-gray-500 border border-gray-200 hover:bg-gray-50"
           >
             Cancel
           </button>
@@ -653,7 +909,7 @@ function ConfirmModal({
             onClick={handleConfirm}
             disabled={submitting}
             className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-            style={{ background: "linear-gradient(135deg, #166534, #15803d)" }}
+            style={{ background: "linear-gradient(135deg,#166534,#15803d)" }}
           >
             {submitting ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -673,27 +929,30 @@ export default function AppointmentsPage() {
   const router = useRouter();
 
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [requests, setRequests] = useState<Appointment[]>([]);
   const [followUps, setFollowUps] = useState<FollowUp[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<"upcoming" | "followups">("upcoming");
+  const [tab, setTab] = useState<"upcoming" | "requests" | "followups">(
+    "upcoming",
+  );
   const [search, setSearch] = useState("");
 
   // Modals
   const [showBook, setShowBook] = useState(false);
   const [bookPrefill, setBookPrefill] = useState<FollowUp | null>(null);
   const [confirming, setConfirming] = useState<Appointment | null>(null);
+  const [responding, setResponding] = useState<Appointment | null>(null);
   const [cancelling, setCancelling] = useState<Appointment | null>(null);
   const [cancelReason, setCancelReason] = useState("");
   const [cancelLoading, setCancelLoading] = useState(false);
 
-  // Success toast
   const [toast, setToast] = useState<string | null>(null);
   const showToast = (msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 3000);
+    setTimeout(() => setToast(null), 3500);
   };
 
   const load = useCallback(async (silent = false) => {
@@ -707,10 +966,23 @@ export default function AppointmentsPage() {
         practitionersApi.list({ role: "practitioner", limit: 100 }),
       ]);
 
-      setAppointments(apptRes.data?.data?.appointments ?? []);
-      setFollowUps(followRes.data?.data?.followUps ?? []);
+      const all: Appointment[] = apptRes.data?.data?.appointments ?? [];
 
-      // Decrypt doctor names from API response
+      // Split: patient requests have APT-REQ- prefix and no createdByPractitionerId
+      setRequests(
+        all.filter(
+          (a) =>
+            a.visitNumber.startsWith("APT-REQ-") && !a.createdByPractitionerId,
+        ),
+      );
+      setAppointments(
+        all.filter(
+          (a) =>
+            !a.visitNumber.startsWith("APT-REQ-") || a.createdByPractitionerId,
+        ),
+      );
+
+      setFollowUps(followRes.data?.data?.followUps ?? []);
       const rawDocs = docRes.data?.data?.practitioners ?? [];
       setDoctors(
         rawDocs.map((d: any) => ({
@@ -760,7 +1032,13 @@ export default function AppointmentsPage() {
         (f) => f.toLowerCase().includes(search.toLowerCase()),
       ),
   );
-
+  const filteredRequests = requests.filter(
+    (a) =>
+      !search ||
+      [a.patientName, a.visitNumber, a.chiefComplaint].some((f) =>
+        f.toLowerCase().includes(search.toLowerCase()),
+      ),
+  );
   const filteredFollowUps = followUps.filter(
     (f) =>
       !search ||
@@ -778,13 +1056,13 @@ export default function AppointmentsPage() {
   const pendingFollowUps = followUps.filter((f) => !f.alreadyBooked).length;
 
   return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif" }} className="space-y-5">
+    <div style={{ fontFamily: "'DM Sans',sans-serif" }} className="space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0">
           <h1
             className="text-2xl font-bold text-gray-900"
-            style={{ fontFamily: "'Playfair Display', serif" }}
+            style={{ fontFamily: "'Playfair Display',serif" }}
           >
             Appointments
           </h1>
@@ -810,7 +1088,7 @@ export default function AppointmentsPage() {
             )}
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <button
             onClick={() => load(true)}
             disabled={refreshing}
@@ -825,16 +1103,18 @@ export default function AppointmentsPage() {
               setBookPrefill(null);
               setShowBook(true);
             }}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md hover:-translate-y-px"
-            style={{ background: "linear-gradient(135deg, #166534, #15803d)" }}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white hover:shadow-md transition-all"
+            style={{ background: "linear-gradient(135deg,#166534,#15803d)" }}
           >
-            <Plus className="w-4 h-4" /> Book Appointment
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Book Appointment</span>
+            <span className="sm:hidden">Book</span>
           </button>
         </div>
       </div>
 
-      {/* Stat pills */}
-      <div className="grid grid-cols-3 gap-3">
+      {/* Stats */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           {
             label: "Upcoming",
@@ -842,6 +1122,13 @@ export default function AppointmentsPage() {
             color: "#166534",
             bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
             border: "#bbf7d0",
+          },
+          {
+            label: "Requests",
+            value: requests.length,
+            color: "#d97706",
+            bg: "linear-gradient(135deg,#fffbeb,#fef3c7)",
+            border: "#fde68a",
           },
           {
             label: "Today",
@@ -853,9 +1140,9 @@ export default function AppointmentsPage() {
           {
             label: "Follow-ups Due",
             value: pendingFollowUps,
-            color: "#d97706",
-            bg: "linear-gradient(135deg,#fffbeb,#fef3c7)",
-            border: "#fde68a",
+            color: "#9333ea",
+            bg: "linear-gradient(135deg,#faf5ff,#ede9fe)",
+            border: "#ddd6fe",
           },
         ].map(({ label, value, color, bg, border }) => (
           <div
@@ -884,15 +1171,27 @@ export default function AppointmentsPage() {
       </div>
 
       {/* Tabs + search */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="flex gap-1 p-1 rounded-xl bg-gray-100/80">
-          {(["upcoming", "followups"] as const).map((t) => (
+      <div className="flex items-center gap-3 flex-wrap min-w-0">
+        <div className="flex gap-1 p-1 rounded-xl bg-gray-100/80 flex-shrink-0">
+          {(
+            [
+              { key: "upcoming", label: "Upcoming" },
+              {
+                key: "requests",
+                label: `Requests${requests.length > 0 ? ` (${requests.length})` : ""}`,
+              },
+              {
+                key: "followups",
+                label: `Follow-ups${pendingFollowUps > 0 ? ` (${pendingFollowUps})` : ""}`,
+              },
+            ] as const
+          ).map(({ key, label }) => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
-              className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all"
+              key={key}
+              onClick={() => setTab(key)}
+              className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all relative"
               style={
-                tab === t
+                tab === key
                   ? {
                       background: "#fff",
                       color: "#166534",
@@ -901,24 +1200,27 @@ export default function AppointmentsPage() {
                   : { color: "#6b7280" }
               }
             >
-              {t === "upcoming"
-                ? "Upcoming"
-                : `Follow-ups${pendingFollowUps > 0 ? ` (${pendingFollowUps})` : ""}`}
+              {label}
+              {/* Red dot on Requests tab if there are pending requests */}
+              {key === "requests" &&
+                requests.length > 0 &&
+                tab !== "requests" && (
+                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-500" />
+                )}
             </button>
           ))}
         </div>
-        <div className="relative flex-1 max-w-xs">
+        <div className="relative flex-1 min-w-[180px] max-w-xs">
           <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search patient, doctor, reason…"
-            className="w-full pl-9 pr-4 py-2 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/10 placeholder:text-gray-400 transition-all"
+            className="w-full pl-9 pr-4 py-2 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 outline-none focus:border-green-500 placeholder:text-gray-400 transition-all"
           />
         </div>
       </div>
 
-      {/* Error */}
       {error && (
         <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-red-50 border border-red-100">
           <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
@@ -932,7 +1234,7 @@ export default function AppointmentsPage() {
         </div>
       )}
 
-      {/* ── Upcoming appointments ── */}
+      {/* ── Upcoming tab ── */}
       {tab === "upcoming" &&
         (loading ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -954,18 +1256,6 @@ export default function AppointmentsPage() {
             <p className="text-xs text-gray-400 mt-1">
               Book a new appointment or check follow-ups due
             </p>
-            <button
-              onClick={() => {
-                setBookPrefill(null);
-                setShowBook(true);
-              }}
-              className="mt-4 flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white mx-auto"
-              style={{
-                background: "linear-gradient(135deg, #166534, #15803d)",
-              }}
-            >
-              <Plus className="w-4 h-4" /> Book Appointment
-            </button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -975,15 +1265,61 @@ export default function AppointmentsPage() {
                 appt={a}
                 onConfirm={setConfirming}
                 onCancel={setCancelling}
-                onReschedule={() => {
-                  /* TODO: reschedule modal */
-                }}
+                onReschedule={() => {}}
               />
             ))}
           </div>
         ))}
 
-      {/* ── Follow-ups ── */}
+      {/* ── Requests tab ── */}
+      {tab === "requests" &&
+        (loading ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {[...Array(3)].map((_, i) => (
+              <div
+                key={i}
+                className="h-52 rounded-2xl bg-white border border-gray-100 animate-pulse"
+              />
+            ))}
+          </div>
+        ) : filteredRequests.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm py-20 text-center">
+            <div className="w-14 h-14 rounded-2xl bg-amber-50 flex items-center justify-center mx-auto mb-4">
+              <Inbox className="w-6 h-6 text-amber-300" />
+            </div>
+            <p className="text-sm font-semibold text-gray-500">
+              No pending requests
+            </p>
+            <p className="text-xs text-gray-400 mt-1">
+              Patient-submitted appointment requests will appear here
+            </p>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-50 border border-amber-100">
+              <Inbox className="w-4 h-4 text-amber-600 flex-shrink-0" />
+              <p className="text-sm text-amber-800">
+                <span className="font-bold">
+                  {filteredRequests.length} pending request
+                  {filteredRequests.length !== 1 ? "s" : ""}
+                </span>{" "}
+                from patients. Review and confirm a date/time for each.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {filteredRequests.map((a) => (
+                <RequestCard
+                  key={a.id}
+                  appt={a}
+                  onRespond={setResponding}
+                  onReject={setCancelling}
+                />
+              ))}
+            </div>
+          </>
+        ))}
+
+      {/* ── Follow-ups tab ── */}
       {tab === "followups" && (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
           {loading ? (
@@ -1063,7 +1399,7 @@ export default function AppointmentsPage() {
                       }}
                       className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white flex-shrink-0"
                       style={{
-                        background: "linear-gradient(135deg, #166534, #15803d)",
+                        background: "linear-gradient(135deg,#166534,#15803d)",
                       }}
                     >
                       <Plus className="w-3 h-3" /> Book
@@ -1108,7 +1444,21 @@ export default function AppointmentsPage() {
         />
       )}
 
-      {/* Cancel confirmation */}
+      {/* Respond to patient request */}
+      {responding && (
+        <RespondModal
+          appt={responding}
+          doctors={doctors}
+          onClose={() => setResponding(null)}
+          onResponded={() => {
+            setResponding(null);
+            showToast("Appointment confirmed — patient will be notified");
+            load(true);
+          }}
+        />
+      )}
+
+      {/* Cancel / reject */}
       {cancelling && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -1116,20 +1466,24 @@ export default function AppointmentsPage() {
         >
           <div
             className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6"
-            style={{ fontFamily: "'DM Sans', sans-serif" }}
+            style={{ fontFamily: "'DM Sans',sans-serif" }}
           >
             <h3 className="text-base font-bold text-gray-900 mb-1">
-              Cancel Appointment
+              {cancelling.visitNumber.startsWith("APT-REQ-")
+                ? "Reject Request"
+                : "Cancel Appointment"}
             </h3>
             <p className="text-xs text-gray-500 mb-4">
-              Cancelling appointment for{" "}
+              {cancelling.visitNumber.startsWith("APT-REQ-")
+                ? "Rejecting request from "
+                : "Cancelling appointment for "}
               <span className="font-semibold">{cancelling.patientName}</span>
             </p>
             <textarea
               value={cancelReason}
               onChange={(e) => setCancelReason(e.target.value)}
               rows={3}
-              placeholder="Reason for cancellation (min. 5 characters)"
+              placeholder="Reason (min. 5 characters)"
               className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-900 outline-none focus:border-red-400 resize-none placeholder:text-gray-400 transition-all mb-4"
             />
             <div className="flex gap-3">
@@ -1147,7 +1501,7 @@ export default function AppointmentsPage() {
                 disabled={cancelLoading || cancelReason.trim().length < 5}
                 className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
                 style={{
-                  background: "linear-gradient(135deg, #dc2626, #b91c1c)",
+                  background: "linear-gradient(135deg,#dc2626,#b91c1c)",
                 }}
               >
                 {cancelLoading ? (
@@ -1155,14 +1509,16 @@ export default function AppointmentsPage() {
                 ) : (
                   <XCircle className="w-4 h-4" />
                 )}
-                {cancelLoading ? "Cancelling…" : "Cancel Appointment"}
+                {cancelling.visitNumber.startsWith("APT-REQ-")
+                  ? "Reject"
+                  : "Cancel"}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Success toast */}
+      {/* Toast */}
       {toast && (
         <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-5 py-3.5 rounded-2xl bg-white border border-green-100 shadow-xl">
           <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />

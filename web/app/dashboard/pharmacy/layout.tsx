@@ -1,12 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
+import { ProfileDrawer } from "@/components/ProfileDrawer";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
 import {
   LayoutDashboard,
   ClipboardList,
   History,
-  Package,
   LogOut,
   Menu,
   X,
@@ -14,13 +14,14 @@ import {
   Bell,
   Heart,
   Building2,
+  Package,
 } from "lucide-react";
 
 const navItems = [
   { label: "Overview", href: "/dashboard/pharmacy", icon: LayoutDashboard },
   {
     label: "Pending Rx",
-    href: "/dashboard/pharmacy/pending",
+    href: "/dashboard/pharmacy/queue",
     icon: ClipboardList,
   },
   {
@@ -40,6 +41,7 @@ export default function PharmacyLayout({
   const pathname = usePathname();
   const { user, isAuthenticated, clearAuth, initFromStorage } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
@@ -73,7 +75,6 @@ export default function PharmacyLayout({
     month: "short",
   });
 
-  // Institution — same pattern as receptionist/nurse layouts
   const institutionName = (user as any)?.institutionName ?? null;
   const institutionId = (user as any)?.institutionId ?? null;
   const hasInstitution = !!institutionName || !!institutionId;
@@ -83,7 +84,6 @@ export default function PharmacyLayout({
       className="min-h-screen flex bg-[#f8faf8]"
       style={{ fontFamily: "'DM Sans', sans-serif" }}
     >
-      {/* Mobile overlay */}
       {sidebarOpen && (
         <div
           className="fixed inset-0 bg-black/50 z-20 lg:hidden backdrop-blur-sm"
@@ -91,10 +91,9 @@ export default function PharmacyLayout({
         />
       )}
 
-      {/* ── Sidebar ── */}
+      {/* Sidebar */}
       <aside
-        className={`fixed lg:static inset-y-0 left-0 z-30 w-64 flex flex-col transition-transform duration-300
-          ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
+        className={`fixed lg:static inset-y-0 left-0 z-30 w-64 flex flex-col transition-transform duration-300 ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
         style={{
           background:
             "linear-gradient(180deg, #052e16 0%, #064e23 40%, #0d5c2a 100%)",
@@ -114,7 +113,7 @@ export default function PharmacyLayout({
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-white font-bold text-sm leading-tight tracking-tight">
-                HealthChain
+                MedLink
               </p>
               <p className="text-green-400/70 text-xs">Zambia · EMR</p>
             </div>
@@ -126,7 +125,6 @@ export default function PharmacyLayout({
             </button>
           </div>
 
-          {/* Role pill */}
           <div
             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold mb-3"
             style={{
@@ -135,11 +133,10 @@ export default function PharmacyLayout({
               border: "1px solid rgba(167,139,250,0.2)",
             }}
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />
+            <span className="w-1.5 h-1.5 rounded-full bg-violet-400" />{" "}
             Pharmacist
           </div>
 
-          {/* Institution badge */}
           {hasInstitution ? (
             <div
               className="flex items-start gap-2 px-3 py-2.5 rounded-xl"
@@ -217,7 +214,7 @@ export default function PharmacyLayout({
           })}
         </nav>
 
-        {/* Live clock */}
+        {/* Clock */}
         <div
           className="mx-3 mb-3 px-3.5 py-3 rounded-xl"
           style={{
@@ -231,7 +228,7 @@ export default function PharmacyLayout({
           <p className="text-green-400/60 text-xs mt-0.5">{dateStr}</p>
         </div>
 
-        {/* User card */}
+        {/* User */}
         <div className="px-3 pb-4 border-t border-white/[0.07] pt-3">
           <div
             className="flex items-center gap-3 px-3 py-2 rounded-xl mb-1"
@@ -271,9 +268,8 @@ export default function PharmacyLayout({
         </div>
       </aside>
 
-      {/* ── Main ── */}
+      {/* Main */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Top bar */}
         <header className="bg-white/80 backdrop-blur-md border-b border-gray-100 px-6 py-3.5 flex items-center justify-between sticky top-0 z-10">
           <button
             className="lg:hidden text-gray-400 hover:text-gray-700 p-1 transition-colors"
@@ -305,7 +301,6 @@ export default function PharmacyLayout({
           </div>
 
           <div className="flex items-center gap-2 ml-auto">
-            {/* Institution chip */}
             {hasInstitution ? (
               <div
                 className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border"
@@ -340,7 +335,8 @@ export default function PharmacyLayout({
 
             <div className="flex items-center gap-2.5 pl-2 border-l border-gray-100">
               <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                onClick={() => setProfileOpen(true)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white cursor-pointer hover:opacity-80 transition-opacity"
                 style={{
                   background: "linear-gradient(135deg, #166534, #15803d)",
                 }}
@@ -352,12 +348,7 @@ export default function PharmacyLayout({
                 <p className="text-xs font-semibold text-gray-900 leading-none">
                   {user?.firstName} {user?.lastName}
                 </p>
-                <p className="text-xs text-gray-400 mt-0.5 md:hidden truncate max-w-[120px]">
-                  {institutionName ?? "Pharmacist"}
-                </p>
-                <p className="text-xs text-gray-400 mt-0.5 hidden md:block">
-                  Pharmacist
-                </p>
+                <p className="text-xs text-gray-400 mt-0.5">Pharmacist</p>
               </div>
             </div>
           </div>
@@ -365,6 +356,8 @@ export default function PharmacyLayout({
 
         <main className="flex-1 p-6 overflow-y-auto">{children}</main>
       </div>
+
+      <ProfileDrawer open={profileOpen} onClose={() => setProfileOpen(false)} />
     </div>
   );
 }

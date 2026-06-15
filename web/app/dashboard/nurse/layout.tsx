@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { ProfileDrawer } from "@/components/ProfileDrawer";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
 import {
@@ -36,6 +37,7 @@ export default function NurseLayout({
   const pathname = usePathname();
   const { user, isAuthenticated, clearAuth, initFromStorage } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
@@ -335,7 +337,8 @@ export default function NurseLayout({
             {/* Avatar + name */}
             <div className="flex items-center gap-2.5 pl-2 border-l border-gray-100">
               <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                onClick={() => setProfileOpen(true)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white cursor-pointer hover:opacity-80 transition-opacity"
                 style={{
                   background: "linear-gradient(135deg, #166534, #15803d)",
                 }}
@@ -361,6 +364,8 @@ export default function NurseLayout({
 
         <main className="flex-1 p-6 overflow-y-auto">{children}</main>
       </div>
+
+      <ProfileDrawer open={profileOpen} onClose={() => setProfileOpen(false)} />
     </div>
   );
 }

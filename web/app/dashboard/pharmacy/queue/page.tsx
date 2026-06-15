@@ -262,9 +262,12 @@ export default function PharmacyQueuePage() {
                     </span>
                     <div className="flex items-center gap-1 text-xs text-gray-400">
                       <Clock size={11} />
-                      {formatDistanceToNow(new Date(rx.prescribed_at), {
-                        addSuffix: true,
-                      })}
+                      {rx.prescribed_at &&
+                      !isNaN(new Date(rx.prescribed_at).getTime())
+                        ? formatDistanceToNow(new Date(rx.prescribed_at), {
+                            addSuffix: true,
+                          })
+                        : "Unknown"}
                     </div>
                     <ChevronRight
                       size={16}

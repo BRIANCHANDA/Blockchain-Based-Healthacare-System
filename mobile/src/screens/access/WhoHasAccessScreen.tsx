@@ -9,7 +9,7 @@ import {
   StatusBar,
 } from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MaterialIcons as Icon } from "@expo/vector-icons";
+import { MaterialIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getMyPermissions } from "../../api/access";
@@ -18,17 +18,39 @@ import LoadingSpinner from "../../components/common/LoadingSpinner";
 
 type Props = NativeStackScreenProps<AccessStackParamList, "WhoHasAccess">;
 
+// ── Design tokens ────────────────────────────────────────────────────────────
+const C = {
+  primary: "#059669",
+  primaryDark: "#047857",
+  primaryGhost: "#ECFDF5",
+  primaryLight: "#D1FAE5",
+  coral: "#FF5757",
+  coralLight: "#FFE4E4",
+  amber: "#F59E0B",
+  amberLight: "#FEF3C7",
+  ink: "#0A0E1A",
+  inkSoft: "#4B5563",
+  inkMuted: "#9CA3AF",
+  inkSubtle: "#D1D5DB",
+  bg: "#FAFAFB",
+  bgAlt: "#F4F5F7",
+  card: "#FFFFFF",
+  cardBorder: "#E5E7EB",
+  divider: "#F3F4F6",
+};
+
 export default function WhoHasAccessScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const [permissions, setPermissions] = useState<Permission[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const insets = useSafeAreaInsets();
 
   const fetchPerms = useCallback(async () => {
     try {
       const res = await getMyPermissions();
-      const raw: Permission[] = res.data?.permissions ?? [];
-      setPermissions(raw.filter((p) => p.isActive));
+      setPermissions(
+        (res.data?.permissions ?? []).filter((p: Permission) => p.isActive),
+      );
     } catch {
       setPermissions([]);
     }
@@ -45,167 +67,149 @@ export default function WhoHasAccessScreen({ navigation }: Props) {
   };
 
   const isExpired = (p: Permission) => new Date(p.expiresAt) < new Date();
-
-  if (loading) return <LoadingSpinner message="Loading permissions…" />;
-
   const active = permissions.filter((p) => !isExpired(p));
   const expired = permissions.filter((p) => isExpired(p));
 
+  if (loading) return <LoadingSpinner message="Loading permissions…" />;
+
   return (
-    <View style={styles.wrapper}>
-      <StatusBar barStyle="light-content" backgroundColor="#0A6640" />
+    <View style={styles.root}>
+      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.headerTitle}>Who Has Access</Text>
-            <Text style={styles.headerSub}>Active blockchain permissions</Text>
-          </View>
-          <View style={styles.countBubble}>
-            <Text style={styles.countNum}>{active.length}</Text>
-            <Text style={styles.countLabel}>Active</Text>
-          </View>
-        </View>
-
-        {/* Back to requests */}
+      {/* ── Custom header ── */}
+      <View style={[styles.headerBar, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity
-          style={styles.backTab}
           onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          activeOpacity={0.6}
         >
-          <Icon name="arrow-back" size={14} color="rgba(255,255,255,0.7)" />
-          <Text style={styles.backTabText}>Back to Requests</Text>
+          <MaterialIcons name="arrow-back" size={20} color={C.ink} />
         </TouchableOpacity>
+        <Text style={styles.headerTitle}>Who Has Access</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      {/* ── Hero summary ── */}
+      <View style={styles.summaryCard}>
+        <View style={styles.summaryLeft}>
+          <Text style={styles.summaryNumber}>{active.length}</Text>
+          <Text style={styles.summaryLabel}>
+            Active permission{active.length !== 1 ? "s" : ""}
+          </Text>
+        </View>
+        <View style={styles.summaryIcon}>
+          <MaterialIcons name="verified-user" size={24} color={C.primary} />
+        </View>
       </View>
 
       <FlatList
         data={[...active, ...expired]}
         keyExtractor={(p) => p.id}
-        contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+        contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={["#0A6640"]}
+            colors={[C.primary]}
+            tintColor={C.primary}
           />
-        }
-        ListHeaderComponent={
-          active.length > 0 ? (
-            <View style={styles.infoBox}>
-              <Icon name="verified-user" size={16} color="#0A6640" />
-              <Text style={styles.infoText}>
-                {active.length} clinician{active.length !== 1 ? "s" : ""}{" "}
-                currently have blockchain-verified access to your records.
-              </Text>
-            </View>
-          ) : null
         }
         ListEmptyComponent={
           <View style={styles.empty}>
             <View style={styles.emptyIcon}>
-              <Icon name="lock" size={36} color="#0A6640" />
+              <MaterialIcons name="lock-outline" size={36} color={C.primary} />
             </View>
             <Text style={styles.emptyTitle}>No active permissions</Text>
-            <Text style={styles.emptyText}>
-              No one currently has access to your records
+            <Text style={styles.emptyBody}>
+              No one currently has access to your records.
             </Text>
           </View>
         }
         renderItem={({ item }) => {
-          const expired = isExpired(item);
+          const exp = isExpired(item);
           return (
-            <View style={[styles.card, expired && styles.cardExpired]}>
-              {/* Status strip */}
-              <View
-                style={[
-                  styles.statusStrip,
-                  { backgroundColor: expired ? "#6B7280" : "#0A6640" },
-                ]}
-              />
-
-              <View style={styles.cardBody}>
-                <View style={styles.providerRow}>
+            <View style={[styles.card, exp && styles.cardExpired]}>
+              <View style={styles.providerRow}>
+                <View
+                  style={[
+                    styles.avatar,
+                    { backgroundColor: exp ? C.bgAlt : C.primaryGhost },
+                  ]}
+                >
+                  <MaterialIcons
+                    name="person"
+                    size={22}
+                    color={exp ? C.inkMuted : C.primary}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.name, exp && styles.nameExpired]}>
+                    {item.granteeName ?? item.grantedToUserId}
+                  </Text>
+                  <Text style={styles.role}>
+                    {item.granteeRole?.replace("_", " ").toUpperCase() ??
+                      "CLINICIAN"}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.statusPill,
+                    { backgroundColor: exp ? C.bgAlt : C.primaryGhost },
+                  ]}
+                >
                   <View
                     style={[
-                      styles.avatar,
-                      { backgroundColor: expired ? "#F3F4F6" : "#E6F4EE" },
+                      styles.statusDot,
+                      { backgroundColor: exp ? C.inkMuted : C.primary },
                     ]}
-                  >
-                    <Icon
-                      name="person"
-                      size={22}
-                      color={expired ? "#9CA3AF" : "#0A6640"}
-                    />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.name, expired && styles.nameExpired]}>
-                      {item.granteeName ?? item.grantedToUserId}
-                    </Text>
-                    <Text style={styles.role}>
-                      {item.granteeRole?.replace("_", " ").toUpperCase() ??
-                        "CLINICIAN"}
-                    </Text>
-                  </View>
-                  <View
+                  />
+                  <Text
                     style={[
-                      styles.statusPill,
-                      { backgroundColor: expired ? "#F3F4F6" : "#E6F4EE" },
+                      styles.statusText,
+                      { color: exp ? C.inkMuted : C.primaryDark },
                     ]}
                   >
-                    <View
-                      style={[
-                        styles.statusDot,
-                        { backgroundColor: expired ? "#9CA3AF" : "#0A6640" },
-                      ]}
-                    />
-                    <Text
-                      style={[
-                        styles.statusText,
-                        { color: expired ? "#6B7280" : "#0A6640" },
-                      ]}
-                    >
-                      {expired ? "Expired" : "Active"}
-                    </Text>
-                  </View>
+                    {exp ? "Expired" : "Active"}
+                  </Text>
                 </View>
-
-                {/* Permission details */}
-                <View style={styles.detailsRow}>
-                  <View style={styles.detailChip}>
-                    <Icon name="vpn-key" size={12} color="#8AA89C" />
-                    <Text style={styles.detailText}>
-                      {item.permissionType?.toUpperCase()}
-                    </Text>
-                  </View>
-                  <View style={styles.detailChip}>
-                    <Icon name="schedule" size={12} color="#8AA89C" />
-                    <Text style={styles.detailText}>
-                      Expires{" "}
-                      {new Date(item.expiresAt).toLocaleDateString("en-GB", {
-                        day: "numeric",
-                        month: "short",
-                      })}
-                    </Text>
-                  </View>
-                </View>
-
-                {!expired && (
-                  <TouchableOpacity
-                    style={styles.revokeBtn}
-                    onPress={() =>
-                      navigation.navigate("RevokeAccess", {
-                        permissionId: item.id,
-                        granteeName: item.granteeName ?? "this clinician",
-                        practitionerId: item.grantedToUserId,
-                      })
-                    }
-                  >
-                    <Icon name="block" size={14} color="#C0392B" />
-                    <Text style={styles.revokeBtnText}>Revoke Access</Text>
-                  </TouchableOpacity>
-                )}
               </View>
+
+              <View style={styles.detailsRow}>
+                <View style={styles.detailChip}>
+                  <MaterialIcons name="vpn-key" size={12} color={C.inkMuted} />
+                  <Text style={styles.detailText}>
+                    {item.permissionType?.toUpperCase()}
+                  </Text>
+                </View>
+                <View style={styles.detailChip}>
+                  <MaterialIcons name="schedule" size={12} color={C.inkMuted} />
+                  <Text style={styles.detailText}>
+                    Expires{" "}
+                    {new Date(item.expiresAt).toLocaleDateString("en-GB", {
+                      day: "numeric",
+                      month: "short",
+                    })}
+                  </Text>
+                </View>
+              </View>
+
+              {!exp && (
+                <TouchableOpacity
+                  style={styles.revokeBtn}
+                  onPress={() =>
+                    navigation.navigate("RevokeAccess", {
+                      permissionId: item.id,
+                      granteeName: item.granteeName ?? "this clinician",
+                      practitionerId: item.grantedToUserId,
+                    })
+                  }
+                  activeOpacity={0.7}
+                >
+                  <MaterialIcons name="block" size={14} color={C.coral} />
+                  <Text style={styles.revokeBtnText}>Revoke Access</Text>
+                </TouchableOpacity>
+              )}
             </View>
           );
         }}
@@ -214,166 +218,199 @@ export default function WhoHasAccessScreen({ navigation }: Props) {
   );
 }
 
+// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  wrapper: { flex: 1, backgroundColor: "#F0F5F2" },
+  root: { flex: 1, backgroundColor: C.bg },
 
-  header: {
-    backgroundColor: "#0A6640",
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-  },
-  headerRow: {
+  headerBar: {
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 14,
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    backgroundColor: C.bg,
+    borderBottomWidth: 1,
+    borderBottomColor: C.divider,
   },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#fff",
-    letterSpacing: -0.4,
-  },
-  headerSub: { fontSize: 13, color: "rgba(255,255,255,0.65)", marginTop: 3 },
-  countBubble: {
-    backgroundColor: "rgba(255,255,255,0.15)",
+  backBtn: {
+    width: 40,
+    height: 40,
     borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    alignItems: "center",
+    backgroundColor: C.card,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-  },
-  countNum: { fontSize: 22, fontWeight: "800", color: "#fff" },
-  countLabel: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: "rgba(255,255,255,0.65)",
-  },
-  backTab: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    backgroundColor: "rgba(255,255,255,0.1)",
-    borderRadius: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    alignSelf: "flex-start",
-  },
-  backTabText: {
-    fontSize: 12,
-    color: "rgba(255,255,255,0.75)",
-    fontWeight: "600",
-  },
-
-  infoBox: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 8,
-    backgroundColor: "#E6F4EE",
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 14,
-    borderWidth: 1,
-    borderColor: "#B3D9C8",
-  },
-  infoText: { color: "#064D30", fontSize: 13, flex: 1, lineHeight: 18 },
-
-  empty: { alignItems: "center", marginTop: 60, paddingHorizontal: 32 },
-  emptyIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 20,
-    backgroundColor: "#E6F4EE",
+    borderColor: C.cardBorder,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 16,
   },
-  emptyTitle: {
-    fontSize: 17,
+  headerTitle: {
+    fontSize: 16,
     fontWeight: "700",
-    color: "#0D1F17",
-    marginBottom: 6,
-  },
-  emptyText: {
-    fontSize: 13,
-    color: "#8AA89C",
-    textAlign: "center",
-    lineHeight: 19,
+    color: C.ink,
+    letterSpacing: -0.3,
   },
 
-  card: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
+  // ── Summary ──
+  summaryCard: {
+    marginHorizontal: 20,
+    marginTop: 20,
     marginBottom: 12,
+    padding: 20,
+    backgroundColor: C.ink,
+    borderRadius: 18,
     flexDirection: "row",
-    overflow: "hidden",
-    shadowColor: "#0A6640",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    alignItems: "center",
+    justifyContent: "space-between",
   },
-  cardExpired: { opacity: 0.7 },
-  statusStrip: { width: 4 },
-  cardBody: { flex: 1, padding: 14 },
+  summaryLeft: { flex: 1 },
+  summaryNumber: {
+    fontSize: 36,
+    fontWeight: "800",
+    color: "#fff",
+    letterSpacing: -1.2,
+    lineHeight: 40,
+  },
+  summaryLabel: {
+    fontSize: 13,
+    color: "rgba(255,255,255,0.6)",
+    fontWeight: "500",
+    marginTop: 4,
+  },
+  summaryIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    backgroundColor: "rgba(5,150,105,0.2)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  listContent: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 100,
+  },
+
+  empty: {
+    alignItems: "center",
+    marginTop: 60,
+    paddingHorizontal: 40,
+  },
+  emptyIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 24,
+    backgroundColor: C.primaryGhost,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  emptyTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: C.ink,
+    marginBottom: 6,
+    letterSpacing: -0.4,
+  },
+  emptyBody: {
+    fontSize: 14,
+    color: C.inkSoft,
+    textAlign: "center",
+    lineHeight: 21,
+    fontWeight: "500",
+  },
+
+  // ── Card ──
+  card: {
+    backgroundColor: C.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: C.cardBorder,
+  },
+  cardExpired: { opacity: 0.6 },
 
   providerRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    marginBottom: 10,
+    marginBottom: 12,
   },
   avatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 13,
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
   },
-  name: { fontSize: 15, fontWeight: "700", color: "#0D1F17" },
-  nameExpired: { color: "#6B7280" },
+  name: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: C.ink,
+    letterSpacing: -0.3,
+  },
+  nameExpired: { color: C.inkMuted },
   role: {
     fontSize: 10,
-    color: "#8AA89C",
+    color: C.inkMuted,
     marginTop: 2,
     fontWeight: "700",
-    letterSpacing: 0.5,
+    letterSpacing: 0.4,
   },
   statusPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    paddingHorizontal: 8,
+    paddingHorizontal: 9,
     paddingVertical: 4,
-    borderRadius: 20,
+    borderRadius: 8,
   },
   statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusText: { fontSize: 11, fontWeight: "700" },
+  statusText: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
 
-  detailsRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
+  detailsRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
+  },
   detailChip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: "#F7FAF8",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    gap: 5,
+    backgroundColor: C.bg,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: C.divider,
   },
-  detailText: { fontSize: 11, color: "#4A6357", fontWeight: "600" },
+  detailText: {
+    fontSize: 11,
+    color: C.inkSoft,
+    fontWeight: "700",
+    letterSpacing: 0.2,
+  },
 
   revokeBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    paddingVertical: 9,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-    backgroundColor: "#FDECEA",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 11,
+    backgroundColor: C.coralLight,
     alignSelf: "flex-start",
     borderWidth: 1,
-    borderColor: "#F5C6C6",
+    borderColor: "#FECACA",
   },
-  revokeBtnText: { color: "#C0392B", fontSize: 13, fontWeight: "700" },
+  revokeBtnText: {
+    color: C.coral,
+    fontSize: 13,
+    fontWeight: "700",
+    letterSpacing: -0.1,
+  },
 });

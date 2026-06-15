@@ -20,6 +20,15 @@ import { radiologyStatsRouter } from './routes/radiology-stats';
 import { adminStatsRouter } from './routes/admin-stats';
 import { pharmacyStatsRouter } from './routes/pharmacy';
 import { appointmentRouter } from './routes/appointments';
+import { reportsRouter } from "./routes/reports";
+import { stockRouter } from "./routes/stock";
+import { notificationsRouter } from './routes/notifications';
+import { adminBlockchainRouter } from './routes/blockchain';
+import { aiRouter } from './routes/ai/ai';
+import { labRouter } from './routes/lab';
+
+
+
 
 const app = new OpenAPIHono();
 
@@ -54,7 +63,12 @@ app.route('/api/radiology-stats', radiologyStatsRouter);
 app.route('/api/dashboard/admin', adminStatsRouter);
 app.route('/api/pharmacy-stats', pharmacyStatsRouter);
 app.route('/api/appointments', appointmentRouter);
-
+app.route('/api/reports', reportsRouter);
+app.route('/api/stock', stockRouter);
+app.route('/api/notifications', notificationsRouter);
+app.route('/api/ai', aiRouter);
+app.route('/api/lab', labRouter);
+app.route('/api/admin/blockchain', adminBlockchainRouter);
 // ── OpenAPI docs ──────────────────────────────────────────────────────────────
 const serverUrl = process.env.RENDER_EXTERNAL_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
 

@@ -688,9 +688,9 @@ export default function DoctorPermissionsPage() {
                 className="text-gray-400 mt-0.5 flex-shrink-0"
               />
               <p className="text-xs text-gray-500">
-                Approval is recorded on <strong>Hyperledger Fabric</strong> and
-                is automatically revoked at discharge. This page will redirect
-                you to the visit workspace the moment the patient approves.
+                Approval is recorded and is automatically revoked at discharge.
+                This page will redirect you to the visit workspace the moment
+                the patient approves.
               </p>
             </div>
 

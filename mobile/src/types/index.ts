@@ -178,17 +178,26 @@ export type AuthStackParamList = {
     ChangePassword: undefined;
 };
 
+
 export type MainTabParamList = {
     Records: undefined;
     Access: undefined;
+    Appointments: undefined;
     History: undefined;
     Referrals: undefined;
+};
+
+// AppointmentsStackParamList — add this new type:
+export type AppointmentsStackParamList = {
+    AppointmentsList: undefined;
 };
 
 export type RecordsStackParamList = {
     RecordsList: undefined;
     RecordDetail: { visitId: string; visitNumber: string };
     Profile: undefined;
+    VitalsTrends: undefined;
+    PatientQR: undefined;
 };
 
 export type AccessStackParamList = {

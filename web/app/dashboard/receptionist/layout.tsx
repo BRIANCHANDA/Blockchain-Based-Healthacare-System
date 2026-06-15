@@ -11,14 +11,15 @@ import {
   LogOut,
   Menu,
   X,
-  Bell,
   ChevronRight,
   Heart,
   Building2,
   ArrowLeftRight,
+  QrCode,
 } from "lucide-react";
+import { NotificationBell } from "@/components/NotificationBell";
+import { ProfileDrawer } from "@/components/ProfileDrawer";
 
-// ── Nav items — Referrals added with badge support ────────────────────────────
 const navItems = [
   {
     label: "Overview",
@@ -32,13 +33,16 @@ const navItems = [
     icon: UserPlus,
     badge: false,
   },
+  // receptionist layout
+  { label: "Scan Patient", href: "/dashboard/receptionist/scan", icon: QrCode },
+  // doctor layout
+
   {
     label: "Today's Queue",
     href: "/dashboard/receptionist/queue",
     icon: ClipboardList,
     badge: false,
   },
-
   {
     label: "Referrals",
     href: "/dashboard/receptionist/referrals",
@@ -69,6 +73,7 @@ export default function ReceptionistLayout({
   const { user, isAuthenticated, clearAuth, initFromStorage } = useAuthStore();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [time, setTime] = useState(new Date());
   const [pendingReferrals, setPendingReferrals] = useState(0);
 
@@ -83,30 +88,20 @@ export default function ReceptionistLayout({
     return () => clearInterval(t);
   }, []);
 
-  // ── Poll for pending incoming referrals ───────────────────────────────────
-  // Shown as a badge on the Referrals nav item so the receptionist never misses one.
   const fetchPendingReferrals = useCallback(async () => {
     try {
       const res = await api.get(
         "/api/referrals/incoming?status=pending&limit=50",
       );
-      const count = res.data?.data?.referrals?.length ?? 0;
-      setPendingReferrals(count);
-    } catch {
-      // Silently ignore — badge just won't show
-    }
+      setPendingReferrals(res.data?.data?.referrals?.length ?? 0);
+    } catch {}
   }, []);
 
   useEffect(() => {
     fetchPendingReferrals();
-    const iv = setInterval(fetchPendingReferrals, 60_000); // every minute
+    const iv = setInterval(fetchPendingReferrals, 60_000);
     return () => clearInterval(iv);
   }, [fetchPendingReferrals]);
-
-  const handleLogout = () => {
-    clearAuth();
-    router.push("/login");
-  };
 
   const activeLabel =
     navItems.find(
@@ -149,7 +144,7 @@ export default function ReceptionistLayout({
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
         style={{
           background:
-            "linear-gradient(180deg, #052e16 0%, #064e23 40%, #0d5c2a 100%)",
+            "linear-gradient(180deg,#052e16 0%,#064e23 40%,#0d5c2a 100%)",
         }}
       >
         {/* Branding */}
@@ -233,7 +228,6 @@ export default function ReceptionistLayout({
               pathname === href ||
               (href !== "/dashboard/receptionist" && pathname.startsWith(href));
             const showBadge = badge && pendingReferrals > 0;
-
             return (
               <button
                 key={href}
@@ -266,8 +260,6 @@ export default function ReceptionistLayout({
               >
                 <Icon className="w-4 h-4 flex-shrink-0" />
                 <span className="flex-1">{label}</span>
-
-                {/* Pending referrals badge */}
                 {showBadge && !active && (
                   <span
                     className="flex items-center justify-center text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1"
@@ -276,7 +268,6 @@ export default function ReceptionistLayout({
                     {pendingReferrals > 9 ? "9+" : pendingReferrals}
                   </span>
                 )}
-
                 {active ? (
                   <ChevronRight className="w-3.5 h-3.5 opacity-60" />
                 ) : (
@@ -303,17 +294,16 @@ export default function ReceptionistLayout({
           <p className="text-green-400/60 text-xs mt-0.5">{dateStr}</p>
         </div>
 
-        {/* User card */}
+        {/* User card — clicking opens profile drawer */}
         <div className="px-3 pb-4 border-t border-white/[0.07] pt-3">
-          <div
-            className="flex items-center gap-3 px-3 py-2 rounded-xl mb-1"
+          <button
+            onClick={() => setProfileOpen(true)}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl mb-1 transition-colors hover:bg-white/10 text-left"
             style={{ background: "rgba(255,255,255,0.05)" }}
           >
             <div
               className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-              style={{
-                background: "linear-gradient(135deg, #16a34a, #15803d)",
-              }}
+              style={{ background: "linear-gradient(135deg,#16a34a,#15803d)" }}
             >
               {initials}
             </div>
@@ -321,12 +311,15 @@ export default function ReceptionistLayout({
               <p className="text-white text-xs font-semibold truncate">
                 {user?.firstName} {user?.lastName}
               </p>
-              <p className="text-green-400/50 text-xs">Front Desk</p>
+              <p className="text-green-400/50 text-xs">View profile</p>
             </div>
-          </div>
-
+            <ChevronRight className="w-3.5 h-3.5 text-green-400/30" />
+          </button>
           <button
-            onClick={handleLogout}
+            onClick={() => {
+              clearAuth();
+              router.push("/login");
+            }}
             className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
             style={{ color: "rgba(187,247,208,0.4)" }}
             onMouseEnter={(e) => {
@@ -366,9 +359,7 @@ export default function ReceptionistLayout({
           <div className="hidden lg:flex items-center gap-2.5">
             <div
               className="w-1 h-4 rounded-full flex-shrink-0"
-              style={{
-                background: "linear-gradient(180deg, #16a34a, #15803d)",
-              }}
+              style={{ background: "linear-gradient(180deg,#16a34a,#15803d)" }}
             />
             <div>
               <p className="text-sm font-semibold text-gray-900 leading-none">
@@ -415,7 +406,7 @@ export default function ReceptionistLayout({
               </div>
             )}
 
-            {/* Referrals bell — shows pending count in top bar too */}
+            {/* Referrals shortcut */}
             <button
               onClick={() => router.push("/dashboard/receptionist/referrals")}
               className="relative p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
@@ -432,20 +423,20 @@ export default function ReceptionistLayout({
               )}
             </button>
 
-            {/* Bell */}
-            <button className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
-              <Bell className="w-4 h-4" />
-            </button>
+            {/* Notification bell */}
+            <NotificationBell />
 
-            {/* Avatar */}
-            <div
-              className="flex items-center gap-2.5 pl-2.5"
+            {/* Avatar — clicking opens profile drawer */}
+            <button
+              onClick={() => setProfileOpen(true)}
+              className="flex items-center gap-2.5 pl-2.5 hover:opacity-80 transition-opacity"
               style={{ borderLeft: "1px solid #f1f2f4" }}
+              title="My Profile"
             >
               <div
                 className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
                 style={{
-                  background: "linear-gradient(135deg, #166534, #15803d)",
+                  background: "linear-gradient(135deg,#166534,#15803d)",
                 }}
               >
                 {initials}
@@ -461,12 +452,15 @@ export default function ReceptionistLayout({
                   Receptionist
                 </p>
               </div>
-            </div>
+            </button>
           </div>
         </header>
 
         <main className="flex-1 p-6 overflow-y-auto">{children}</main>
       </div>
+
+      {/* ── Profile drawer ────────────────────────────────────────────────── */}
+      <ProfileDrawer open={profileOpen} onClose={() => setProfileOpen(false)} />
     </div>
   );
 }

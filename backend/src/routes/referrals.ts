@@ -859,6 +859,76 @@ export const referralRouter = createRouter()
             return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
         }
     })
+    // ── ADD THIS to backend/src/routes/referrals.ts ──────────────────────────────
+    // Paste before the final semicolon at the bottom of the file.
+    // This is the patient-facing endpoint used by the mobile app.
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // GET /my  — Patient's own referrals (mobile app)
+    // ══════════════════════════════════════════════════════════════════════════
+    .openapi(createRoute({
+        tags: ['Referrals'],
+        summary: 'Get my referrals (patient)',
+        method: 'get',
+        path: '/my',
+        security: [{ bearerAuth: [] }],
+        middleware: [authMiddleware],
+        request: {
+            query: z.object({
+                status: z.string().optional(),
+                limit: z.string().regex(/^\d+$/).transform(Number).optional().default('50'),
+                offset: z.string().regex(/^\d+$/).transform(Number).optional().default('0'),
+            }),
+        },
+        responses: {
+            200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } }, description: 'My referrals' },
+            403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+            500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+        },
+    }), async (c) => {
+        try {
+            const userType = c.get('userType');
+            const userId = c.get('userId');
+
+            if (userType !== 'patient')
+                return c.json({ success: false, error: { message: 'Patients only' } }, 403);
+
+            const { status, limit, offset } = c.req.valid('query');
+
+            const conditions: any[] = [eq(referrals.patientId, userId)];
+            if (status) conditions.push(eq(referrals.status, status as any));
+
+            const rows = await db
+                .select({
+                    id: referrals.id,
+                    referralNumber: referrals.referralNumber,
+                    reason: referrals.reason,
+                    clinicalSummary: referrals.clinicalSummary,
+                    urgency: referrals.urgency,
+                    status: referrals.status,
+                    referredAt: referrals.referredAt,
+                    acceptedAt: referrals.acceptedAt,
+                    completedAt: referrals.completedAt,
+                    responseNotes: referrals.responseNotes,
+                    receivingInstitutionName: institutions.institutionName,
+                    receivingInstitutionId: referrals.receivingInstitutionId,
+                })
+                .from(referrals)
+                .innerJoin(institutions, eq(institutions.id, referrals.receivingInstitutionId))
+                .where(and(...conditions))
+                .orderBy(desc(referrals.referredAt))
+                .limit(limit)
+                .offset(offset);
+
+            return c.json({
+                success: true,
+                data: { referrals: rows, total: rows.length },
+            });
+        } catch (err: any) {
+            console.error('[REFERRAL_MY]', err);
+            return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+        }
+    })
 
     // ══════════════════════════════════════════════════════════════════════════
     // PATCH /:referralId/complete

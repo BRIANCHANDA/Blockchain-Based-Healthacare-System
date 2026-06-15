@@ -8,12 +8,12 @@ import {
   RefreshControl,
   Alert,
   StatusBar,
+  Platform,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { MaterialIcons as Icon } from "@expo/vector-icons";
-import Toast from "react-native-toast-message";
+import { MaterialIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Toast from "react-native-toast-message";
 
 import {
   getAccessRequests,
@@ -25,20 +25,52 @@ import LoadingSpinner from "../../components/common/LoadingSpinner";
 
 type Props = NativeStackScreenProps<AccessStackParamList, "AccessRequests">;
 
-const ROLE_META: Record<string, { icon: string; color: string; bg: string }> = {
-  practitioner: { icon: "medical-services", color: "#0A6640", bg: "#E6F4EE" },
-  nurse: { icon: "local-hospital", color: "#1A6B8A", bg: "#E3F2F8" },
-  lab_technician: { icon: "biotech", color: "#6D28D9", bg: "#EDE9FE" },
-  radiologist: { icon: "medication", color: "#C9952A", bg: "#FDF3DC" },
-  pharmacist: { icon: "medication", color: "#047857", bg: "#ECFDF5" },
+// ── Design tokens ────────────────────────────────────────────────────────────
+const C = {
+  primary: "#059669",
+  primaryDark: "#047857",
+  primaryGhost: "#ECFDF5",
+  primaryLight: "#D1FAE5",
+  coral: "#FF5757",
+  coralLight: "#FFE4E4",
+  amber: "#F59E0B",
+  amberLight: "#FEF3C7",
+  blue: "#3B82F6",
+  blueLight: "#DBEAFE",
+  violet: "#8B5CF6",
+  violetLight: "#EDE9FE",
+  ink: "#0A0E1A",
+  inkSoft: "#4B5563",
+  inkMuted: "#9CA3AF",
+  inkSubtle: "#D1D5DB",
+  bg: "#FAFAFB",
+  bgAlt: "#F4F5F7",
+  card: "#FFFFFF",
+  cardBorder: "#E5E7EB",
+  divider: "#F3F4F6",
+};
+
+const ROLE_META: Record<
+  string,
+  { icon: keyof typeof MaterialIcons.glyphMap; color: string; bg: string }
+> = {
+  practitioner: {
+    icon: "medical-services",
+    color: C.primary,
+    bg: C.primaryGhost,
+  },
+  nurse: { icon: "local-hospital", color: C.blue, bg: C.blueLight },
+  lab_technician: { icon: "biotech", color: C.violet, bg: C.violetLight },
+  radiologist: { icon: "image-search", color: C.amber, bg: C.amberLight },
+  pharmacist: { icon: "medication", color: C.primary, bg: C.primaryGhost },
 };
 
 export default function AccessRequestsScreen({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actioning, setActioning] = useState<string | null>(null);
-  const insets = useSafeAreaInsets();
 
   const fetchRequests = useCallback(async () => {
     try {
@@ -94,24 +126,24 @@ export default function AccessRequestsScreen({ navigation }: Props) {
 
   const handleReject = (req: any) => {
     Alert.alert(
-      "Reject Request",
+      "Decline Request",
       `Deny access for ${req.requesterName ?? "this clinician"}?`,
       [
         { text: "Cancel", style: "cancel" },
         {
-          text: "Reject",
+          text: "Decline",
           style: "destructive",
           onPress: async () => {
             setActioning(req.id);
             try {
               await rejectAccessRequest(req.id);
-              Toast.show({ type: "success", text1: "Request Rejected" });
+              Toast.show({ type: "success", text1: "Request Declined" });
               setRequests((prev) => prev.filter((r) => r.id !== req.id));
             } catch {
               Toast.show({
                 type: "error",
                 text1: "Error",
-                text2: "Could not reject request",
+                text2: "Could not decline request",
               });
             } finally {
               setActioning(null);
@@ -127,15 +159,15 @@ export default function AccessRequestsScreen({ navigation }: Props) {
   if (loading) return <LoadingSpinner message="Loading access requests…" />;
 
   return (
-    <View style={styles.wrapper}>
-      <StatusBar barStyle="light-content" backgroundColor="#0A6640" />
+    <View style={styles.root}>
+      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
-      {/* Header */}
-      <View style={[styles.header, { paddingTop: insets.top + 8 }]}>
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.headerTitle}>Access Requests</Text>
-            <Text style={styles.headerSub}>
+      {/* ── Header ── */}
+      <View style={[styles.headerBar, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.headerTopRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.greeting}>Access Requests</Text>
+            <Text style={styles.subgreeting}>
               Review who wants to see your records
             </Text>
           </View>
@@ -146,17 +178,23 @@ export default function AccessRequestsScreen({ navigation }: Props) {
           )}
         </View>
 
-        {/* Tab switcher */}
+        {/* ── Tab pills ── */}
         <View style={styles.tabRow}>
           <View style={styles.tabActive}>
-            <Icon name="notifications" size={14} color="#0A6640" />
+            <MaterialIcons name="notifications" size={14} color="#fff" />
             <Text style={styles.tabActiveText}>Requests</Text>
+            {pending.length > 0 && (
+              <View style={styles.tabBadge}>
+                <Text style={styles.tabBadgeText}>{pending.length}</Text>
+              </View>
+            )}
           </View>
           <TouchableOpacity
             style={styles.tabInactive}
             onPress={() => navigation.navigate("WhoHasAccess")}
+            activeOpacity={0.7}
           >
-            <Icon name="group" size={14} color="#8AA89C" />
+            <MaterialIcons name="group" size={14} color={C.inkSoft} />
             <Text style={styles.tabInactiveText}>Has Access</Text>
           </TouchableOpacity>
         </View>
@@ -165,23 +203,28 @@ export default function AccessRequestsScreen({ navigation }: Props) {
       <FlatList
         data={pending}
         keyExtractor={(r) => r.id}
-        contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
+        contentContainerStyle={styles.listContent}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={["#0A6640"]}
+            colors={[C.primary]}
+            tintColor={C.primary}
           />
         }
         ListEmptyComponent={
           <View style={styles.empty}>
             <View style={styles.emptyIcon}>
-              <Icon name="check-circle" size={36} color="#0A6640" />
+              <MaterialIcons
+                name="check-circle-outline"
+                size={36}
+                color={C.primary}
+              />
             </View>
-            <Text style={styles.emptyTitle}>All clear!</Text>
-            <Text style={styles.emptyText}>
-              No pending access requests at this time
+            <Text style={styles.emptyTitle}>All caught up</Text>
+            <Text style={styles.emptyBody}>
+              No pending access requests at this time.
             </Text>
           </View>
         }
@@ -189,13 +232,16 @@ export default function AccessRequestsScreen({ navigation }: Props) {
           const role =
             ROLE_META[item.requestedByUserType] ?? ROLE_META.practitioner;
           const isActioning = actioning === item.id;
-
           return (
             <View style={styles.card}>
-              {/* Provider info */}
+              {/* Provider row */}
               <View style={styles.providerRow}>
                 <View style={[styles.roleIcon, { backgroundColor: role.bg }]}>
-                  <Icon name={role.icon as any} size={22} color={role.color} />
+                  <MaterialIcons
+                    name={role.icon}
+                    size={22}
+                    color={role.color}
+                  />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.providerName}>
@@ -213,15 +259,19 @@ export default function AccessRequestsScreen({ navigation }: Props) {
 
               {/* Reason */}
               <View style={styles.reasonBox}>
-                <Icon name="format-quote" size={16} color="#8AA89C" />
+                <MaterialIcons
+                  name="format-quote"
+                  size={16}
+                  color={C.inkMuted}
+                />
                 <Text style={styles.reasonText}>
                   {item.reason ?? "Access requested for clinical review"}
                 </Text>
               </View>
 
-              {/* Expiry */}
+              {/* Meta */}
               <View style={styles.metaRow}>
-                <Icon name="schedule" size={13} color="#8AA89C" />
+                <MaterialIcons name="schedule" size={13} color={C.inkMuted} />
                 <Text style={styles.metaText}>
                   Requested until{" "}
                   {new Date(item.expiresAt).toLocaleDateString("en-GB", {
@@ -238,17 +288,18 @@ export default function AccessRequestsScreen({ navigation }: Props) {
                   style={[styles.rejectBtn, isActioning && styles.btnDisabled]}
                   onPress={() => handleReject(item)}
                   disabled={isActioning}
+                  activeOpacity={0.7}
                 >
-                  <Icon name="close" size={16} color="#C0392B" />
+                  <MaterialIcons name="close" size={16} color={C.coral} />
                   <Text style={styles.rejectBtnText}>Decline</Text>
                 </TouchableOpacity>
-
                 <TouchableOpacity
                   style={[styles.approveBtn, isActioning && styles.btnDisabled]}
                   onPress={() => handleApprove(item)}
                   disabled={isActioning}
+                  activeOpacity={0.9}
                 >
-                  <Icon name="check" size={16} color="#fff" />
+                  <MaterialIcons name="check" size={16} color="#fff" />
                   <Text style={styles.approveBtnText}>Approve</Text>
                 </TouchableOpacity>
               </View>
@@ -260,44 +311,55 @@ export default function AccessRequestsScreen({ navigation }: Props) {
   );
 }
 
+// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  wrapper: { flex: 1, backgroundColor: "#F0F5F2" },
+  root: { flex: 1, backgroundColor: C.bg },
 
-  header: {
-    backgroundColor: "#0A6640",
+  // ── Header ──
+  headerBar: {
     paddingHorizontal: 20,
-    paddingBottom: 0,
+    paddingBottom: 16,
   },
-  headerRow: {
+  headerTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
+    alignItems: "center",
     marginBottom: 16,
   },
-  headerTitle: {
-    fontSize: 22,
+  greeting: {
+    fontSize: 28,
     fontWeight: "800",
-    color: "#fff",
-    letterSpacing: -0.4,
+    color: C.ink,
+    letterSpacing: -0.8,
   },
-  headerSub: { fontSize: 13, color: "rgba(255,255,255,0.65)", marginTop: 3 },
+  subgreeting: {
+    fontSize: 14,
+    color: C.inkMuted,
+    marginTop: 2,
+    fontWeight: "500",
+  },
   badge: {
-    minWidth: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#C9952A",
+    minWidth: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: C.amber,
     justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 8,
+    paddingHorizontal: 10,
   },
-  badgeText: { fontSize: 13, fontWeight: "800", color: "#fff" },
+  badgeText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#fff",
+  },
 
+  // ── Tabs (DS segmented control: white card on inset gray bg) ──
   tabRow: {
     flexDirection: "row",
-    backgroundColor: "rgba(255,255,255,0.12)",
-    borderRadius: 10,
-    padding: 3,
-    marginBottom: 0,
+    backgroundColor: C.bgAlt,
+    borderRadius: 12,
+    padding: 4,
+    gap: 4,
   },
   tabActive: {
     flex: 1,
@@ -305,147 +367,217 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    paddingVertical: 9,
-    marginBottom: -1,
+    backgroundColor: C.card,
+    borderRadius: 9,
+    paddingVertical: 10,
+    ...Platform.select({
+      ios: {
+        shadowColor: "#0A0E1A",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.06,
+        shadowRadius: 3,
+      },
+      android: { elevation: 2 },
+    }),
   },
-  tabActiveText: { fontSize: 13, fontWeight: "700", color: "#0A6640" },
+  tabActiveText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: C.ink,
+    letterSpacing: -0.1,
+  },
+  tabBadge: {
+    backgroundColor: C.amber,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    minWidth: 18,
+    alignItems: "center",
+  },
+  tabBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#fff",
+  },
   tabInactive: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    paddingVertical: 9,
+    paddingVertical: 10,
   },
   tabInactiveText: {
     fontSize: 13,
-    fontWeight: "600",
-    color: "rgba(255,255,255,0.7)",
+    fontWeight: "700",
+    color: C.inkSoft,
+    letterSpacing: -0.1,
   },
 
-  empty: { alignItems: "center", marginTop: 60, paddingHorizontal: 32 },
+  // ── List ──
+  listContent: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 110,
+  },
+
+  empty: {
+    alignItems: "center",
+    marginTop: 80,
+    paddingHorizontal: 40,
+  },
   emptyIcon: {
-    width: 72,
-    height: 72,
-    borderRadius: 20,
-    backgroundColor: "#E6F4EE",
+    width: 80,
+    height: 80,
+    borderRadius: 24,
+    backgroundColor: C.primaryGhost,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 20,
   },
   emptyTitle: {
-    fontSize: 17,
-    fontWeight: "700",
-    color: "#0D1F17",
+    fontSize: 20,
+    fontWeight: "800",
+    color: C.ink,
     marginBottom: 6,
+    letterSpacing: -0.4,
   },
-  emptyText: {
-    fontSize: 13,
-    color: "#8AA89C",
+  emptyBody: {
+    fontSize: 14,
+    color: C.inkSoft,
     textAlign: "center",
-    lineHeight: 19,
+    lineHeight: 21,
+    fontWeight: "500",
   },
 
+  // ── Card ──
   card: {
-    backgroundColor: "#fff",
-    borderRadius: 16,
+    backgroundColor: C.card,
+    borderRadius: 18,
     padding: 16,
     marginBottom: 12,
-    shadowColor: "#0A6640",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 8,
-    elevation: 3,
+    borderWidth: 1,
+    borderColor: C.cardBorder,
   },
+
   providerRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    marginBottom: 12,
+    marginBottom: 14,
   },
   roleIcon: {
-    width: 46,
-    height: 46,
-    borderRadius: 13,
+    width: 48,
+    height: 48,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
   },
-  providerName: { fontSize: 15, fontWeight: "700", color: "#0D1F17" },
-  providerRole: {
-    fontSize: 11,
-    color: "#8AA89C",
-    marginTop: 2,
-    fontWeight: "600",
-    letterSpacing: 0.5,
+  providerName: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: C.ink,
+    letterSpacing: -0.3,
   },
+  providerRole: {
+    fontSize: 10,
+    color: C.inkMuted,
+    marginTop: 2,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+  },
+
   pendingPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "#FDF3DC",
-    paddingHorizontal: 8,
+    backgroundColor: C.amberLight,
+    paddingHorizontal: 9,
     paddingVertical: 4,
-    borderRadius: 20,
+    borderRadius: 8,
   },
   pendingDot: {
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: "#C9952A",
+    backgroundColor: C.amber,
   },
-  pendingText: { fontSize: 11, fontWeight: "700", color: "#C9952A" },
+  pendingText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: C.amber,
+    letterSpacing: 0.3,
+  },
 
   reasonBox: {
     flexDirection: "row",
     alignItems: "flex-start",
     gap: 8,
-    backgroundColor: "#F7FAF8",
-    borderRadius: 10,
-    padding: 10,
-    marginBottom: 10,
+    backgroundColor: C.bg,
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: C.divider,
   },
   reasonText: {
     fontSize: 13,
-    color: "#4A6357",
+    color: C.inkSoft,
     fontStyle: "italic",
     flex: 1,
-    lineHeight: 18,
+    lineHeight: 19,
+    fontWeight: "500",
   },
 
   metaRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
+    gap: 6,
     marginBottom: 14,
   },
-  metaText: { fontSize: 12, color: "#8AA89C" },
+  metaText: {
+    fontSize: 12,
+    color: C.inkMuted,
+    fontWeight: "500",
+  },
 
-  actions: { flexDirection: "row", gap: 10 },
+  actions: {
+    flexDirection: "row",
+    gap: 10,
+  },
   rejectBtn: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    paddingVertical: 11,
-    borderRadius: 10,
-    backgroundColor: "#FDECEA",
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: C.coralLight,
     borderWidth: 1,
-    borderColor: "#F5C6C6",
+    borderColor: "#FECACA",
   },
-  rejectBtnText: { fontSize: 14, fontWeight: "700", color: "#C0392B" },
+  rejectBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: C.coral,
+    letterSpacing: -0.1,
+  },
   approveBtn: {
     flex: 1.5,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 6,
-    paddingVertical: 11,
-    borderRadius: 10,
-    backgroundColor: "#0A6640",
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: C.ink,
   },
-  approveBtnText: { fontSize: 14, fontWeight: "700", color: "#fff" },
+  approveBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#fff",
+    letterSpacing: -0.1,
+  },
   btnDisabled: { opacity: 0.5 },
 });

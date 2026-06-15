@@ -6,58 +6,58 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
-  Dimensions,
   Pressable,
+  StatusBar,
 } from "react-native";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { MaterialIcons } from "@expo/vector-icons";
 import Toast from "react-native-toast-message";
-import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import Input from "../../components/common/Input";
-import Button from "../../components/common/Button";
 import { loginPatient } from "../../api/auth";
 import { useAuthStore } from "../../store/authStore";
 import { AuthStackParamList } from "../../types";
 
-const { width } = Dimensions.get("window");
+// Zambian NRC format: 123456/78/1
+function formatNRC(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 9);
+  if (digits.length <= 6) return digits;
+  if (digits.length <= 8) return `${digits.slice(0, 6)}/${digits.slice(6)}`;
+  return `${digits.slice(0, 6)}/${digits.slice(6, 8)}/${digits.slice(8)}`;
+}
 
 const schema = z.object({
-  nationalId: z.string().min(4, "Enter your National ID"),
+  nationalId: z
+    .string()
+    .regex(/^\d{6}\/\d{2}\/\d{1,2}$/, "Format: 123456/78/1"),
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
 type FormData = z.infer<typeof schema>;
 type Props = NativeStackScreenProps<AuthStackParamList, "Login">;
 
-// ── Design tokens ────────────────────────────────────────────────────────────
+// ── Design tokens (DS) ───────────────────────────────────────────────────────
 const C = {
-  // Core
-  ink: "#1A1D2E",
-  inkSoft: "#5A5F7A",
-  inkMuted: "#9498B3",
-  // Brand
-  teal: "#0D9488",
-  tealDark: "#0F766E",
-  tealLight: "#CCFBF1",
-  tealGhost: "#F0FDFA",
-  // Accent
-  amber: "#F59E0B",
-  coral: "#F87171",
-  // Surface
-  bg: "#F8F9FC",
+  brand: "#059669",
+  brandDeep: "#047857",
+  brandTint: "#ECFDF5",
+  brandFill: "#D1FAE5",
+  ink: "#0A0E1A",
+  inkSoft: "#4B5563",
+  inkMuted: "#9CA3AF",
+  bg: "#FAFAFB",
   card: "#FFFFFF",
-  cardBorder: "#E8EAF0",
-  // Input
-  inputBg: "#F4F5F9",
-  inputBorder: "#DFE1EA",
-  inputFocus: "#0D9488",
+  cardBorder: "#E5E7EB",
+  critical: "#FF5757",
 };
 
 export default function LoginScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
   const setAuth = useAuthStore((s) => s.setAuth);
+  const insets = useSafeAreaInsets();
 
   const {
     control,
@@ -76,302 +76,244 @@ export default function LoginScreen({ navigation }: Props) {
     } catch (err: any) {
       const msg =
         err.response?.data?.error?.message ??
-        "Login failed. Check your credentials.";
-      Toast.show({ type: "error", text1: "Login Failed", text2: msg });
+        "Invalid credentials. Please try again.";
+      Toast.show({ type: "error", text1: "Sign-in failed", text2: msg });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scroll}
-        keyboardShouldPersistTaps="handled"
-      >
-        {/* ── Top visual ── */}
-        <LinearGradient
-          colors={["#0F766E", "#0D9488", "#14B8A6"]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.hero}
-        >
-          {/* Decorative circles */}
-          <View style={[styles.deco, styles.deco1]} />
-          <View style={[styles.deco, styles.deco2]} />
-          <View style={[styles.deco, styles.deco3]} />
+    <View style={{ flex: 1, backgroundColor: C.card }}>
+      <StatusBar barStyle="dark-content" backgroundColor={C.card} />
 
-          {/* Logo */}
-          <View style={styles.logoWrap}>
-            <View style={styles.logoIcon}>
-              <Text style={styles.logoPlus}>+</Text>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={[
+            styles.scroll,
+            { paddingTop: insets.top + 28, paddingBottom: insets.bottom + 32 },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* ── Logo + wordmark ── */}
+          <View style={styles.brandBlock}>
+            <View style={styles.logoWrap}>
+              <View style={styles.logoBox}>
+                <MaterialIcons
+                  name="health-and-safety"
+                  size={36}
+                  color={C.brand}
+                />
+              </View>
+            </View>
+            <Text style={styles.wordmark}>
+              Med<Text style={{ color: C.brand }}>Link</Text>
+            </Text>
+            <Text style={styles.tagline}>
+              Your medical records, owned by you and unlocked only with your
+              permission.
+            </Text>
+          </View>
+
+          {/* ── Form ── */}
+          <View style={styles.formWrap}>
+            <Controller
+              control={control}
+              name="nationalId"
+              render={({ field: { onChange, value } }) => (
+                <Input
+                  label="National ID (NRC)"
+                  placeholder="123456/78/1"
+                  value={value}
+                  onChangeText={(text) => onChange(formatNRC(text))}
+                  keyboardType="number-pad"
+                  autoCapitalize="none"
+                  error={errors.nationalId?.message}
+                />
+              )}
+            />
+
+            <Controller
+              control={control}
+              name="password"
+              render={({ field: { onChange, value } }) => (
+                <Input
+                  label="Password"
+                  placeholder="Enter your password"
+                  value={value}
+                  onChangeText={onChange}
+                  secureTextEntry
+                  secureToggle
+                  error={errors.password?.message}
+                />
+              )}
+            />
+
+            <View style={styles.forgotRow}>
+              <Pressable>
+                <Text style={styles.forgotText}>Forgot password?</Text>
+              </Pressable>
+            </View>
+
+            {/* Primary CTA — brand green per DS */}
+            <Pressable
+              onPress={handleSubmit(onSubmit)}
+              disabled={loading}
+              style={({ pressed }) => [
+                styles.signInBtn,
+                pressed && { opacity: 0.92, transform: [{ scale: 0.97 }] },
+                loading && { opacity: 0.6 },
+              ]}
+            >
+              {loading ? (
+                <MaterialIcons name="autorenew" size={20} color="#fff" />
+              ) : null}
+              <Text style={styles.signInText}>
+                {loading ? "Signing in…" : "Sign in"}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View style={{ flex: 1 }} />
+
+          {/* ── Trust badges ── */}
+          <View style={styles.trustRow}>
+            <View style={styles.trustChip}>
+              <MaterialIcons name="lock" size={12} color={C.brand} />
+              <Text style={styles.trustText}>MedLink-secured</Text>
+            </View>
+            <View style={styles.trustChip}>
+              <MaterialIcons name="verified-user" size={12} color={C.brand} />
+              <Text style={styles.trustText}>End-to-end encrypted</Text>
             </View>
           </View>
-          <Text style={styles.brand}>MedLink</Text>
-          <View style={styles.countryPill}>
-            <View style={styles.countryDot} />
-            <Text style={styles.countryText}>ZAMBIA</Text>
-          </View>
-          <Text style={styles.tagline}>
-            Your health records, secured on MedLink
-          </Text>
-        </LinearGradient>
 
-        {/* ── Form card ── */}
-        <View style={styles.formCard}>
-          <Text style={styles.formTitle}>Welcome back</Text>
-          <Text style={styles.formSub}>
-            Sign in to access your medical records
-          </Text>
-
-          <Controller
-            control={control}
-            name="nationalId"
-            render={({ field: { onChange, value } }) => (
-              <Input
-                label="National ID"
-                placeholder="e.g. 123456/78/9"
-                value={value}
-                onChangeText={onChange}
-                autoCapitalize="characters"
-                error={errors.nationalId?.message}
-              />
-            )}
-          />
-
-          <Controller
-            control={control}
-            name="password"
-            render={({ field: { onChange, value } }) => (
-              <Input
-                label="Password"
-                placeholder="Enter your password"
-                value={value}
-                onChangeText={onChange}
-                secureTextEntry
-                secureToggle
-                error={errors.password?.message}
-              />
-            )}
-          />
-
-          {/* Sign in button */}
-          <Pressable
-            onPress={handleSubmit(onSubmit)}
-            disabled={loading}
-            style={({ pressed }) => [
-              styles.signInBtn,
-              pressed && { opacity: 0.92, transform: [{ scale: 0.99 }] },
-              loading && { opacity: 0.7 },
-            ]}
-          >
-            <LinearGradient
-              colors={["#0F766E", "#0D9488"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.signInGradient}
-            >
-              <Text style={styles.signInText}>
-                {loading ? "Signing in…" : "Sign In"}
-              </Text>
-            </LinearGradient>
-          </Pressable>
-
-          {/* Divider */}
-          <View style={styles.dividerRow}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>Secured by MedLink Security</Text>
-            <View style={styles.dividerLine} />
-          </View>
-        </View>
-
-        {/* Footer */}
-        <Text style={styles.footer}>
-          MedLink © {new Date().getFullYear()} · Zambia
-        </Text>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          <Text style={styles.footer}>MedLink · Zambia · v1.0.0</Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   scroll: {
     flexGrow: 1,
-    backgroundColor: C.bg,
+    paddingHorizontal: 24,
   },
 
-  // ── Hero ──
-  hero: {
-    paddingTop: Platform.OS === "ios" ? 70 : 50,
-    paddingBottom: 48,
+  // ── Brand block ──
+  brandBlock: {
     alignItems: "center",
-    overflow: "hidden",
-    borderBottomLeftRadius: 32,
-    borderBottomRightRadius: 32,
+    textAlign: "center",
+    paddingTop: 8,
+    paddingBottom: 40,
   },
-  deco: {
-    position: "absolute",
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-  },
-  deco1: { width: 200, height: 200, top: -60, right: -40 },
-  deco2: { width: 140, height: 140, bottom: -30, left: -30 },
-  deco3: {
-    width: 80,
-    height: 80,
-    top: 40,
-    left: 50,
-    backgroundColor: "rgba(255,255,255,0.06)",
-  },
-
-  logoWrap: { marginBottom: 14 },
-  logoIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.35)",
+  logoWrap: {
+    width: 84,
+    height: 84,
+    borderRadius: 24,
+    backgroundColor: "#ECFDF5",
+    alignItems: "center",
     justifyContent: "center",
+    marginBottom: 20,
+  },
+  logoBox: {
+    width: 56,
+    height: 56,
     alignItems: "center",
+    justifyContent: "center",
   },
-  logoPlus: {
-    fontSize: 32,
-    fontWeight: "300",
-    color: "#fff",
-    marginTop: -2,
-  },
-  brand: {
-    fontSize: 26,
-    fontWeight: "800",
-    color: "#fff",
-    letterSpacing: -0.6,
-  },
-  countryPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    marginTop: 6,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 20,
-  },
-  countryDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    backgroundColor: "#6FCF97",
-  },
-  countryText: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: "rgba(255,255,255,0.85)",
-    letterSpacing: 2,
+  wordmark: {
+    fontSize: 30,
+    fontWeight: "600",
+    color: "#0A0E1A",
+    letterSpacing: -0.3,
+    marginBottom: 8,
   },
   tagline: {
-    fontSize: 13,
-    color: "rgba(255,255,255,0.6)",
-    marginTop: 10,
-    fontWeight: "500",
+    fontSize: 15,
+    color: "#4B5563",
+    textAlign: "center",
+    lineHeight: 22,
+    maxWidth: 280,
   },
 
-  // ── Form card ──
-  formCard: {
-    backgroundColor: C.card,
-    marginHorizontal: 20,
-    marginTop: -24,
-    borderRadius: 24,
-    padding: 24,
+  // ── Form ──
+  formWrap: {
+    gap: 4,
+  },
+  forgotRow: {
+    alignItems: "flex-end",
+    marginTop: -2,
+    marginBottom: 4,
+  },
+  forgotText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#059669",
+  },
+
+  // ── CTA button — brand green per DS ──
+  signInBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#059669",
+    paddingVertical: 17,
+    borderRadius: 14,
+    marginTop: 12,
     ...Platform.select({
       ios: {
-        shadowColor: "#0D1F17",
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.08,
-        shadowRadius: 24,
+        shadowColor: "#059669",
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.22,
+        shadowRadius: 20,
       },
       android: { elevation: 6 },
     }),
   },
-  formTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: C.ink,
-    letterSpacing: -0.4,
-  },
-  formSub: {
-    fontSize: 13,
-    color: C.inkSoft,
-    marginTop: 4,
-    marginBottom: 24,
-  },
-
-  // ── Button ──
-  signInBtn: {
-    marginTop: 12,
-    borderRadius: 14,
-    overflow: "hidden",
-  },
-  signInGradient: {
-    paddingVertical: 15,
-    alignItems: "center",
-    borderRadius: 14,
-  },
   signInText: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#fff",
-    letterSpacing: 0.3,
-  },
-
-  // ── Divider ──
-  dividerRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 22,
-    marginBottom: 16,
-    gap: 10,
-  },
-  dividerLine: { flex: 1, height: 1, backgroundColor: "#EEEEF2" },
-  dividerText: {
-    fontSize: 10,
+    fontSize: 16,
     fontWeight: "600",
-    color: C.inkMuted,
-    letterSpacing: 0.5,
+    color: "#fff",
+    letterSpacing: 0.1,
   },
 
   // ── Trust ──
   trustRow: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: 10,
+    gap: 8,
+    marginTop: 36,
+    flexWrap: "wrap",
   },
   trustChip: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: C.tealGhost,
+    gap: 5,
+    backgroundColor: "#ECFDF5",
     paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingVertical: 6,
     borderRadius: 8,
   },
-  trustLabel: {
-    fontSize: 10,
+  trustText: {
+    fontSize: 11,
     fontWeight: "700",
-    color: C.tealDark,
-    letterSpacing: 0.3,
+    color: "#047857",
+    letterSpacing: 0.1,
   },
 
   // ── Footer ──
   footer: {
     textAlign: "center",
-    fontSize: 11,
-    color: C.inkMuted,
-    marginTop: 24,
-    marginBottom: 32,
+    fontSize: 12,
+    color: "#9CA3AF",
+    fontWeight: "500",
+    marginTop: 16,
   },
 });

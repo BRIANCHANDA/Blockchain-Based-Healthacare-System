@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { ProfileDrawer } from "@/components/ProfileDrawer";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
 import {
@@ -13,6 +14,7 @@ import {
   Bell,
   Heart,
   Building2,
+  Users,
   FlaskConical,
 } from "lucide-react";
 
@@ -23,7 +25,8 @@ const navItems = [
     href: "/dashboard/laboratory/queue",
     icon: ClipboardList,
   },
-  { label: "Patients", href: "/dashboard/laboratory/patients", icon: History },
+  { label: "My Results", href: "/dashboard/laboratory/history", icon: History },
+  { label: "Patients", href: "/dashboard/laboratory/patients", icon: Users },
 ];
 
 export default function LaboratoryLayout({
@@ -35,6 +38,7 @@ export default function LaboratoryLayout({
   const pathname = usePathname();
   const { user, isAuthenticated, clearAuth, initFromStorage } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
@@ -109,7 +113,7 @@ export default function LaboratoryLayout({
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-white font-bold text-sm leading-tight tracking-tight">
-                HealthChain
+                MedLink
               </p>
               <p className="text-green-400/70 text-xs">Zambia · EMR</p>
             </div>
@@ -139,7 +143,7 @@ export default function LaboratoryLayout({
             <div
               className="flex items-start gap-2 px-3 py-2.5 rounded-xl"
               style={{
-                background: "rgba(134,239,172,0.07)",
+                background: "rgba(75, 122, 92, 0.07)",
                 border: "1px solid rgba(134,239,172,0.12)",
               }}
             >
@@ -151,11 +155,6 @@ export default function LaboratoryLayout({
                 <p className="text-green-100 text-xs font-semibold leading-snug truncate">
                   {institutionName ?? "Unknown Hospital"}
                 </p>
-                {institutionId && (
-                  <p className="text-green-400/40 text-[10px] font-mono mt-0.5 truncate">
-                    {institutionId.slice(0, 8)}…
-                  </p>
-                )}
               </div>
             </div>
           ) : (
@@ -335,7 +334,8 @@ export default function LaboratoryLayout({
 
             <div className="flex items-center gap-2.5 pl-2 border-l border-gray-100">
               <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                onClick={() => setProfileOpen(true)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white cursor-pointer hover:opacity-80 transition-opacity"
                 style={{
                   background: "linear-gradient(135deg, #166534, #15803d)",
                 }}
@@ -360,6 +360,8 @@ export default function LaboratoryLayout({
 
         <main className="flex-1 p-6 overflow-y-auto">{children}</main>
       </div>
+
+      <ProfileDrawer open={profileOpen} onClose={() => setProfileOpen(false)} />
     </div>
   );
 }

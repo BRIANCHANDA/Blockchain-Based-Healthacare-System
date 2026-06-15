@@ -1,79 +1,29 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
-import { api, practitionersApi, visitApi } from "@/lib/api";
+import { visitApi, pharmacyStatsApi } from "@/lib/api";
 import {
-  Activity,
-  ClipboardList,
-  ChevronRight,
-  AlertTriangle,
-  Users,
-  ArrowRight,
-  Zap,
-  Clock,
-  TrendingUp,
-  Stethoscope,
-  Loader2,
-  X,
-  UserCheck,
-  User,
+  Package,
+  Pill,
   CheckCircle2,
+  Clock,
+  AlertCircle,
+  ChevronRight,
+  ArrowRight,
+  RefreshCw,
   Building2,
+  TrendingDown,
+  ClipboardList,
+  History,
+  BarChart3,
 } from "lucide-react";
+import { format, formatDistanceToNow } from "date-fns";
 
-interface AssignedPatient {
-  id: string;
-  visitNumber: string;
-  patientName: string;
-  chiefComplaint: string;
-  priority: string;
-  status: string;
-  admissionDate: string;
-  assignedDoctorId?: string;
-  doctorName?: string | null;
-  hasVitals: boolean;
+function getGreeting() {
+  const h = new Date().getHours();
+  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
 }
-
-interface Doctor {
-  id: string;
-  firstName: string;
-  lastName: string;
-  specialization?: string | null;
-}
-
-const PRIORITY_CONFIG: Record<string, any> = {
-  critical: {
-    color: "#dc2626",
-    bg: "#fef2f2",
-    border: "#fecaca",
-    dot: "#ef4444",
-    label: "Critical",
-  },
-  emergency: {
-    color: "#ea580c",
-    bg: "#fff7ed",
-    border: "#fed7aa",
-    dot: "#f97316",
-    label: "Emergency",
-  },
-  urgent: {
-    color: "#d97706",
-    bg: "#fffbeb",
-    border: "#fde68a",
-    dot: "#f59e0b",
-    label: "Urgent",
-  },
-  routine: {
-    color: "#16a34a",
-    bg: "#f0fdf4",
-    border: "#bbf7d0",
-    dot: "#22c55e",
-    label: "Routine",
-  },
-};
-const getPriority = (p: string) =>
-  PRIORITY_CONFIG[p] ?? PRIORITY_CONFIG.routine;
 
 function timeSince(dateStr: string) {
   const mins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
@@ -81,98 +31,71 @@ function timeSince(dateStr: string) {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
-function getGreeting() {
-  const h = new Date().getHours();
-  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
-}
-
-export default function NurseOverview() {
+export default function PharmacyOverviewPage() {
   const router = useRouter();
   const { user } = useAuthStore();
 
-  const [patients, setPatients] = useState<AssignedPatient[]>([]);
+  const [pending, setPending] = useState<any[]>([]);
+  const [stats, setStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
-  const [showAssignModal, setShowAssignModal] = useState(false);
-  const [selectedVisit, setSelectedVisit] = useState<AssignedPatient | null>(
-    null,
-  );
-  const [doctors, setDoctors] = useState<Doctor[]>([]);
-  const [assigning, setAssigning] = useState(false);
-  const [assignError, setAssignError] = useState("");
-
-  const fetchAssignedPatients = async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (silent) setRefreshing(true);
+    else setLoading(true);
     try {
-      const res = await api.get("/api/visits/assigned-to-me");
-      setPatients(res.data.data ?? []);
-    } catch (err) {
-      console.error(err);
+      const [pendingRes, statsRes] = await Promise.allSettled([
+        (visitApi as any).getPendingPrescriptions(),
+        pharmacyStatsApi.getOverview(),
+      ]);
+
+      if (pendingRes.status === "fulfilled") {
+        const rows = pendingRes.value.data.data?.prescriptions ?? [];
+        setPending(rows);
+      }
+      if (statsRes.status === "fulfilled") {
+        setStats(statsRes.value.data.data);
+      }
+    } catch {
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  };
-
-  useEffect(() => {
-    fetchAssignedPatients();
   }, []);
 
-  const openAssignModal = async (visit: AssignedPatient) => {
-    setSelectedVisit(visit);
-    setAssignError("");
-    try {
-      const res = await practitionersApi.getOnlineStaff("practitioner");
-      setDoctors(res.data.data?.staff ?? []);
-      setShowAssignModal(true);
-    } catch {
-      setAssignError("Could not load doctors. Please try again.");
-    }
-  };
+  useEffect(() => {
+    load();
+    const iv = setInterval(() => load(true), 60_000);
+    return () => clearInterval(iv);
+  }, [load]);
 
-  const assignDoctor = async (doctorId: string) => {
-    if (!selectedVisit) return;
-    setAssigning(true);
-    try {
-      await visitApi.assignDoctor(selectedVisit.id, doctorId);
-      await fetchAssignedPatients();
-      setShowAssignModal(false);
-      setSelectedVisit(null);
-    } catch (err: any) {
-      setAssignError(
-        err.response?.data?.error?.message || "Failed to assign doctor.",
-      );
-    } finally {
-      setAssigning(false);
-    }
-  };
-
-  const criticalCount = patients.filter((p) =>
-    ["critical", "emergency"].includes(p.priority),
+  const longWaiting = pending.filter(
+    (p) =>
+      Date.now() - new Date(p.prescribedAt ?? p.prescribed_at).getTime() >
+      30 * 60 * 1000,
   ).length;
-  const urgentCount = patients.filter((p) => p.priority === "urgent").length;
-  const routineCount = patients.filter((p) => p.priority === "routine").length;
+
+  const totalPending = pending.length;
+  const dispensedToday = stats?.dispensedToday ?? 0;
+  const avgWaitMins = stats?.avgWaitMinutes ?? 0;
 
   return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      {/* ── Hero banner ── */}
+    <div style={{ fontFamily: "'DM Sans',sans-serif" }}>
+      {/* Hero */}
       <div
         className="relative rounded-3xl overflow-hidden mb-6 px-7 py-6"
         style={{
           background:
-            "linear-gradient(130deg, #0d4a1f 0%, #166534 55%, #15803d 100%)",
+            "linear-gradient(130deg,#052e16 0%,#166534 55%,#15803d 100%)",
         }}
       >
         <div
           className="absolute -right-8 -top-8 w-40 h-40 rounded-full opacity-10"
-          style={{
-            background: "radial-gradient(circle, #bbf7d0, transparent)",
-          }}
+          style={{ background: "radial-gradient(circle,#bbf7d0,transparent)" }}
         />
         <div
           className="absolute right-20 bottom-0 w-28 h-28 rounded-full opacity-5"
-          style={{
-            background: "radial-gradient(circle, #dcfce7, transparent)",
-          }}
+          style={{ background: "radial-gradient(circle,#dcfce7,transparent)" }}
         />
 
         <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -182,54 +105,44 @@ export default function NurseOverview() {
             </p>
             <h1
               className="text-white text-2xl font-bold leading-tight"
-              style={{ fontFamily: "'Playfair Display', serif" }}
+              style={{ fontFamily: "'Playfair Display',serif" }}
             >
               {user?.firstName} {user?.lastName}
             </h1>
-
-            {/* ── Institution name under greeting ── */}
             {user?.institutionName ? (
               <p
                 className="flex items-center gap-1.5 text-sm mt-1"
                 style={{ color: "rgba(187,247,208,0.65)" }}
               >
                 <Building2 className="w-3.5 h-3.5 flex-shrink-0" />
-                <span>{user.institutionName}</span>
-                {user.institutionId && (
-                  <span
-                    className="font-mono text-xs hidden sm:inline"
-                    style={{ color: "rgba(187,247,208,0.3)" }}
-                  >
-                    · {user.institutionId.slice(0, 8)}…
-                  </span>
-                )}
+                {user.institutionName}
               </p>
             ) : (
               <p className="flex items-center gap-1.5 text-sm mt-1 text-red-300/70">
                 <Building2 className="w-3.5 h-3.5" /> No institution assigned
               </p>
             )}
-
             <p className="text-green-200/50 text-sm mt-1.5">
-              {patients.length > 0
-                ? `${patients.length} assigned patient${patients.length !== 1 ? "s" : ""}${criticalCount > 0 ? ` · ${criticalCount} need immediate attention` : ""}`
-                : "No assigned patients"}
+              {loading
+                ? "Loading…"
+                : totalPending > 0
+                  ? `${totalPending} prescription${totalPending !== 1 ? "s" : ""} waiting${longWaiting > 0 ? ` · ${longWaiting} over 30min` : ""}`
+                  : "All prescriptions dispensed"}
             </p>
           </div>
-
           <div className="flex gap-2.5">
             <button
-              onClick={() => router.push("/dashboard/nurse/triage")}
+              onClick={() => router.push("/dashboard/pharmacy/queue")}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:scale-105"
               style={{
                 background: "rgba(255,255,255,0.15)",
                 border: "1px solid rgba(255,255,255,0.2)",
               }}
             >
-              <Activity className="w-4 h-4" /> Start Triage
+              <Pill className="w-4 h-4" /> Dispense Queue
             </button>
             <button
-              onClick={() => router.push("/dashboard/nurse/queue")}
+              onClick={() => router.push("/dashboard/pharmacy/inventory")}
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
               style={{
                 background: "rgba(0,0,0,0.2)",
@@ -237,46 +150,76 @@ export default function NurseOverview() {
                 border: "1px solid rgba(0,0,0,0.1)",
               }}
             >
-              <ClipboardList className="w-4 h-4" /> View Queue
+              <Package className="w-4 h-4" /> Inventory
+            </button>
+            <button
+              onClick={() => load(true)}
+              disabled={refreshing}
+              className="p-2.5 rounded-xl transition-all disabled:opacity-40"
+              style={{
+                background: "rgba(255,255,255,0.08)",
+                border: "1px solid rgba(255,255,255,0.1)",
+              }}
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 text-green-300 ${refreshing ? "animate-spin" : ""}`}
+              />
             </button>
           </div>
         </div>
       </div>
 
-      {/* ── Stat cards ── */}
+      {/* Long wait alert */}
+      {!loading && longWaiting > 0 && (
+        <div className="flex items-center gap-3 p-3.5 rounded-2xl mb-5 bg-amber-50 border border-amber-200">
+          <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+          <p className="text-sm font-semibold text-amber-800">
+            {longWaiting} prescription{longWaiting > 1 ? "s have" : " has"} been
+            waiting over 30 minutes
+          </p>
+          <button
+            onClick={() => router.push("/dashboard/pharmacy/queue")}
+            className="ml-auto text-xs font-bold text-amber-700 flex items-center gap-1 hover:underline whitespace-nowrap"
+          >
+            Dispense now <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
         {[
           {
-            label: "Assigned to Me",
-            value: patients.length,
-            color: "#166534",
-            bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
-            border: "#bbf7d0",
-            icon: Users,
-          },
-          {
-            label: "Critical/Emergency",
-            value: criticalCount,
-            color: "#dc2626",
-            bg: "linear-gradient(135deg,#fef2f2,#fee2e2)",
-            border: "#fecaca",
-            icon: AlertTriangle,
-          },
-          {
-            label: "Urgent",
-            value: urgentCount,
+            label: "Pending Rx",
+            value: loading ? null : totalPending,
             color: "#d97706",
             bg: "linear-gradient(135deg,#fffbeb,#fef3c7)",
             border: "#fde68a",
-            icon: Zap,
+            icon: Pill,
           },
           {
-            label: "Routine",
-            value: routineCount,
+            label: "Dispensed Today",
+            value: loading ? null : dispensedToday,
+            color: "#166534",
+            bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
+            border: "#bbf7d0",
+            icon: CheckCircle2,
+          },
+          {
+            label: "Avg Wait",
+            value: loading ? null : avgWaitMins > 0 ? `${avgWaitMins}m` : "—",
             color: "#1d4ed8",
             bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
             border: "#bfdbfe",
-            icon: ClipboardList,
+            icon: Clock,
+          },
+          {
+            label: "Long Waiting",
+            value: loading ? null : longWaiting,
+            color: "#dc2626",
+            bg: "linear-gradient(135deg,#fef2f2,#fee2e2)",
+            border: "#fecaca",
+            icon: AlertCircle,
           },
         ].map(({ label, value, color, bg, border, icon: Icon }) => (
           <div
@@ -306,7 +249,7 @@ export default function NurseOverview() {
               className="text-3xl font-extrabold leading-none"
               style={{ color }}
             >
-              {loading ? (
+              {value === null ? (
                 <span
                   className="inline-block w-7 h-7 rounded-lg animate-pulse"
                   style={{ background: `${color}20` }}
@@ -319,17 +262,17 @@ export default function NurseOverview() {
         ))}
       </div>
 
-      {/* ── Main content ── */}
+      {/* Main grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Patient list */}
+        {/* Pending prescriptions list */}
         <div className="lg:col-span-2">
           <div className="flex items-center justify-between mb-3">
             <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
-              My Assigned Patients
+              Pending Prescriptions
             </p>
-            {patients.length > 0 && (
+            {totalPending > 0 && (
               <button
-                onClick={() => router.push("/dashboard/nurse/queue")}
+                onClick={() => router.push("/dashboard/pharmacy/queue")}
                 className="text-xs font-semibold flex items-center gap-1"
                 style={{ color: "#166534" }}
               >
@@ -341,331 +284,196 @@ export default function NurseOverview() {
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
             {loading ? (
               <div className="divide-y divide-gray-50">
-                {[...Array(3)].map((_, i) => (
+                {[...Array(4)].map((_, i) => (
                   <div
                     key={i}
-                    className="flex items-center gap-3 px-5 py-4 animate-pulse"
+                    className="flex items-center gap-4 px-5 py-4 animate-pulse"
                   >
-                    <div className="w-2.5 h-2.5 rounded-full bg-gray-100" />
-                    <div className="flex-1">
-                      <div className="h-3.5 w-32 bg-gray-100 rounded" />
-                      <div className="h-3 w-48 bg-gray-100 rounded mt-1" />
+                    <div className="w-10 h-10 rounded-xl bg-gray-100 flex-shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3.5 w-36 bg-gray-100 rounded" />
+                      <div className="h-3 w-52 bg-gray-100 rounded" />
                     </div>
                     <div className="w-16 h-6 bg-gray-100 rounded-full" />
                   </div>
                 ))}
               </div>
-            ) : patients.length === 0 ? (
+            ) : pending.length === 0 ? (
               <div className="py-16 text-center">
-                <div
-                  className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3"
-                  style={{ background: "#f0fdf4" }}
-                >
-                  <TrendingUp className="w-5 h-5 text-green-400" />
+                <div className="w-12 h-12 rounded-2xl bg-green-50 flex items-center justify-center mx-auto mb-3">
+                  <CheckCircle2 className="w-5 h-5 text-green-400" />
                 </div>
-                <p className="text-sm font-semibold text-gray-500">
-                  No assigned patients
-                </p>
+                <p className="text-sm font-semibold text-gray-500">All clear</p>
                 <p className="text-xs text-gray-400 mt-1">
-                  The receptionist will assign patients to you
+                  No pending prescriptions
                 </p>
               </div>
             ) : (
               <div className="divide-y divide-gray-50">
-                {patients.map((p) => {
-                  const priority = getPriority(p.priority);
-                  const hasDoctor = !!p.assignedDoctorId;
-                  const triageDone = p.hasVitals === true;
+                {pending.slice(0, 6).map((rx: any) => {
+                  const prescribedAt = rx.prescribedAt ?? rx.prescribed_at;
+                  const waited = Date.now() - new Date(prescribedAt).getTime();
+                  const isOld = waited > 30 * 60 * 1000;
+                  const rxNum = rx.prescriptionNumber ?? rx.prescription_number;
+                  const visitNum = rx.visitNumber ?? rx.visit_number;
+                  const patientName =
+                    rx.patientName ?? rx.patient_name ?? "Unknown Patient";
+                  const pendingItems = rx.pendingItems ?? rx.pending_items ?? 0;
+                  const totalItems = rx.totalItems ?? rx.total_items ?? 0;
 
                   return (
-                    <div
-                      key={p.id}
-                      className="px-5 py-4 flex items-start gap-3"
+                    <button
+                      key={rx.id}
+                      onClick={() =>
+                        router.push(`/dashboard/pharmacy/queue/${rx.id}`)
+                      }
+                      className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors text-left group border-l-4"
+                      style={{ borderLeftColor: isOld ? "#f59e0b" : "#16a34a" }}
                     >
-                      <span className="relative flex h-2.5 w-2.5 mt-2 flex-shrink-0">
-                        <span
-                          className="relative inline-flex rounded-full h-2.5 w-2.5"
-                          style={{ background: priority.dot }}
+                      <div
+                        className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
+                        style={{ background: isOld ? "#fffbeb" : "#f0fdf4" }}
+                      >
+                        <Pill
+                          className="w-4 h-4"
+                          style={{ color: isOld ? "#d97706" : "#16a34a" }}
                         />
-                      </span>
-
+                      </div>
                       <div className="flex-1 min-w-0">
-                        <div className="flex flex-wrap items-center gap-2 mb-1">
-                          <span className="text-sm font-bold text-gray-900">
-                            {p.patientName}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-sm font-bold text-gray-900">
+                            {patientName}
+                          </p>
+                          <span className="text-xs font-mono text-gray-400">
+                            {rxNum}
                           </span>
-                          <span
-                            className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                            style={{
-                              background: priority.bg,
-                              color: priority.color,
-                              border: `1px solid ${priority.border}`,
-                            }}
-                          >
-                            {priority.label}
-                          </span>
-                          {hasDoctor && (
-                            <span className="text-xs text-green-600 flex items-center gap-1">
-                              <UserCheck size={12} /> Dr. {p.doctorName}
-                            </span>
-                          )}
-                          {triageDone && (
-                            <span className="text-xs text-green-700 flex items-center gap-1">
-                              <CheckCircle2 size={12} /> Triage Done
+                          {isOld && (
+                            <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                              Waiting long
                             </span>
                           )}
                         </div>
-                        <p className="text-xs text-gray-500 truncate">
-                          {p.chiefComplaint ||
-                            "No chief complaint recorded yet"}
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {visitNum} · {pendingItems} of {totalItems} item
+                          {totalItems !== 1 ? "s" : ""} pending
                         </p>
-                        <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
-                          <span className="flex items-center gap-1">
-                            <Clock size={11} /> {timeSince(p.admissionDate)}
-                          </span>
-                          <span>Visit #{p.visitNumber}</span>
-                        </div>
                       </div>
-
-                      <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                        <button
-                          onClick={() => openAssignModal(p)}
-                          disabled={hasDoctor}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
-                            hasDoctor
-                              ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                              : "bg-purple-600 text-white hover:bg-purple-700"
-                          }`}
-                        >
-                          <Stethoscope size={12} />
-                          {hasDoctor ? "Assigned" : "Assign Doctor"}
-                        </button>
-
-                        <button
-                          onClick={() =>
-                            router.push(`/dashboard/nurse/triage/${p.id}`)
-                          }
-                          disabled={triageDone}
-                          title={
-                            triageDone
-                              ? "Vitals already recorded for this visit"
-                              : "Record vitals"
-                          }
-                          className={`flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${
-                            triageDone
-                              ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-                              : "bg-green-600 text-white hover:bg-green-700"
-                          }`}
-                        >
-                          {triageDone ? (
-                            <>
-                              <CheckCircle2 size={12} /> Triaged
-                            </>
-                          ) : (
-                            <>
-                              <Activity size={12} /> Triage
-                            </>
-                          )}
-                        </button>
+                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                        <span className="text-xs text-gray-400 flex items-center gap-1">
+                          <Clock className="w-3 h-3" />{" "}
+                          {timeSince(prescribedAt)}
+                        </span>
+                        <ChevronRight className="w-4 h-4 text-gray-200 group-hover:text-green-600 transition-colors" />
                       </div>
-                    </div>
+                    </button>
                   );
                 })}
+                {pending.length > 6 && (
+                  <button
+                    onClick={() => router.push("/dashboard/pharmacy/queue")}
+                    className="w-full py-3 text-xs font-semibold text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5"
+                  >
+                    +{pending.length - 6} more{" "}
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
               </div>
             )}
           </div>
         </div>
 
-        {/* ── Right sidebar ── */}
-        <div className="space-y-3">
-          {/* ── Your Institution card (top of sidebar) ── */}
-          {user?.institutionName ? (
-            <div
-              className="rounded-2xl border p-4"
-              style={{
-                background: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
-                borderColor: "#86efac",
-              }}
-            >
-              <div className="flex items-center gap-2.5 mb-2">
-                <div
-                  className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                  style={{ background: "rgba(22,101,52,0.12)" }}
-                >
-                  <Building2 className="w-4 h-4" style={{ color: "#166534" }} />
-                </div>
-                <p
-                  className="text-xs font-bold uppercase tracking-wide"
-                  style={{ color: "#166534" }}
-                >
-                  Your Institution
-                </p>
+        {/* Right sidebar */}
+        <div className="space-y-4">
+          {/* Institution */}
+          <div
+            className="rounded-2xl border p-4"
+            style={{
+              background: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
+              borderColor: "#86efac",
+            }}
+          >
+            <div className="flex items-center gap-2.5 mb-2">
+              <div
+                className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                style={{ background: "rgba(22,101,52,0.12)" }}
+              >
+                <Building2 className="w-4 h-4" style={{ color: "#166534" }} />
               </div>
-              <p className="text-sm font-bold text-gray-900">
-                {user.institutionName}
-              </p>
-              {user?.institutionId && (
-                <p
-                  className="font-mono text-xs mt-1 break-all"
-                  style={{ color: "#166534", opacity: 0.5 }}
-                >
-                  {user.institutionId}
-                </p>
-              )}
-            </div>
-          ) : (
-            <div
-              className="rounded-2xl border p-4"
-              style={{
-                background: "linear-gradient(135deg,#fef2f2,#fee2e2)",
-                borderColor: "#fca5a5",
-              }}
-            >
-              <div className="flex items-center gap-2.5 mb-2">
-                <div
-                  className="w-8 h-8 rounded-xl flex items-center justify-center"
-                  style={{ background: "rgba(220,38,38,0.1)" }}
-                >
-                  <Building2 className="w-4 h-4 text-red-500" />
-                </div>
-                <p className="text-xs font-bold uppercase tracking-wide text-red-600">
-                  Your Institution
-                </p>
-              </div>
-              <p className="text-sm font-semibold text-red-700">
-                No institution assigned
-              </p>
-              <p className="text-xs text-red-500 mt-1">
-                Contact your administrator.
+              <p
+                className="text-xs font-bold uppercase tracking-wide"
+                style={{ color: "#166534" }}
+              >
+                Institution
               </p>
             </div>
-          )}
+            <p className="text-sm font-bold text-gray-900">
+              {user?.institutionName ?? "—"}
+            </p>
+          </div>
 
           {/* Quick actions */}
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 pt-1">
-            Quick Actions
-          </p>
-          {[
-            {
-              label: "Triage a Patient",
-              desc: "Enter visit number to record vitals",
-              href: "/dashboard/nurse/triage",
-              icon: Activity,
-              color: "#166534",
-              bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
-              border: "#bbf7d0",
-            },
-            {
-              label: "View Full Queue",
-              desc: "All visits sorted by priority",
-              href: "/dashboard/nurse/queue",
-              icon: ClipboardList,
-              color: "#1d4ed8",
-              bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
-              border: "#bfdbfe",
-            },
-            {
-              label: "My Patients",
-              desc: "Recently triaged patients",
-              href: "/dashboard/nurse/patients",
-              icon: Users,
-              color: "#7c3aed",
-              bg: "linear-gradient(135deg,#faf5ff,#ede9fe)",
-              border: "#ddd6fe",
-            },
-          ].map(({ label, desc, href, icon: Icon, color, bg, border }) => (
-            <button
-              key={href}
-              onClick={() => router.push(href)}
-              className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border text-left transition-all hover:shadow-md hover:-translate-y-px group"
-              style={{ background: bg, borderColor: border }}
-            >
-              <div
-                className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ background: `${color}15` }}
-              >
-                <Icon className="w-4 h-4" style={{ color }} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900">{label}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
-              </div>
-              <ArrowRight
-                className="w-4 h-4 flex-shrink-0 transition-transform group-hover:translate-x-0.5"
-                style={{ color }}
-              />
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Doctor assignment modal ── */}
-      {showAssignModal && selectedVisit && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold">Assign Doctor</h3>
-              <button
-                onClick={() => setShowAssignModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <p className="text-sm text-gray-600 mb-4">
-              Select a doctor for <strong>{selectedVisit.patientName}</strong>
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
+              Quick Actions
             </p>
-            {assignError && (
-              <div className="mb-3 p-2 rounded-lg bg-red-50 text-red-600 text-sm">
-                {assignError}
-              </div>
-            )}
-            <div className="max-h-64 overflow-y-auto space-y-2">
-              {doctors.map((doc) => (
+            <div className="space-y-2">
+              {[
+                {
+                  label: "Dispense Queue",
+                  desc: "Pending prescriptions",
+                  href: "/dashboard/pharmacy/queue",
+                  icon: Pill,
+                  color: "#166534",
+                  bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
+                  border: "#bbf7d0",
+                },
+                {
+                  label: "Dispense History",
+                  desc: "Previously dispensed Rx",
+                  href: "/dashboard/pharmacy/dispensed",
+                  icon: History,
+                  color: "#1d4ed8",
+                  bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
+                  border: "#bfdbfe",
+                },
+                {
+                  label: "Inventory",
+                  desc: "Stock levels & medications",
+                  href: "/dashboard/pharmacy/inventory",
+                  icon: Package,
+                  color: "#7c3aed",
+                  bg: "linear-gradient(135deg,#faf5ff,#ede9fe)",
+                  border: "#ddd6fe",
+                },
+              ].map(({ label, desc, href, icon: Icon, color, bg, border }) => (
                 <button
-                  key={doc.id}
-                  onClick={() => assignDoctor(doc.id)}
-                  disabled={assigning}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors text-left"
+                  key={href}
+                  onClick={() => router.push(href)}
+                  className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border text-left transition-all hover:shadow-md hover:-translate-y-px group"
+                  style={{ background: bg, borderColor: border }}
                 >
-                  <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
-                    <User size={14} className="text-purple-600" />
+                  <div
+                    className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                    style={{ background: `${color}15` }}
+                  >
+                    <Icon className="w-4 h-4" style={{ color }} />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-gray-900">
-                      Dr. {doc.firstName} {doc.lastName}
+                      {label}
                     </p>
-                    {doc.specialization && (
-                      <p className="text-xs text-gray-400">
-                        {doc.specialization}
-                      </p>
-                    )}
+                    <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
                   </div>
-                  {assigning && (
-                    <Loader2
-                      size={14}
-                      className="animate-spin text-gray-400 flex-shrink-0"
-                    />
-                  )}
+                  <ArrowRight
+                    className="w-4 h-4 flex-shrink-0 transition-transform group-hover:translate-x-0.5"
+                    style={{ color }}
+                  />
                 </button>
               ))}
-              {doctors.length === 0 && !assignError && (
-                <p className="text-center text-gray-400 text-sm py-4">
-                  No doctors online at the moment
-                </p>
-              )}
-            </div>
-            <div className="mt-5 flex justify-end">
-              <button
-                onClick={() => setShowAssignModal(false)}
-                className="px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 text-sm font-medium"
-              >
-                Cancel
-              </button>
             </div>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }

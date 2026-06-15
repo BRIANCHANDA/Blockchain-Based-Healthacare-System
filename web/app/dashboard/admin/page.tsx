@@ -10,20 +10,17 @@ import {
   ShieldCheck,
   Activity,
   UserCog,
-  TrendingUp,
   AlertTriangle,
   ChevronRight,
-  Clock,
   CheckCircle2,
-  XCircle,
   FlaskConical,
   Scan,
-  Pill,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
-// ── Types ──────────────────────────────────────────────────────────────────────
 interface AdminStats {
+  adminLevel: "super" | "hospital";
+  institutionName?: string;
   totalPatients: number;
   totalStaff: number;
   totalInstitutions: number;
@@ -36,7 +33,6 @@ interface AdminStats {
   auditLogsToday: number;
 }
 
-// ── UI primitives ──────────────────────────────────────────────────────────────
 function StatCard({
   label,
   value,
@@ -169,59 +165,6 @@ function StatCard({
   );
 }
 
-function SectionTitle({
-  children,
-  action,
-}: {
-  children: React.ReactNode;
-  action?: React.ReactNode;
-}) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        marginBottom: 14,
-      }}
-    >
-      <h2
-        style={{
-          fontSize: 14,
-          fontWeight: 700,
-          color: "#111827",
-          letterSpacing: "-0.01em",
-        }}
-      >
-        {children}
-      </h2>
-      {action}
-    </div>
-  );
-}
-
-function ViewAllBtn({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      onClick={onClick}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 4,
-        fontSize: 12.5,
-        fontWeight: 600,
-        color: "#166534",
-        background: "none",
-        border: "none",
-        cursor: "pointer",
-        padding: 0,
-      }}
-    >
-      View all <ChevronRight size={13} />
-    </button>
-  );
-}
-
 function Card({
   children,
   style,
@@ -294,7 +237,6 @@ function SkeletonRow() {
   );
 }
 
-// ── Main page ──────────────────────────────────────────────────────────────────
 export default function AdminDashboard() {
   const router = useRouter();
   const { user } = useAuthStore();
@@ -335,13 +277,15 @@ export default function AdminDashboard() {
     return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
   }
 
+  const isSuperAdmin = !stats || stats.adminLevel === "super";
+  const institutionName = stats?.institutionName ?? "";
+
   const PRIORITY_COLOR: Record<string, string> = {
     critical: "#dc2626",
     emergency: "#ea580c",
     urgent: "#d97706",
     routine: "#16a34a",
   };
-
   const ROLE_LABEL: Record<string, string> = {
     practitioner: "Doctor",
     nurse: "Nurse",
@@ -352,16 +296,106 @@ export default function AdminDashboard() {
     receptionist: "Receptionist",
   };
 
+  // Stat cards — hide Institutions card for hospital admins
+  const statCards = [
+    {
+      label: "Total Patients",
+      value: stats?.totalPatients,
+      sub: "registered",
+      icon: Users,
+      color: "#2563eb",
+      bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
+      border: "#bfdbfe",
+      href: "/dashboard/admin/patients",
+    },
+    {
+      label: "Staff Members",
+      value: stats?.totalStaff,
+      sub: "across all roles",
+      icon: UserCog,
+      color: "#7c3aed",
+      bg: "linear-gradient(135deg,#faf5ff,#ede9fe)",
+      border: "#ddd6fe",
+      href: "/dashboard/admin/staff",
+    },
+    ...(isSuperAdmin
+      ? [
+          {
+            label: "Institutions",
+            value: stats?.totalInstitutions,
+            sub: "registered",
+            icon: Building2,
+            color: "#0369a1",
+            bg: "linear-gradient(135deg,#f0f9ff,#e0f2fe)",
+            border: "#bae6fd",
+            href: "/dashboard/admin/institutions",
+          },
+        ]
+      : []),
+    {
+      label: "Active Visits",
+      value: stats?.activeVisits,
+      sub: "in progress now",
+      icon: ClipboardList,
+      color: "#166534",
+      bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
+      border: "#bbf7d0",
+      href: "/dashboard/admin/visits",
+    },
+    {
+      label: "Completed Today",
+      value: stats?.completedToday,
+      sub: "discharged",
+      icon: CheckCircle2,
+      color: "#0e7490",
+      bg: "linear-gradient(135deg,#ecfeff,#cffafe)",
+      border: "#a5f3fc",
+    },
+    ...(isSuperAdmin
+      ? [
+          {
+            label: "Pending Permissions",
+            value: stats?.pendingPermissions,
+            sub: "await patient",
+            icon: ShieldCheck,
+            color: "#d97706",
+            bg: "linear-gradient(135deg,#fffbeb,#fef3c7)",
+            border: "#fde68a",
+            alert: (stats?.pendingPermissions ?? 0) > 0,
+            href: "/dashboard/admin/permissions",
+          },
+        ]
+      : []),
+    {
+      label: "Unverified Staff",
+      value: stats?.unverifiedStaff,
+      sub: "need verification",
+      icon: AlertTriangle,
+      color: "#dc2626",
+      bg: "linear-gradient(135deg,#fef2f2,#fee2e2)",
+      border: "#fecaca",
+      alert: (stats?.unverifiedStaff ?? 0) > 0,
+      href: "/dashboard/admin/staff?filter=unverified",
+    },
+    {
+      label: "Audit Events Today",
+      value: stats?.auditLogsToday,
+      sub: "blockchain recorded",
+      icon: Activity,
+      color: "#64748b",
+      bg: "linear-gradient(135deg,#f8fafc,#f1f5f9)",
+      border: "#e2e8f0",
+      href: "/dashboard/admin/audit",
+    },
+  ];
+
+  const gridCols = isSuperAdmin ? "repeat(4,1fr)" : "repeat(3,1fr)";
+
   return (
     <div style={{ maxWidth: 1200 }}>
-      <style>{`
-        @keyframes pulse {
-          0%,100% { box-shadow: 0 0 0 3px rgba(220,38,38,0.25); }
-          50%      { box-shadow: 0 0 0 6px rgba(220,38,38,0.08); }
-        }
-      `}</style>
+      <style>{`@keyframes pulse { 0%,100% { box-shadow: 0 0 0 3px rgba(220,38,38,0.25); } 50% { box-shadow: 0 0 0 6px rgba(220,38,38,0.08); } }`}</style>
 
-      {/* ── Hero row ── */}
+      {/* Hero */}
       <div
         style={{
           background:
@@ -378,7 +412,6 @@ export default function AdminDashboard() {
           flexWrap: "wrap",
         }}
       >
-        {/* Decorative rings */}
         <div
           style={{
             position: "absolute",
@@ -403,30 +436,36 @@ export default function AdminDashboard() {
             pointerEvents: "none",
           }}
         />
-        <div
-          style={{
-            position: "absolute",
-            left: 0,
-            bottom: 0,
-            width: 200,
-            height: 200,
-            borderRadius: "50%",
-            background:
-              "radial-gradient(circle, rgba(22,101,52,0.15), transparent)",
-            pointerEvents: "none",
-          }}
-        />
 
         <div style={{ position: "relative", zIndex: 1 }}>
-          <p
+          <div
             style={{
-              color: "rgba(255,255,255,0.4)",
-              fontSize: 13,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
               marginBottom: 4,
             }}
           >
-            {greeting()}, {user?.firstName}
-          </p>
+            <p style={{ color: "rgba(255,255,255,0.4)", fontSize: 13 }}>
+              {greeting()}, {user?.firstName}
+            </p>
+            {/* Admin level badge */}
+            <span
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                padding: "2px 8px",
+                borderRadius: 999,
+                background: isSuperAdmin
+                  ? "rgba(239,68,68,0.25)"
+                  : "rgba(59,130,246,0.25)",
+                color: isSuperAdmin ? "#fca5a5" : "#93c5fd",
+                letterSpacing: "0.08em",
+              }}
+            >
+              {isSuperAdmin ? "SUPER ADMIN" : "HOSPITAL ADMIN"}
+            </span>
+          </div>
           <h1
             style={{
               fontFamily: "'Playfair Display', serif",
@@ -437,7 +476,7 @@ export default function AdminDashboard() {
               marginBottom: 6,
             }}
           >
-            System Overview
+            {isSuperAdmin ? "System Overview" : institutionName}
           </h1>
           <p style={{ color: "rgba(255,255,255,0.35)", fontSize: 13 }}>
             {format(new Date(), "EEEE, d MMMM yyyy")}
@@ -462,7 +501,6 @@ export default function AdminDashboard() {
           </p>
         </div>
 
-        {/* Quick actions */}
         <div
           style={{
             display: "flex",
@@ -472,148 +510,62 @@ export default function AdminDashboard() {
             flexWrap: "wrap",
           }}
         >
-          {[
-            {
-              label: "Add Staff",
-              href: "/dashboard/admin/staff/new",
-              color: "#166534",
-            },
-            {
-              label: "Institutions",
-              href: "/dashboard/admin/institutions",
-              color: "rgba(255,255,255,0.1)",
-            },
-          ].map((a) => (
+          <button
+            onClick={() => router.push("/dashboard/admin/staff/new")}
+            style={{
+              padding: "9px 18px",
+              borderRadius: 10,
+              fontSize: 13,
+              fontWeight: 600,
+              color: "#fff",
+              background: "#166534",
+              border: "1px solid rgba(255,255,255,0.15)",
+              cursor: "pointer",
+            }}
+          >
+            Add Staff
+          </button>
+          {isSuperAdmin && (
             <button
-              key={a.label}
-              onClick={() => router.push(a.href)}
+              onClick={() => router.push("/dashboard/admin/institutions")}
               style={{
                 padding: "9px 18px",
                 borderRadius: 10,
                 fontSize: 13,
                 fontWeight: 600,
                 color: "#fff",
-                background: a.color,
+                background: "rgba(255,255,255,0.1)",
                 border: "1px solid rgba(255,255,255,0.15)",
                 cursor: "pointer",
-                transition: "opacity 0.15s, transform 0.1s",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.opacity = "0.85";
-                e.currentTarget.style.transform = "translateY(-1px)";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.opacity = "1";
-                e.currentTarget.style.transform = "translateY(0)";
               }}
             >
-              {a.label}
+              Institutions
             </button>
-          ))}
+          )}
         </div>
       </div>
 
-      {/* ── Stat grid (2 rows × 4) ── */}
+      {/* Stat grid */}
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(4,1fr)",
+          gridTemplateColumns: gridCols,
           gap: 14,
           marginBottom: 24,
         }}
       >
-        {[
-          {
-            label: "Total Patients",
-            value: stats?.totalPatients,
-            sub: "registered",
-            icon: Users,
-            color: "#2563eb",
-            bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
-            border: "#bfdbfe",
-            href: "/dashboard/admin/patients",
-          },
-          {
-            label: "Staff Members",
-            value: stats?.totalStaff,
-            sub: "across all roles",
-            icon: UserCog,
-            color: "#7c3aed",
-            bg: "linear-gradient(135deg,#faf5ff,#ede9fe)",
-            border: "#ddd6fe",
-            href: "/dashboard/admin/staff",
-          },
-          {
-            label: "Institutions",
-            value: stats?.totalInstitutions,
-            sub: "registered",
-            icon: Building2,
-            color: "#0369a1",
-            bg: "linear-gradient(135deg,#f0f9ff,#e0f2fe)",
-            border: "#bae6fd",
-            href: "/dashboard/admin/institutions",
-          },
-          {
-            label: "Active Visits",
-            value: stats?.activeVisits,
-            sub: "in progress now",
-            icon: ClipboardList,
-            color: "#166534",
-            bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
-            border: "#bbf7d0",
-            href: "/dashboard/admin/visits",
-          },
-          {
-            label: "Completed Today",
-            value: stats?.completedToday,
-            sub: "discharged",
-            icon: CheckCircle2,
-            color: "#0e7490",
-            bg: "linear-gradient(135deg,#ecfeff,#cffafe)",
-            border: "#a5f3fc",
-          },
-          {
-            label: "Pending Permissions",
-            value: stats?.pendingPermissions,
-            sub: "await patient",
-            icon: ShieldCheck,
-            color: "#d97706",
-            bg: "linear-gradient(135deg,#fffbeb,#fef3c7)",
-            border: "#fde68a",
-            alert: (stats?.pendingPermissions ?? 0) > 0,
-            href: "/dashboard/admin/permissions",
-          },
-          {
-            label: "Unverified Staff",
-            value: stats?.unverifiedStaff,
-            sub: "need verification",
-            icon: AlertTriangle,
-            color: "#dc2626",
-            bg: "linear-gradient(135deg,#fef2f2,#fee2e2)",
-            border: "#fecaca",
-            alert: (stats?.unverifiedStaff ?? 0) > 0,
-            href: "/dashboard/admin/staff?filter=unverified",
-          },
-          {
-            label: "Audit Events Today",
-            value: stats?.auditLogsToday,
-            sub: "blockchain recorded",
-            icon: Activity,
-            color: "#64748b",
-            bg: "linear-gradient(135deg,#f8fafc,#f1f5f9)",
-            border: "#e2e8f0",
-            href: "/dashboard/admin/audit",
-          },
-        ].map((s) => (
+        {statCards.map((s) => (
           <StatCard
             key={s.label}
             {...s}
-            onClick={s.href ? () => router.push(s.href!) : undefined}
+            onClick={
+              (s as any).href ? () => router.push((s as any).href) : undefined
+            }
           />
         ))}
       </div>
 
-      {/* ── Pending work pills ── */}
+      {/* Pending work pills */}
       {stats && stats.pendingLabOrders + stats.pendingImaging > 0 && (
         <div
           style={{
@@ -663,7 +615,7 @@ export default function AdminDashboard() {
         </div>
       )}
 
-      {/* ── Bottom 3-col grid ── */}
+      {/* Bottom 3-col grid */}
       <div
         style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}
       >
@@ -681,14 +633,25 @@ export default function AdminDashboard() {
             <p style={{ fontSize: 13.5, fontWeight: 700, color: "#111" }}>
               Recent Staff
             </p>
-            <ViewAllBtn onClick={() => router.push("/dashboard/admin/staff")} />
+            <button
+              onClick={() => router.push("/dashboard/admin/staff")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: "#166534",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              View all <ChevronRight size={13} />
+            </button>
           </div>
           {loading ? (
-            <>
-              {[...Array(4)].map((_, i) => (
-                <SkeletonRow key={i} />
-              ))}
-            </>
+            [...Array(4)].map((_, i) => <SkeletonRow key={i} />)
           ) : recentStaff.length === 0 ? (
             <div
               style={{
@@ -701,11 +664,151 @@ export default function AdminDashboard() {
               No staff found
             </div>
           ) : (
-            <div>
-              {recentStaff.map((s, i) => (
+            recentStaff.map((s, i) => (
+              <button
+                key={s.id}
+                onClick={() => router.push(`/dashboard/admin/staff/${s.id}`)}
+                style={{
+                  width: "100%",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "12px 20px",
+                  borderBottom:
+                    i < recentStaff.length - 1 ? "1px solid #f9fafb" : "none",
+                  background: "none",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  transition: "background 0.12s",
+                }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.background = "#f9fafb")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.background = "none")
+                }
+              >
+                <div
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 9,
+                    flexShrink: 0,
+                    background: "linear-gradient(135deg,#1e293b,#334155)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    color: "#fff",
+                  }}
+                >
+                  {s.firstName?.[0]}
+                  {s.lastName?.[0]}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <p
+                    style={{
+                      fontSize: 13,
+                      fontWeight: 600,
+                      color: "#111",
+                      whiteSpace: "nowrap",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                    }}
+                  >
+                    {s.firstName} {s.lastName}
+                  </p>
+                  <p style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 1 }}>
+                    {s.licenseNumber}
+                  </p>
+                </div>
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "flex-end",
+                    gap: 4,
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 10.5,
+                      fontWeight: 700,
+                      padding: "2px 8px",
+                      borderRadius: 999,
+                      background: s.isVerified ? "#f0fdf4" : "#fef2f2",
+                      color: s.isVerified ? "#15803d" : "#dc2626",
+                    }}
+                  >
+                    {s.isVerified ? "Verified" : "Pending"}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: 10.5,
+                      color: "#d1d5db",
+                      textTransform: "capitalize",
+                    }}
+                  >
+                    {ROLE_LABEL[s.role] ?? s.role}
+                  </span>
+                </div>
+              </button>
+            ))
+          )}
+        </Card>
+
+        {/* Recent Visits */}
+        <Card>
+          <div
+            style={{
+              padding: "18px 20px 14px",
+              borderBottom: "1px solid #f3f4f6",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <p style={{ fontSize: 13.5, fontWeight: 700, color: "#111" }}>
+              Recent Visits
+            </p>
+            <button
+              onClick={() => router.push("/dashboard/admin/visits")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: "#166534",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              View all <ChevronRight size={13} />
+            </button>
+          </div>
+          {loading ? (
+            [...Array(4)].map((_, i) => <SkeletonRow key={i} />)
+          ) : recentVisits.length === 0 ? (
+            <div
+              style={{
+                padding: "32px 20px",
+                textAlign: "center",
+                color: "#9ca3af",
+                fontSize: 13,
+              }}
+            >
+              No visits yet
+            </div>
+          ) : (
+            recentVisits.map((v, i) => {
+              const pc = PRIORITY_COLOR[v.priority] ?? "#16a34a";
+              return (
                 <button
-                  key={s.id}
-                  onClick={() => router.push(`/dashboard/admin/staff/${s.id}`)}
+                  key={v.id}
+                  onClick={() => router.push(`/dashboard/admin/visits/${v.id}`)}
                   style={{
                     width: "100%",
                     display: "flex",
@@ -713,7 +816,9 @@ export default function AdminDashboard() {
                     gap: 12,
                     padding: "12px 20px",
                     borderBottom:
-                      i < recentStaff.length - 1 ? "1px solid #f9fafb" : "none",
+                      i < recentVisits.length - 1
+                        ? "1px solid #f9fafb"
+                        : "none",
                     background: "none",
                     cursor: "pointer",
                     textAlign: "left",
@@ -732,35 +837,37 @@ export default function AdminDashboard() {
                       height: 36,
                       borderRadius: 9,
                       flexShrink: 0,
-                      background: "linear-gradient(135deg,#1e293b,#334155)",
+                      background: `${pc}12`,
+                      border: `1.5px solid ${pc}30`,
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
-                      fontSize: 12,
-                      fontWeight: 700,
-                      color: "#fff",
                     }}
                   >
-                    {s.firstName?.[0]}
-                    {s.lastName?.[0]}
+                    <ClipboardList size={15} style={{ color: pc }} />
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p
                       style={{
-                        fontSize: 13,
-                        fontWeight: 600,
+                        fontSize: 12.5,
+                        fontWeight: 700,
                         color: "#111",
+                        fontFamily: "monospace",
+                      }}
+                    >
+                      {v.visitNumber}
+                    </p>
+                    <p
+                      style={{
+                        fontSize: 11.5,
+                        color: "#9ca3af",
+                        marginTop: 1,
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
                       }}
                     >
-                      {s.firstName} {s.lastName}
-                    </p>
-                    <p
-                      style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 1 }}
-                    >
-                      {s.licenseNumber}
+                      {v.chiefComplaint}
                     </p>
                   </div>
                   <div
@@ -777,165 +884,20 @@ export default function AdminDashboard() {
                         fontWeight: 700,
                         padding: "2px 8px",
                         borderRadius: 999,
-                        background: s.isVerified ? "#f0fdf4" : "#fef2f2",
-                        color: s.isVerified ? "#15803d" : "#dc2626",
-                      }}
-                    >
-                      {s.isVerified ? "Verified" : "Pending"}
-                    </span>
-                    <span
-                      style={{
-                        fontSize: 10.5,
-                        color: "#d1d5db",
+                        background: `${pc}12`,
+                        color: pc,
                         textTransform: "capitalize",
                       }}
                     >
-                      {ROLE_LABEL[s.role] ?? s.role}
+                      {v.priority}
+                    </span>
+                    <span style={{ fontSize: 10.5, color: "#d1d5db" }}>
+                      {format(new Date(v.admissionDate), "HH:mm")}
                     </span>
                   </div>
                 </button>
-              ))}
-            </div>
-          )}
-        </Card>
-
-        {/* Recent Visits */}
-        <Card>
-          <div
-            style={{
-              padding: "18px 20px 14px",
-              borderBottom: "1px solid #f3f4f6",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-            }}
-          >
-            <p style={{ fontSize: 13.5, fontWeight: 700, color: "#111" }}>
-              Recent Visits
-            </p>
-            <ViewAllBtn
-              onClick={() => router.push("/dashboard/admin/visits")}
-            />
-          </div>
-          {loading ? (
-            <>
-              {[...Array(4)].map((_, i) => (
-                <SkeletonRow key={i} />
-              ))}
-            </>
-          ) : recentVisits.length === 0 ? (
-            <div
-              style={{
-                padding: "32px 20px",
-                textAlign: "center",
-                color: "#9ca3af",
-                fontSize: 13,
-              }}
-            >
-              No visits yet
-            </div>
-          ) : (
-            <div>
-              {recentVisits.map((v, i) => {
-                const pc = PRIORITY_COLOR[v.priority] ?? "#16a34a";
-                return (
-                  <button
-                    key={v.id}
-                    onClick={() =>
-                      router.push(`/dashboard/admin/visits/${v.id}`)
-                    }
-                    style={{
-                      width: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12,
-                      padding: "12px 20px",
-                      borderBottom:
-                        i < recentVisits.length - 1
-                          ? "1px solid #f9fafb"
-                          : "none",
-                      background: "none",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      transition: "background 0.12s",
-                    }}
-                    onMouseEnter={(e) =>
-                      (e.currentTarget.style.background = "#f9fafb")
-                    }
-                    onMouseLeave={(e) =>
-                      (e.currentTarget.style.background = "none")
-                    }
-                  >
-                    <div style={{ position: "relative", flexShrink: 0 }}>
-                      <div
-                        style={{
-                          width: 36,
-                          height: 36,
-                          borderRadius: 9,
-                          background: `${pc}12`,
-                          border: `1.5px solid ${pc}30`,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                        }}
-                      >
-                        <ClipboardList size={15} style={{ color: pc }} />
-                      </div>
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p
-                        style={{
-                          fontSize: 12.5,
-                          fontWeight: 700,
-                          color: "#111",
-                          fontFamily: "monospace",
-                          letterSpacing: "0.02em",
-                        }}
-                      >
-                        {v.visitNumber}
-                      </p>
-                      <p
-                        style={{
-                          fontSize: 11.5,
-                          color: "#9ca3af",
-                          marginTop: 1,
-                          whiteSpace: "nowrap",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                        }}
-                      >
-                        {v.chiefComplaint}
-                      </p>
-                    </div>
-                    <div
-                      style={{
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "flex-end",
-                        gap: 4,
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 10.5,
-                          fontWeight: 700,
-                          padding: "2px 8px",
-                          borderRadius: 999,
-                          background: `${pc}12`,
-                          color: pc,
-                          textTransform: "capitalize",
-                        }}
-                      >
-                        {v.priority}
-                      </span>
-                      <span style={{ fontSize: 10.5, color: "#d1d5db" }}>
-                        {format(new Date(v.admissionDate), "HH:mm")}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
+              );
+            })
           )}
         </Card>
 
@@ -953,14 +915,25 @@ export default function AdminDashboard() {
             <p style={{ fontSize: 13.5, fontWeight: 700, color: "#111" }}>
               Audit Log
             </p>
-            <ViewAllBtn onClick={() => router.push("/dashboard/admin/audit")} />
+            <button
+              onClick={() => router.push("/dashboard/admin/audit")}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: "#166534",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+              }}
+            >
+              View all <ChevronRight size={13} />
+            </button>
           </div>
           {loading ? (
-            <>
-              {[...Array(5)].map((_, i) => (
-                <SkeletonRow key={i} />
-              ))}
-            </>
+            [...Array(5)].map((_, i) => <SkeletonRow key={i} />)
           ) : recentAudit.length === 0 ? (
             <div
               style={{
@@ -973,93 +946,87 @@ export default function AdminDashboard() {
               No events yet
             </div>
           ) : (
-            <div>
-              {recentAudit.map((log, i) => {
-                const actionColor: Record<string, string> = {
-                  view: "#6b7280",
-                  create: "#166534",
-                  update: "#2563eb",
-                  delete: "#dc2626",
-                  permission_grant: "#d97706",
-                  permission_revoke: "#7c3aed",
-                  emergency_override: "#dc2626",
-                };
-                const color = actionColor[log.actionType] ?? "#6b7280";
-                return (
+            recentAudit.map((log, i) => {
+              const actionColor: Record<string, string> = {
+                view: "#6b7280",
+                create: "#166534",
+                update: "#2563eb",
+                delete: "#dc2626",
+                permission_grant: "#d97706",
+                permission_revoke: "#7c3aed",
+                emergency_override: "#dc2626",
+              };
+              const color = actionColor[log.actionType] ?? "#6b7280";
+              return (
+                <div
+                  key={log.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 12,
+                    padding: "11px 20px",
+                    borderBottom:
+                      i < recentAudit.length - 1 ? "1px solid #f9fafb" : "none",
+                  }}
+                >
                   <div
-                    key={log.id}
                     style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 8,
+                      flexShrink: 0,
+                      marginTop: 1,
+                      background: `${color}10`,
                       display: "flex",
-                      alignItems: "flex-start",
-                      gap: 12,
-                      padding: "11px 20px",
-                      borderBottom:
-                        i < recentAudit.length - 1
-                          ? "1px solid #f9fafb"
-                          : "none",
+                      alignItems: "center",
+                      justifyContent: "center",
                     }}
                   >
-                    <div
+                    <Activity size={12} style={{ color }} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p
                       style={{
-                        width: 28,
-                        height: 28,
-                        borderRadius: 8,
-                        flexShrink: 0,
-                        marginTop: 1,
-                        background: `${color}10`,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
+                        fontSize: 12.5,
+                        fontWeight: 600,
+                        color: "#374151",
+                        lineHeight: 1.3,
                       }}
                     >
-                      <Activity size={12} style={{ color }} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p
-                        style={{
-                          fontSize: 12.5,
-                          fontWeight: 600,
-                          color: "#374151",
-                          lineHeight: 1.3,
-                        }}
-                      >
-                        <span style={{ textTransform: "capitalize", color }}>
-                          {log.actionType?.replace("_", " ")}
-                        </span>{" "}
-                        <span style={{ color: "#9ca3af", fontWeight: 400 }}>
-                          {log.resourceType}
-                        </span>
-                      </p>
-                      <p
-                        style={{ fontSize: 11, color: "#c4c9d4", marginTop: 2 }}
-                      >
-                        {log.timestamp
-                          ? formatDistanceToNow(new Date(log.timestamp), {
-                              addSuffix: true,
-                            })
-                          : "—"}
-                      </p>
-                    </div>
-                    {log.isEmergencyOverride && (
-                      <span
-                        style={{
-                          fontSize: 9.5,
-                          fontWeight: 700,
-                          padding: "2px 6px",
-                          borderRadius: 4,
-                          background: "#fef2f2",
-                          color: "#dc2626",
-                          whiteSpace: "nowrap",
-                          flexShrink: 0,
-                        }}
-                      >
-                        OVERRIDE
+                      <span style={{ textTransform: "capitalize", color }}>
+                        {log.actionType?.replace("_", " ")}
+                      </span>{" "}
+                      <span style={{ color: "#9ca3af", fontWeight: 400 }}>
+                        {log.resourceType}
                       </span>
-                    )}
+                    </p>
+                    <p style={{ fontSize: 11, color: "#c4c9d4", marginTop: 2 }}>
+                      {log.timestamp
+                        ? formatDistanceToNow(new Date(log.timestamp), {
+                            addSuffix: true,
+                          })
+                        : "—"}
+                    </p>
                   </div>
-                );
-              })}
-            </div>
+                  {log.isEmergencyOverride && (
+                    <span
+                      style={{
+                        fontSize: 9.5,
+                        fontWeight: 700,
+                        padding: "2px 6px",
+                        borderRadius: 4,
+                        background: "#fef2f2",
+                        color: "#dc2626",
+                        whiteSpace: "nowrap",
+                        flexShrink: 0,
+                      }}
+                    >
+                      OVERRIDE
+                    </span>
+                  )}
+                </div>
+              );
+            })
           )}
         </Card>
       </div>

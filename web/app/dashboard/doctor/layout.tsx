@@ -11,12 +11,14 @@ import {
   Menu,
   X,
   ChevronRight,
-  Bell,
   Stethoscope,
   Shield,
   Building2,
   ArrowLeftRight,
+  QrCode,
 } from "lucide-react";
+import { NotificationBell } from "@/components/NotificationBell";
+import { ProfileDrawer } from "@/components/ProfileDrawer";
 
 const navItems = [
   {
@@ -25,13 +27,15 @@ const navItems = [
     icon: LayoutDashboard,
     badge: false,
   },
+
+  // doctor layout
+  { label: "Scan Patient", href: "/dashboard/doctor/scan", icon: QrCode },
   {
     label: "Today's Queue",
     href: "/dashboard/doctor/queue",
     icon: ClipboardList,
     badge: false,
   },
-
   {
     label: "Referrals",
     href: "/dashboard/doctor/referrals",
@@ -62,9 +66,10 @@ export default function DoctorLayout({
   const { user, isAuthenticated, clearAuth, initFromStorage } = useAuthStore();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [time, setTime] = useState(new Date());
-  const [pendingReferrals, setPendingReferrals] = useState(0); // outgoing awaiting response
-  const [incomingReferrals, setIncomingReferrals] = useState(0); // incoming internal assigned to me
+  const [pendingReferrals, setPendingReferrals] = useState(0);
+  const [incomingReferrals, setIncomingReferrals] = useState(0);
 
   useEffect(() => {
     initFromStorage();
@@ -77,7 +82,6 @@ export default function DoctorLayout({
     return () => clearInterval(t);
   }, []);
 
-  // ── Poll both outgoing pending + incoming internal referrals ──────────────
   const fetchReferralCounts = useCallback(async () => {
     try {
       const userId = (user as any)?.id;
@@ -104,11 +108,6 @@ export default function DoctorLayout({
     const iv = setInterval(fetchReferralCounts, 60_000);
     return () => clearInterval(iv);
   }, [fetchReferralCounts]);
-
-  const handleLogout = () => {
-    clearAuth();
-    router.push("/login");
-  };
 
   const pageLabel =
     navItems.find(
@@ -150,7 +149,7 @@ export default function DoctorLayout({
           ${sidebarOpen ? "translate-x-0" : "-translate-x-full lg:translate-x-0"}`}
         style={{
           background:
-            "linear-gradient(180deg, #052e16 0%, #064e23 40%, #0d5c2a 100%)",
+            "linear-gradient(180deg,#052e16 0%,#064e23 40%,#0d5c2a 100%)",
         }}
       >
         {/* Branding */}
@@ -179,7 +178,7 @@ export default function DoctorLayout({
             </button>
           </div>
 
-          {/* Role pill — violet for practitioners */}
+          {/* Role pill */}
           <div
             className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold mb-3"
             style={{
@@ -235,7 +234,6 @@ export default function DoctorLayout({
               (href !== "/dashboard/doctor" && pathname.startsWith(href));
             const totalReferrals = pendingReferrals + incomingReferrals;
             const showBadge = badge && totalReferrals > 0;
-
             return (
               <button
                 key={href}
@@ -270,8 +268,6 @@ export default function DoctorLayout({
                   className={`w-4 h-4 flex-shrink-0 ${!active ? "group-hover:scale-110 transition-transform" : ""}`}
                 />
                 <span className="flex-1">{label}</span>
-
-                {/* Pending outgoing referrals badge */}
                 {showBadge && !active && (
                   <span
                     className="flex items-center justify-center text-[10px] font-bold rounded-full min-w-[18px] h-[18px] px-1"
@@ -283,7 +279,6 @@ export default function DoctorLayout({
                     {totalReferrals > 9 ? "9+" : totalReferrals}
                   </span>
                 )}
-
                 {active ? (
                   <ChevronRight className="w-3.5 h-3.5 opacity-60" />
                 ) : (
@@ -310,17 +305,16 @@ export default function DoctorLayout({
           <p className="text-green-400/60 text-xs mt-0.5">{dateStr}</p>
         </div>
 
-        {/* User card */}
+        {/* User card — clicking opens profile drawer */}
         <div className="px-3 pb-4 border-t border-white/[0.07] pt-3">
-          <div
-            className="flex items-center gap-3 px-3 py-2 rounded-xl mb-1"
+          <button
+            onClick={() => setProfileOpen(true)}
+            className="w-full flex items-center gap-3 px-3 py-2 rounded-xl mb-1 transition-colors hover:bg-white/10 text-left"
             style={{ background: "rgba(255,255,255,0.05)" }}
           >
             <div
               className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-              style={{
-                background: "linear-gradient(135deg, #16a34a, #15803d)",
-              }}
+              style={{ background: "linear-gradient(135deg,#16a34a,#15803d)" }}
             >
               {initials}
             </div>
@@ -328,11 +322,15 @@ export default function DoctorLayout({
               <p className="text-white text-xs font-semibold truncate">
                 Dr. {user?.firstName} {user?.lastName}
               </p>
-              <p className="text-green-400/50 text-xs">Practitioner</p>
+              <p className="text-green-400/50 text-xs">View profile</p>
             </div>
-          </div>
+            <ChevronRight className="w-3.5 h-3.5 text-green-400/30" />
+          </button>
           <button
-            onClick={handleLogout}
+            onClick={() => {
+              clearAuth();
+              router.push("/login");
+            }}
             className="w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all"
             style={{ color: "rgba(187,247,208,0.4)" }}
             onMouseEnter={(e) => {
@@ -373,9 +371,7 @@ export default function DoctorLayout({
           <div className="hidden lg:flex items-center gap-2.5">
             <div
               className="w-1 h-4 rounded-full flex-shrink-0"
-              style={{
-                background: "linear-gradient(180deg, #16a34a, #15803d)",
-              }}
+              style={{ background: "linear-gradient(180deg,#16a34a,#15803d)" }}
             />
             <div>
               <p className="text-sm font-semibold text-gray-900 leading-none">
@@ -423,7 +419,7 @@ export default function DoctorLayout({
               </div>
             )}
 
-            {/* Referrals shortcut with badge */}
+            {/* Referrals shortcut */}
             <button
               onClick={() => router.push("/dashboard/doctor/referrals")}
               className="relative p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
@@ -444,19 +440,20 @@ export default function DoctorLayout({
               )}
             </button>
 
-            <button className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
-              <Bell className="w-4 h-4" />
-            </button>
+            {/* Notification bell */}
+            <NotificationBell />
 
-            {/* Avatar */}
-            <div
-              className="flex items-center gap-2.5 pl-2.5"
+            {/* ── Avatar — clicking opens profile drawer ── */}
+            <button
+              onClick={() => setProfileOpen(true)}
+              className="flex items-center gap-2.5 pl-2.5 hover:opacity-80 transition-opacity"
               style={{ borderLeft: "1px solid #f1f2f4" }}
+              title="My Profile"
             >
               <div
                 className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
                 style={{
-                  background: "linear-gradient(135deg, #166534, #15803d)",
+                  background: "linear-gradient(135deg,#166534,#15803d)",
                 }}
               >
                 {initials}
@@ -465,19 +462,19 @@ export default function DoctorLayout({
                 <p className="text-xs font-semibold text-gray-900 leading-none">
                   Dr. {user?.firstName} {user?.lastName}
                 </p>
-                <p className="text-[11px] text-gray-400 mt-0.5 md:hidden truncate max-w-[120px]">
-                  {institutionName ?? "Practitioner"}
-                </p>
                 <p className="text-[11px] text-gray-400 mt-0.5 hidden md:block">
                   Practitioner
                 </p>
               </div>
-            </div>
+            </button>
           </div>
         </header>
 
         <main className="flex-1 p-6 overflow-y-auto">{children}</main>
       </div>
+
+      {/* ── Profile drawer ────────────────────────────────────────────────── */}
+      <ProfileDrawer open={profileOpen} onClose={() => setProfileOpen(false)} />
     </div>
   );
 }

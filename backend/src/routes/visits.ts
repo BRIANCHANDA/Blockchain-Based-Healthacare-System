@@ -5,7 +5,7 @@ import {
   visits, vitalSigns, consultations, diagnoses,
   labTestOrders, labTestResults, imagingOrders, imagingReports,
   prescriptions, prescriptionItems, patients, auditLogs,
-  practitioners, patientInstitutionRegistrations,
+  practitioners, patientInstitutionRegistrations, medicationStock, stockMovements
 } from '../db/schema';
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
@@ -15,6 +15,7 @@ import crypto from 'crypto';
 import path from 'path';
 import { mkdir, writeFile } from 'fs/promises';
 import { createHash } from 'crypto';
+import { notifyUser } from '../services/notifications';
 
 const errorSchema = z.object({ success: z.boolean(), error: z.object({ message: z.string() }) });
 const successData = z.object({ success: z.boolean(), data: z.any() });
@@ -694,30 +695,66 @@ export const visitRouter = createRouter()
         };
       }
 
-      // ── Lab orders ────────────────────────────────────────────────────────
+      // ── Lab orders (with results) ─────────────────────────────────────────
       const labOrdersRaw = await db.select({
         id: labTestOrders.id, orderNumber: labTestOrders.orderNumber, testName: labTestOrders.testName,
         testCode: labTestOrders.testCode, specimenType: labTestOrders.specimenType, urgency: labTestOrders.urgency,
         clinicalNotes: labTestOrders.clinicalNotes, status: labTestOrders.status, orderedAt: labTestOrders.orderedAt,
         assignedTo: labTestOrders.assignedTo, techFirstName: practitioners.firstNameEncrypted, techLastName: practitioners.lastNameEncrypted,
-      }).from(labTestOrders).leftJoin(practitioners, eq(practitioners.id, labTestOrders.assignedTo)).where(eq(labTestOrders.visitId, visitId));
+        abnormalFindings: labTestResults.abnormalFindings,
+        interpretation: labTestResults.interpretation,
+        resultedAt: labTestResults.resultedAt,
+        resultsData: labTestResults.resultsData,
+        referenceRanges: labTestResults.referenceRanges,
+      }).from(labTestOrders)
+        .leftJoin(practitioners, eq(practitioners.id, labTestOrders.assignedTo))
+        .leftJoin(labTestResults, eq(labTestResults.labTestOrderId, labTestOrders.id))
+        .where(eq(labTestOrders.visitId, visitId));
 
       const labOrders = await Promise.all(labOrdersRaw.map(async (o) => ({
-        ...o, assignedToName: o.techFirstName && o.techLastName
+        id: o.id, orderNumber: o.orderNumber, testName: o.testName, testCode: o.testCode,
+        specimenType: o.specimenType, urgency: o.urgency, clinicalNotes: o.clinicalNotes,
+        status: o.status, orderedAt: o.orderedAt,
+        assignedToName: o.techFirstName && o.techLastName
           ? `${await decrypt(o.techFirstName)} ${await decrypt(o.techLastName)}` : null,
+        result: o.status === 'resulted' ? {
+          abnormalFindings: o.abnormalFindings,
+          interpretation: o.interpretation,
+          performedAt: o.resultedAt,
+          resultsData: o.resultsData,
+          referenceRanges: o.referenceRanges,
+        } : null,
       })));
 
-      // ── Imaging orders ────────────────────────────────────────────────────
+      // ── Imaging orders (with reports) ─────────────────────────────────────
       const imagingOrdersRaw = await db.select({
         id: imagingOrders.id, orderNumber: imagingOrders.orderNumber, modality: imagingOrders.modality,
         bodyPart: imagingOrders.bodyPart, indication: imagingOrders.indication, urgency: imagingOrders.urgency,
         status: imagingOrders.status, orderedAt: imagingOrders.orderedAt, assignedTo: imagingOrders.assignedTo,
         radioFirstName: practitioners.firstNameEncrypted, radioLastName: practitioners.lastNameEncrypted,
-      }).from(imagingOrders).leftJoin(practitioners, eq(practitioners.id, imagingOrders.assignedTo)).where(eq(imagingOrders.visitId, visitId));
+        reportFindings: imagingReports.findings,
+        reportImpression: imagingReports.impression,
+        reportRecommendations: imagingReports.recommendations,
+        reportImageUrls: imagingReports.imageUrls,
+        reportedAt: imagingReports.reportedAt,
+      }).from(imagingOrders)
+        .leftJoin(practitioners, eq(practitioners.id, imagingOrders.assignedTo))
+        .leftJoin(imagingReports, eq(imagingReports.imagingOrderId, imagingOrders.id))
+        .where(eq(imagingOrders.visitId, visitId));
 
       const imagingOrdersWithNames = await Promise.all(imagingOrdersRaw.map(async (o) => ({
-        ...o, assignedToName: o.radioFirstName && o.radioLastName
+        id: o.id, orderNumber: o.orderNumber, modality: o.modality,
+        bodyPart: o.bodyPart, indication: o.indication, urgency: o.urgency,
+        status: o.status, orderedAt: o.orderedAt,
+        assignedToName: o.radioFirstName && o.radioLastName
           ? `${await decrypt(o.radioFirstName)} ${await decrypt(o.radioLastName)}` : null,
+        report: o.reportFindings ? {
+          findings: o.reportFindings,
+          impression: o.reportImpression,
+          recommendations: o.reportRecommendations,
+          imageUrls: o.reportImageUrls,
+          reportedAt: o.reportedAt,
+        } : null,
       })));
 
       await auditAction(userId, userType, visit.patientId, patient[0].blockchainAddress, 'view', 'visit_summary', visitId, ip);
@@ -755,7 +792,20 @@ export const visitRouter = createRouter()
     security: [{ bearerAuth: [] }], middleware: [authMiddleware],
     request: {
       params: z.object({ visitId: z.string().uuid(), orderId: z.string().uuid() }),
-      body: { content: { 'application/json': { schema: z.object({ resultsData: z.any(), interpretation: z.string().optional(), abnormalFindings: z.string().optional(), referenceRanges: z.any().optional(), attachmentUrls: z.array(z.string()).optional() }) } } },
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              resultsData: z.any(),
+              interpretation: z.string().optional(),
+              abnormalFindings: z.string().optional(),
+              referenceRanges: z.any().optional(),
+              attachmentUrls: z.array(z.string()).optional(),
+              hasCritical: z.boolean().optional(),
+            }),
+          },
+        },
+      },
     },
     responses: {
       201: { content: { 'application/json': { schema: successData } }, description: 'Results entered' },
@@ -766,35 +816,125 @@ export const visitRouter = createRouter()
   }), async (c) => {
     try {
       const userType = c.get('userType');
-      if (userType !== 'lab_technician') return c.json({ success: false, error: { message: 'Only lab technicians can enter results' } }, 403);
+      if (userType !== 'lab_technician')
+        return c.json({ success: false, error: { message: 'Only lab technicians can enter results' } }, 403);
+
       const { visitId, orderId } = c.req.valid('param');
       const body = c.req.valid('json');
       const userId = c.get('userId');
       const ip = c.req.header('x-forwarded-for');
 
-      const order = await db.select().from(labTestOrders).where(eq(labTestOrders.id, orderId)).limit(1);
-      if (!order.length) return c.json({ success: false, error: { message: 'Lab order not found' } }, 404);
-      const visitRow = await db.select({ institutionId: visits.institutionId, status: visits.status, patientId: visits.patientId })
-        .from(visits).where(eq(visits.id, visitId)).limit(1);
-      if (!visitRow.length) return c.json({ success: false, error: { message: 'Visit not found' } }, 404);
-      const patient = await db.select({ blockchainAddress: patients.blockchainAddress })
-        .from(patients).where(eq(patients.id, visitRow[0].patientId)).limit(1);
-      if (!patient.length) return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
+      // ── Validate order exists ─────────────────────────────────────────────
+      const order = await db
+        .select()
+        .from(labTestOrders)
+        .where(eq(labTestOrders.id, orderId))
+        .limit(1);
+      if (!order.length)
+        return c.json({ success: false, error: { message: 'Lab order not found' } }, 404);
 
+      // ── Validate visit exists ─────────────────────────────────────────────
+      const visitRow = await db
+        .select({
+          institutionId: visits.institutionId,
+          status: visits.status,
+          patientId: visits.patientId,
+          assignedDoctorId: visits.assignedDoctorId,
+        })
+        .from(visits)
+        .where(eq(visits.id, visitId))
+        .limit(1);
+      if (!visitRow.length)
+        return c.json({ success: false, error: { message: 'Visit not found' } }, 404);
+
+      // ── Validate patient exists ───────────────────────────────────────────
+      const patient = await db
+        .select({ blockchainAddress: patients.blockchainAddress })
+        .from(patients)
+        .where(eq(patients.id, visitRow[0].patientId))
+        .limit(1);
+      if (!patient.length)
+        return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
+
+      // ── Institution check ─────────────────────────────────────────────────
       const canAct = await canActOnVisit(userId, visitRow[0].institutionId);
-      if (!canAct) return c.json({ success: false, error: { message: 'You can only perform clinical actions on visits created by your institution.' } }, 403);
+      if (!canAct)
+        return c.json({
+          success: false,
+          error: { message: 'You can only perform clinical actions on visits created by your institution.' },
+        }, 403);
 
-      const resultHash = generateRecordHash({ orderId, ...body, labTechId: userId, timestamp: new Date().toISOString() });
-      await db.update(labTestOrders).set({ status: 'resulted' }).where(eq(labTestOrders.id, orderId));
-      const result = await db.insert(labTestResults).values({
-        labTestOrderId: orderId, performedByLabTechId: userId, resultsData: body.resultsData,
-        interpretation: body.interpretation ?? null, abnormalFindings: body.abnormalFindings ?? null,
-        referenceRanges: body.referenceRanges ?? null, attachmentUrls: body.attachmentUrls ?? null,
-        blockchainHash: resultHash,
-      }).returning();
+      // ── Insert result + mark order as resulted ────────────────────────────
+      const resultHash = generateRecordHash({
+        orderId,
+        ...body,
+        labTechId: userId,
+        timestamp: new Date().toISOString(),
+      });
 
+      await db
+        .update(labTestOrders)
+        .set({ status: 'resulted' })
+        .where(eq(labTestOrders.id, orderId));
+
+      const result = await db
+        .insert(labTestResults)
+        .values({
+          labTestOrderId: orderId,
+          performedByLabTechId: userId,
+          resultsData: body.resultsData,
+          interpretation: body.interpretation ?? null,
+          abnormalFindings: body.abnormalFindings ?? null,
+          referenceRanges: body.referenceRanges ?? null,
+          attachmentUrls: body.attachmentUrls ?? null,
+          blockchainHash: resultHash,
+        })
+        .returning();
+
+      // ── Blockchain + audit ────────────────────────────────────────────────
       await storeRecordHash(result[0].id, patient[0].blockchainAddress, resultHash, 'lab_result');
-      await auditAction(userId, userType, visitRow[0].patientId, patient[0].blockchainAddress, 'create', 'lab_result', result[0].id, ip);
+      await auditAction(
+        userId, userType,
+        visitRow[0].patientId,
+        patient[0].blockchainAddress,
+        'create', 'lab_result', result[0].id, ip,
+      );
+
+      // ── Notify assigned doctor (SSE — fire and forget) ────────────────────
+      const assignedDoctorId = visitRow[0].assignedDoctorId;
+      if (assignedDoctorId) {
+        try {
+          const { notifyUser } = await import('../services/notifications');
+          const { decrypt } = await import('../services/crypto');
+
+          const patientRow = await db
+            .select({
+              firstNameEncrypted: patients.firstNameEncrypted,
+              lastNameEncrypted: patients.lastNameEncrypted,
+            })
+            .from(patients)
+            .where(eq(patients.id, visitRow[0].patientId))
+            .limit(1);
+
+          const patientName = patientRow.length
+            ? `${decrypt(patientRow[0].firstNameEncrypted)} ${decrypt(patientRow[0].lastNameEncrypted)}`
+            : 'Unknown Patient';
+
+          notifyUser(assignedDoctorId, 'lab_result_ready', {
+            visitId,
+            orderId,
+            orderNumber: order[0].orderNumber,
+            testName: order[0].testName,
+            patientName,
+            hasCritical: !!body.hasCritical,
+            ts: new Date().toISOString(),
+          });
+        } catch (notifyErr) {
+          // Never fail the request because of a notification error
+          console.warn('[LAB_RESULTS] Failed to notify doctor:', notifyErr);
+        }
+      }
+
       return c.json({ success: true, data: { result: result[0], blockchainHash: resultHash } }, 201);
     } catch (err: any) {
       console.error(err);
@@ -868,9 +1008,7 @@ export const visitRouter = createRouter()
 
   // ── ASSIGNED TO ME — single registration, role-branched ──────────────────
   //
-  // FIXED: was registered twice. The first (old) registration was dead code
-  // because Hono matches the first registered handler only. Now there is
-  // exactly one registration that branches on the caller's DB role.
+
   //
   .openapi(createRoute({
     tags: ['Visits'], summary: 'Get all in-progress visits assigned to the current user (nurse or doctor)',
@@ -1338,9 +1476,10 @@ export const visitRouter = createRouter()
     }
   })
 
-  // ── DISPENSE PRESCRIPTION ─────────────────────────────────────────────────
+
+
   .openapi(createRoute({
-    tags: ['Visits'], summary: 'Dispense prescription items (Pharmacist)',
+    tags: ['Visits'], summary: 'Dispense prescription items (Pharmacist) — auto-deducts stock',
     method: 'patch', path: '/:visitId/prescriptions/:prescriptionId/dispense',
     security: [{ bearerAuth: [] }], middleware: [authMiddleware],
     request: {
@@ -1351,6 +1490,7 @@ export const visitRouter = createRouter()
       200: { content: { 'application/json': { schema: successData } }, description: 'Dispensed' },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
       404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' },
+      409: { content: { 'application/json': { schema: errorSchema } }, description: 'Insufficient stock' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
@@ -1372,6 +1512,54 @@ export const visitRouter = createRouter()
       const canAct = await canActOnVisit(userId, visitRow[0].institutionId);
       if (!canAct) return c.json({ success: false, error: { message: 'You can only perform clinical actions on visits created by your institution.' } }, 403);
 
+      const institutionId = visitRow[0].institutionId;
+
+      // ── Load the prescription items being dispensed ──────────────────────
+      const itemsToDispense = await db.select().from(prescriptionItems)
+        .where(and(eq(prescriptionItems.prescriptionId, prescriptionId)));
+      const selectedItems = itemsToDispense.filter(i => itemIds.includes(i.id));
+
+      // ── Stock check + deduction (best-effort match by name + strength) ───
+      const stockWarnings: string[] = [];
+      if (institutionId) {
+        for (const item of selectedItems) {
+          // Find matching stock by medication name + strength (case-insensitive)
+          const matches = await db.select().from(medicationStock)
+            .where(and(
+              eq(medicationStock.institutionId, institutionId),
+              sql`LOWER(${medicationStock.medicationName}) = LOWER(${item.medicationName})`,
+              sql`LOWER(${medicationStock.strength}) = LOWER(${item.strength})`,
+            ))
+            .orderBy(medicationStock.expiryDate)  // dispense soonest-expiring first
+            .limit(1);
+
+          if (matches.length === 0) {
+            stockWarnings.push(`${item.medicationName} ${item.strength}: not tracked in stock`);
+            continue;
+          }
+
+          const stock = matches[0];
+          const need = item.quantity ?? 0;
+
+          if (stock.quantity < need) {
+            stockWarnings.push(`${item.medicationName} ${item.strength}: only ${stock.quantity} in stock (needed ${need})`);
+            // Deduct what's available, floor at 0
+          }
+
+          const deduct = Math.min(stock.quantity, need);
+          const newQty = stock.quantity - deduct;
+
+          await db.update(medicationStock).set({ quantity: newQty, updatedAt: new Date() }).where(eq(medicationStock.id, stock.id));
+          await db.insert(stockMovements).values({
+            stockId: stock.id, institutionId, changeType: 'dispense',
+            quantityChange: -deduct, quantityAfter: newQty,
+            referenceId: prescriptionId, performedBy: userId,
+            notes: `Dispensed for prescription ${prescription[0].prescriptionNumber}`,
+          });
+        }
+      }
+
+      // ── Mark items dispensed + blockchain hash ───────────────────────────
       const dispenseHash = generateRecordHash({ prescriptionId, itemIds, dispensedBy: userId, timestamp: new Date().toISOString() });
       for (const itemId of itemIds) {
         await db.update(prescriptionItems).set({ isDispensed: true, dispensedByPharmacistId: userId, dispensedAt: new Date() }).where(eq(prescriptionItems.id, itemId));
@@ -1381,8 +1569,18 @@ export const visitRouter = createRouter()
       const remaining = await db.select().from(prescriptionItems).where(and(eq(prescriptionItems.prescriptionId, prescriptionId), eq(prescriptionItems.isDispensed, false)));
       if (remaining.length === 0) await db.update(prescriptions).set({ status: 'dispensed' }).where(eq(prescriptions.id, prescriptionId));
       await auditAction(userId, userType, visitRow[0].patientId, patient[0].blockchainAddress, 'update', 'prescription_dispense', prescriptionId, ip);
-      return c.json({ success: true, data: { message: 'Medications dispensed', remainingItems: remaining.length, blockchainHash: dispenseHash } });
+
+      return c.json({
+        success: true,
+        data: {
+          message: 'Medications dispensed',
+          remainingItems: remaining.length,
+          blockchainHash: dispenseHash,
+          stockWarnings,   // frontend can show these as soft warnings
+        },
+      });
     } catch (err: any) {
+      console.error('[DISPENSE]', err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   })
@@ -1669,7 +1867,9 @@ export const visitRouter = createRouter()
     }
   })
 
-  // ── PENDING PRESCRIPTIONS ─────────────────────────────────────────────────
+  // Replace the PENDING PRESCRIPTIONS handler in visits.ts with this.
+  // Adds patient name decryption to the pending prescriptions list.
+
   .openapi(createRoute({
     tags: ['Visits'], summary: 'Get all pending prescriptions (Pharmacist)',
     method: 'get', path: '/prescriptions/pending',
@@ -1683,14 +1883,68 @@ export const visitRouter = createRouter()
     try {
       const userType = c.get('userType');
       const userId = c.get('userId');
-      if (userType !== 'pharmacist' && userType !== 'admin') return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+      if (userType !== 'pharmacist' && userType !== 'admin')
+        return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+
       const staffInstitutionId = await getStaffInstitution(userId);
-      let sqlQuery = sql`SELECT p.id, p.prescription_number, p.visit_id, p.patient_id, p.status, p.prescribed_at, v.visit_number, v.chief_complaint, COUNT(pi.id) as total_items, COUNT(CASE WHEN pi.is_dispensed = false THEN 1 END) as pending_items FROM prescriptions p JOIN visits v ON v.id = p.visit_id LEFT JOIN prescription_items pi ON pi.prescription_id = p.id WHERE p.status IN ('prescribed', 'dispensing')`;
-      if (staffInstitutionId) sqlQuery = sql`${sqlQuery} AND v.institution_id = ${staffInstitutionId}`;
-      sqlQuery = sql`${sqlQuery} GROUP BY p.id, v.visit_number, v.chief_complaint ORDER BY p.prescribed_at ASC`;
-      const result = await db.execute(sqlQuery);
-      return c.json({ success: true, data: { prescriptions: result } });
+      const { decrypt } = await import('../services/crypto');
+
+      const instClause = staffInstitutionId
+        ? sql`AND v.institution_id = ${staffInstitutionId}`
+        : sql``;
+
+      const result = await db.execute(sql`
+        SELECT
+          p.id,
+          p.prescription_number,
+          p.visit_id,
+          p.patient_id,
+          p.status,
+          p.prescribed_at,
+          v.visit_number,
+          v.chief_complaint,
+          pt.first_name_encrypted AS patient_first_name_encrypted,
+          pt.last_name_encrypted  AS patient_last_name_encrypted,
+          COUNT(pi.id)                                              AS total_items,
+          COUNT(CASE WHEN pi.is_dispensed = false THEN 1 END)      AS pending_items
+        FROM prescriptions p
+        JOIN visits v            ON v.id  = p.visit_id
+        JOIN patients pt         ON pt.id = p.patient_id
+        LEFT JOIN prescription_items pi ON pi.prescription_id = p.id
+        WHERE p.status IN ('prescribed', 'dispensing')
+          ${instClause}
+        GROUP BY p.id, v.visit_number, v.chief_complaint,
+                 pt.first_name_encrypted, pt.last_name_encrypted
+        ORDER BY p.prescribed_at ASC
+      `);
+
+      const rows = (result as any).rows ?? result;
+
+      const prescriptions = rows.map((row: any) => {
+        let patientName = 'Unknown Patient';
+        try {
+          if (row.patient_first_name_encrypted)
+            patientName = `${decrypt(row.patient_first_name_encrypted)} ${decrypt(row.patient_last_name_encrypted)}`;
+        } catch { /* keep fallback */ }
+
+        return {
+          id: row.id,
+          prescriptionNumber: row.prescription_number,
+          visitId: row.visit_id,
+          patientId: row.patient_id,
+          patientName,
+          visitNumber: row.visit_number,
+          chiefComplaint: row.chief_complaint,
+          status: row.status,
+          prescribedAt: row.prescribed_at,
+          totalItems: Number(row.total_items ?? 0),
+          pendingItems: Number(row.pending_items ?? 0),
+        };
+      });
+
+      return c.json({ success: true, data: { prescriptions } });
     } catch (err: any) {
+      console.error('[PENDING_PRESCRIPTIONS]', err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   })
@@ -1796,7 +2050,10 @@ export const visitRouter = createRouter()
     }
   })
 
-  // ── DISPENSED PRESCRIPTIONS ───────────────────────────────────────────────
+  // ── DISPENSED PRESCRIPTIONS (with patient names) ──────────────────────────────
+  // Replace the existing /prescriptions/dispensed handler in visits.ts with this.
+  // The patient name is encrypted so we fetch + decrypt per row.
+
   .openapi(createRoute({
     tags: ['Visits'], summary: 'Get dispensed prescriptions history (Pharmacist)',
     method: 'get', path: '/prescriptions/dispensed',
@@ -1809,10 +2066,69 @@ export const visitRouter = createRouter()
   }), async (c) => {
     try {
       const userType = c.get('userType');
-      if (userType !== 'pharmacist' && userType !== 'admin') return c.json({ success: false, error: { message: 'Access denied' } }, 403);
-      const result = await db.execute(sql`SELECT p.id, p.prescription_number, p.visit_id, p.status, p.prescribed_at, p.updated_at as dispensed_at, v.visit_number, COUNT(pi.id) as total_items FROM prescriptions p JOIN visits v ON v.id = p.visit_id LEFT JOIN prescription_items pi ON pi.prescription_id = p.id WHERE p.status = 'dispensed' GROUP BY p.id, v.visit_number ORDER BY p.updated_at DESC LIMIT 50`);
-      return c.json({ success: true, data: { prescriptions: result } });
+      const userId = c.get('userId');
+      if (userType !== 'pharmacist' && userType !== 'admin')
+        return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+
+      const staffInstitutionId = await getStaffInstitution(userId);
+      const { decrypt } = await import('../services/crypto');
+
+      // Scope to institution unless super admin with no institution
+      const instClause = staffInstitutionId
+        ? sql`AND v.institution_id = ${staffInstitutionId}`
+        : sql``;
+
+      const result = await db.execute(sql`
+        SELECT
+          p.id,
+          p.prescription_number,
+          p.visit_id,
+          p.patient_id,
+          p.status,
+          p.prescribed_at,
+          p.updated_at AS dispensed_at,
+          v.visit_number,
+          pt.first_name_encrypted AS patient_first_name_encrypted,
+          pt.last_name_encrypted  AS patient_last_name_encrypted,
+          COUNT(pi.id) AS total_items
+        FROM prescriptions p
+        JOIN visits v   ON v.id = p.visit_id
+        JOIN patients pt ON pt.id = p.patient_id
+        LEFT JOIN prescription_items pi ON pi.prescription_id = p.id
+        WHERE p.status = 'dispensed'
+          ${instClause}
+        GROUP BY p.id, v.visit_number, pt.first_name_encrypted, pt.last_name_encrypted
+        ORDER BY p.updated_at DESC
+        LIMIT 50
+      `);
+
+      const rows = (result as any).rows ?? result;
+
+      const prescriptions = rows.map((row: any) => {
+        let patientName = 'Unknown Patient';
+        try {
+          if (row.patient_first_name_encrypted) {
+            patientName = `${decrypt(row.patient_first_name_encrypted)} ${decrypt(row.patient_last_name_encrypted)}`;
+          }
+        } catch { /* keep fallback */ }
+
+        return {
+          id: row.id,
+          prescriptionNumber: row.prescription_number,
+          visitId: row.visit_id,
+          patientId: row.patient_id,
+          patientName,
+          visitNumber: row.visit_number,
+          status: row.status,
+          prescribedAt: row.prescribed_at,
+          dispensedAt: row.dispensed_at,
+          itemCount: Number(row.total_items ?? 0),
+        };
+      });
+
+      return c.json({ success: true, data: { prescriptions } });
     } catch (err: any) {
+      console.error('[DISPENSED_HISTORY]', err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   })

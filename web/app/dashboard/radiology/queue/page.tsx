@@ -402,7 +402,7 @@ export default function RadiologyQueuePage() {
             {(
               ["all", "critical", "emergency", "urgent", "routine"] as const
             ).map((f) => {
-              const cfg = f === "all" ? null : URGENCY_CONFIG[f];
+              const cfg = f === "all" ? null : URGENCY_CONFIG[f as keyof typeof URGENCY_CONFIG];
               const count =
                 f === "all"
                   ? orders.length
@@ -442,7 +442,7 @@ export default function RadiologyQueuePage() {
                 All Modalities
               </button>
               {modalities.map((m) => {
-                const cfg = MODALITY_CONFIG[m] ?? {
+                const cfg = MODALITY_CONFIG[m as keyof typeof MODALITY_CONFIG] ?? {
                   label: m,
                   color: "#374151",
                   bg: "#F3F4F6",
@@ -483,10 +483,10 @@ export default function RadiologyQueuePage() {
           <div className="space-y-3">
             {filtered.map((order) => {
               const urgency =
-                URGENCY_CONFIG[order.urgency] ?? URGENCY_CONFIG.routine;
+                URGENCY_CONFIG[order.urgency as keyof typeof URGENCY_CONFIG] ?? URGENCY_CONFIG.routine;
               const status =
-                STATUS_CONFIG[order.status] ?? STATUS_CONFIG.ordered;
-              const modality = MODALITY_CONFIG[order.modality] ?? {
+                STATUS_CONFIG[order.status as keyof typeof STATUS_CONFIG] ?? STATUS_CONFIG.ordered;
+              const modality = MODALITY_CONFIG[order.modality as keyof typeof MODALITY_CONFIG] ?? {
                 label: order.modality,
                 color: "#374151",
                 bg: "#F3F4F6",

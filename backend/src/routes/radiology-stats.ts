@@ -1,419 +1,241 @@
+// src/routes/radiology-stats.ts
+// Replaces the misnamed receptionist stats file
+// Endpoints:
+//   GET /api/radiology-stats/overview   — institution-wide imaging stats
+//   GET /api/radiology-stats/my-stats   — stats for the logged-in radiologist
+
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq, and, sql, gte, lt, count, desc } from 'drizzle-orm';
+import { eq, and, gte, lt, count, desc, sql } from 'drizzle-orm';
 import { db } from '../db';
-import {
-    patients,
-    patientInstitutionRegistrations,
-    visits,
-    consultations,
-    practitioners,
-} from '../db/schema';
+import { imagingOrders, visits, practitioners } from '../db/schema';
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
-import { decrypt } from '../services/crypto';
 
-// ── Zod Schemas ──────────────────────────────────────────
+const errorSchema = z.object({ success: z.boolean(), error: z.object({ message: z.string() }) });
+const successSchema = z.object({ success: z.boolean(), data: z.any() });
 
-const errorSchema = z.object({
-    success: z.boolean(),
-    error: z.object({ message: z.string() }),
-});
-
-const dashboardResponseSchema = z.object({
-    success: z.boolean(),
-    data: z.object({
-        stats: z.object({
-            totalPatients: z.number(),
-            todayRegistered: z.number(),
-            queueLength: z.number(),
-            avgWaitMinutes: z.number(),
-            completedToday: z.number(),
-            weeklyGrowth: z.number(),
-        }),
-        queue: z.array(
-            z.object({
-                id: z.string(),
-                patientId: z.string(),
-                ticket: z.string(),
-                name: z.string(),
-                age: z.number(),
-                reason: z.string(),
-                priority: z.string(),
-                doctor: z.string().nullable(),
-                waitMins: z.number(),
-                status: z.string(),
-            })
-        ),
-        recent: z.array(
-            z.object({
-                id: z.string(),
-                name: z.string(),
-                time: z.string(),
-                type: z.enum(['New Patient', 'Returning']),
-            })
-        ),
-    }),
-});
-
-// ── Helpers ──────────────────────────────────────────────
-
-function startOfToday(): Date {
-    const d = new Date();
-    d.setUTCHours(0, 0, 0, 0);
-    return d;
+function startOfToday() {
+    const d = new Date(); d.setUTCHours(0, 0, 0, 0); return d;
+}
+function startOfWeek() {
+    const d = startOfToday(); d.setUTCDate(d.getUTCDate() - 7); return d;
 }
 
-function formatTime(date: Date): string {
-    return date.toLocaleTimeString('en-US', {
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-    });
+async function getInstitutionId(userId: string): Promise<string | null> {
+    const rows = await db.select({ institutionId: practitioners.institutionId }).from(practitioners).where(eq(practitioners.id, userId)).limit(1);
+    return rows[0]?.institutionId ?? null;
 }
-
-async function getStaffInstitution(userId: string): Promise<string | null> {
-    const staff = await db
-        .select({ institutionId: practitioners.institutionId })
-        .from(practitioners)
-        .where(eq(practitioners.id, userId))
-        .limit(1);
-    return staff[0]?.institutionId || null;
-}
-
-// ── Router ───────────────────────────────────────────────
 
 export const radiologyStatsRouter = createRouter()
 
-    .openapi(
-        createRoute({
-            tags: ['Dashboard'],
-            summary: 'Receptionist dashboard data (filtered by institution)',
-            method: 'get',
-            path: '/receptionist',
-            security: [{ bearerAuth: [] }],
-            middleware: [authMiddleware],
-            responses: {
-                200: {
-                    content: { 'application/json': { schema: dashboardResponseSchema } },
-                    description: 'Dashboard data for receptionist',
-                },
-                403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
-                500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
-            },
-        }),
-        async (c) => {
-            try {
-                const userType = c.get('userType');
-                const userId = c.get('userId');
-                if (!['receptionist', 'admin'].includes(userType)) {
-                    return c.json(
-                        { success: false, error: { message: 'Access denied. Receptionist role required.' } },
-                        403
-                    );
-                }
+    // ── GET /overview ─────────────────────────────────────────────────────────
+    .openapi(createRoute({
+        tags: ['Radiology'],
+        summary: 'Radiology overview stats for the institution',
+        method: 'get', path: '/overview',
+        security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+        responses: {
+            200: { content: { 'application/json': { schema: successSchema } }, description: 'OK' },
+            403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+        },
+        // @ts-expect-error
+    }), async (c) => {
+        try {
+            const userType = c.get('userType');
+            const userId = c.get('userId');
+            if (!['radiologist', 'admin'].includes(userType))
+                return c.json({ success: false, error: { message: 'Radiologist access required' } }, 403);
 
-                const staffInstitutionId = await getStaffInstitution(userId);
-                if (!staffInstitutionId && userType !== 'admin') {
-                    return c.json(
-                        { success: false, error: { message: 'User not associated with any institution.' } },
-                        403
-                    );
-                }
+            const institutionId = await getInstitutionId(userId);
+            const today = startOfToday();
+            const weekAgo = startOfWeek();
+            const tomorrow = new Date(today); tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
 
-                const institutionFilter = userType === 'admin' && !staffInstitutionId
-                    ? undefined
-                    : eq(visits.institutionId, staffInstitutionId);
+            // Build institution condition through visits join
+            const instJoin = institutionId
+                ? eq(visits.institutionId, institutionId)
+                : undefined;
 
-                const today = startOfToday();
-                const tomorrow = new Date(today);
-                tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+            // Total pending (ordered, scheduled)
+            const pendingRows = await db
+                .select({ count: count() })
+                .from(imagingOrders)
+                .innerJoin(visits, eq(visits.id, imagingOrders.visitId))
+                .where(and(
+                    sql`${imagingOrders.status} IN ('ordered','scheduled')`,
+                    ...(instJoin ? [instJoin] : []),
+                ));
+            const totalPending = Number(pendingRows[0]?.count ?? 0);
 
-                // ── Patient stats filtered by institution using patient_institution_registrations ──
-                // Total patients registered at this institution
-                const [totalPatients] = await db
-                    .select({ value: count() })
-                    .from(patientInstitutionRegistrations)
-                    .where(
-                        and(
-                            eq(patientInstitutionRegistrations.institutionId, staffInstitutionId),
-                            eq(patientInstitutionRegistrations.isActive, true)
-                        )
-                    );
+            // Critical/emergency pending
+            const criticalRows = await db
+                .select({ count: count() })
+                .from(imagingOrders)
+                .innerJoin(visits, eq(visits.id, imagingOrders.visitId))
+                .where(and(
+                    sql`${imagingOrders.status} IN ('ordered','scheduled')`,
+                    sql`${visits.priority} IN ('critical','emergency')`,
+                    ...(instJoin ? [instJoin] : []),
+                ));
+            const criticalCount = Number(criticalRows[0]?.count ?? 0);
 
-                // Patients registered at this institution today
-                const [todayRegistered] = await db
-                    .select({ value: count() })
-                    .from(patientInstitutionRegistrations)
-                    .where(
-                        and(
-                            eq(patientInstitutionRegistrations.institutionId, staffInstitutionId),
-                            eq(patientInstitutionRegistrations.isActive, true),
-                            gte(patientInstitutionRegistrations.registeredAt, today),
-                            lt(patientInstitutionRegistrations.registeredAt, tomorrow)
-                        )
-                    );
+            // Reported today
+            const reportedTodayRows = await db
+                .select({ count: count() })
+                .from(imagingOrders)
+                .innerJoin(visits, eq(visits.id, imagingOrders.visitId))
+                .where(and(
+                    eq(imagingOrders.status, 'reported'),
+                    gte(imagingOrders.updatedAt, today),
+                    lt(imagingOrders.updatedAt, tomorrow),
+                    ...(instJoin ? [instJoin] : []),
+                ));
+            const reportedToday = Number(reportedTodayRows[0]?.count ?? 0);
 
-                // ── Weekly growth for this institution ──
-                const sevenDaysAgo = new Date(today);
-                sevenDaysAgo.setUTCDate(sevenDaysAgo.getUTCDate() - 7);
-                const fourteenDaysAgo = new Date(today);
-                fourteenDaysAgo.setUTCDate(fourteenDaysAgo.getUTCDate() - 14);
+            // Reported this week
+            const reportedWeekRows = await db
+                .select({ count: count() })
+                .from(imagingOrders)
+                .innerJoin(visits, eq(visits.id, imagingOrders.visitId))
+                .where(and(
+                    eq(imagingOrders.status, 'reported'),
+                    gte(imagingOrders.updatedAt, weekAgo),
+                    ...(instJoin ? [instJoin] : []),
+                ));
+            const reportedWeek = Number(reportedWeekRows[0]?.count ?? 0);
 
-                const [last7] = await db
-                    .select({ value: count() })
-                    .from(patientInstitutionRegistrations)
-                    .where(
-                        and(
-                            eq(patientInstitutionRegistrations.institutionId, staffInstitutionId),
-                            eq(patientInstitutionRegistrations.isActive, true),
-                            gte(patientInstitutionRegistrations.registeredAt, sevenDaysAgo),
-                            lt(patientInstitutionRegistrations.registeredAt, today)
-                        )
-                    );
-
-                const [prev7] = await db
-                    .select({ value: count() })
-                    .from(patientInstitutionRegistrations)
-                    .where(
-                        and(
-                            eq(patientInstitutionRegistrations.institutionId, staffInstitutionId),
-                            eq(patientInstitutionRegistrations.isActive, true),
-                            gte(patientInstitutionRegistrations.registeredAt, fourteenDaysAgo),
-                            lt(patientInstitutionRegistrations.registeredAt, sevenDaysAgo)
-                        )
-                    );
-
-                const weeklyGrowth =
-                    prev7.value === 0
-                        ? last7.value > 0
-                            ? 100
-                            : 0
-                        : Math.round(((last7.value - prev7.value) / prev7.value) * 100 * 10) / 10;
-
-                // ── Queue: visits today, not completed/cancelled, filtered by institution ──
-                const queueVisits = await db
-                    .select({
-                        id: visits.id,
-                        visitNumber: visits.visitNumber,
-                        patientId: visits.patientId,
-                        chiefComplaint: visits.chiefComplaint,
-                        priority: visits.priority,
-                        status: visits.status,
-                        admissionDate: visits.admissionDate,
-                    })
-                    .from(visits)
-                    .where(
-                        and(
-                            gte(visits.admissionDate, today),
-                            lt(visits.admissionDate, tomorrow),
-                            sql`${visits.status} NOT IN ('completed', 'cancelled')`,
-                            institutionFilter
-                        )
-                    );
-
-                const queueLength = queueVisits.length;
-
-                let avgWaitMinutes = 0;
-                if (queueLength > 0) {
-                    const now = new Date();
-                    const totalWait = queueVisits.reduce((sum, v) => {
-                        const mins = (now.getTime() - v.admissionDate.getTime()) / 60000;
-                        return sum + mins;
-                    }, 0);
-                    avgWaitMinutes = Math.round(totalWait / queueLength);
-                }
-
-                // Completed today at this institution
-                const [completedToday] = await db
-                    .select({ value: count() })
-                    .from(visits)
-                    .where(
-                        and(
-                            eq(visits.status, 'completed'),
-                            gte(visits.dischargeDate, today),
-                            lt(visits.dischargeDate, tomorrow),
-                            institutionFilter
-                        )
-                    );
-
-                // ── Build queue list (enriched with patient info) ──
-                const queue = await Promise.all(
-                    queueVisits.map(async (v) => {
-                        const patientRec = await db
-                            .select({
-                                id: patients.id,
-                                firstNameEncrypted: patients.firstNameEncrypted,
-                                lastNameEncrypted: patients.lastNameEncrypted,
-                                dateOfBirthEncrypted: patients.dateOfBirthEncrypted,
-                            })
-                            .from(patients)
-                            .where(eq(patients.id, v.patientId))
-                            .limit(1);
-
-                        if (!patientRec.length) return null;
-
-                        const p = patientRec[0];
-
-                        let firstName = 'Unknown';
-                        try {
-                            firstName = decrypt(p.firstNameEncrypted);
-                        } catch (err) {
-                            console.error(`Failed to decrypt firstName for patient ${p.id}:`, err);
-                        }
-
-                        let lastName = 'Unknown';
-                        try {
-                            lastName = decrypt(p.lastNameEncrypted);
-                        } catch (err) {
-                            console.error(`Failed to decrypt lastName for patient ${p.id}:`, err);
-                        }
-
-                        const name = `${firstName} ${lastName}`.trim();
-
-                        let dobStr = '1970-01-01';
-                        try {
-                            dobStr = decrypt(p.dateOfBirthEncrypted);
-                        } catch (err) {
-                            console.error(`Failed to decrypt dateOfBirth for patient ${p.id}:`, err);
-                        }
-
-                        const dob = new Date(dobStr);
-                        const age = isNaN(dob.getTime())
-                            ? 0
-                            : Math.floor((new Date().getTime() - dob.getTime()) / (365.25 * 24 * 60 * 60 * 1000));
-
-                        let doctorName: string | null = null;
-                        const consultation = await db
-                            .select({ practitionerId: consultations.practitionerId })
-                            .from(consultations)
-                            .where(eq(consultations.visitId, v.id))
-                            .orderBy(consultations.consultationDate)
-                            .limit(1);
-
-                        if (consultation.length) {
-                            const prac = await db
-                                .select({
-                                    firstNameEncrypted: practitioners.firstNameEncrypted,
-                                    lastNameEncrypted: practitioners.lastNameEncrypted,
-                                })
-                                .from(practitioners)
-                                .where(eq(practitioners.id, consultation[0].practitionerId))
-                                .limit(1);
-
-                            if (prac.length) {
-                                let firstNameDoc = 'Unknown';
-                                let lastNameDoc = 'Unknown';
-                                try {
-                                    firstNameDoc = decrypt(prac[0].firstNameEncrypted);
-                                } catch (err) {
-                                    console.error(`Failed to decrypt firstName for practitioner ${consultation[0].practitionerId}:`, err);
-                                }
-                                try {
-                                    lastNameDoc = decrypt(prac[0].lastNameEncrypted);
-                                } catch (err) {
-                                    console.error(`Failed to decrypt lastName for practitioner ${consultation[0].practitionerId}:`, err);
-                                }
-                                doctorName = `${firstNameDoc} ${lastNameDoc}`.trim();
-                            }
-                        }
-
-                        const waitMins = Math.round((new Date().getTime() - v.admissionDate.getTime()) / 60000);
-                        const statusDisplay = v.status === 'in-progress' ? 'In Progress' : 'Waiting';
-
-                        return {
-                            id: v.id,
-                            patientId: v.patientId,
-                            ticket: v.visitNumber,
-                            name,
-                            age,
-                            reason: v.chiefComplaint,
-                            priority: v.priority,
-                            doctor: doctorName,
-                            waitMins,
-                            status: statusDisplay,
-                        };
-                    })
-                ).then((results) => results.filter((r): r is NonNullable<typeof r> => r !== null));
-
-                // ── Recent patients registered at this institution ──
-                const recentRegistrations = await db
-                    .select({
-                        patientId: patientInstitutionRegistrations.patientId,
-                        registeredAt: patientInstitutionRegistrations.registeredAt,
-                    })
-                    .from(patientInstitutionRegistrations)
-                    .where(
-                        and(
-                            eq(patientInstitutionRegistrations.institutionId, staffInstitutionId),
-                            eq(patientInstitutionRegistrations.isActive, true)
-                        )
-                    )
-                    .orderBy(desc(patientInstitutionRegistrations.registeredAt))
-                    .limit(5);
-
-                const recent = await Promise.all(
-                    recentRegistrations.map(async (reg) => {
-                        const patient = await db
-                            .select({
-                                firstNameEncrypted: patients.firstNameEncrypted,
-                                lastNameEncrypted: patients.lastNameEncrypted,
-                            })
-                            .from(patients)
-                            .where(eq(patients.id, reg.patientId))
-                            .limit(1);
-                        if (!patient.length) return null;
-                        const p = patient[0];
-                        const firstName = decrypt(p.firstNameEncrypted);
-                        const lastName = decrypt(p.lastNameEncrypted);
-                        const name = `${firstName} ${lastName}`.trim();
-
-                        // Check if this patient has had any previous visit at this institution
-                        const previousVisits = await db
-                            .select({ id: visits.id })
-                            .from(visits)
-                            .where(
-                                and(
-                                    eq(visits.patientId, reg.patientId),
-                                    lt(visits.admissionDate, reg.registeredAt),
-                                    institutionFilter
-                                )
-                            )
-                            .limit(1);
-
-                        const type = previousVisits.length > 0 ? 'Returning' : 'New Patient';
-                        return {
-                            id: reg.patientId,
-                            name,
-                            time: formatTime(reg.registeredAt),
-                            type,
-                        };
-                    })
-                ).then((results) => results.filter((r): r is NonNullable<typeof r> => r !== null));
-
-                return c.json({
-                    success: true,
-                    data: {
-                        stats: {
-                            totalPatients: totalPatients.value,
-                            todayRegistered: todayRegistered.value,
-                            queueLength,
-                            avgWaitMinutes,
-                            completedToday: completedToday.value,
-                            weeklyGrowth,
-                        },
-                        queue,
-                        recent,
-                    },
-                });
-            } catch (err: unknown) {
-                console.error('Dashboard error:', err);
-                return c.json(
-                    {
-                        success: false,
-                        error: { message: err instanceof Error ? err.message : 'Internal server error' },
-                    },
-                    500
-                );
+            // Pending by modality
+            const byModalityRows = await db
+                .select({ modality: imagingOrders.modality, count: count() })
+                .from(imagingOrders)
+                .innerJoin(visits, eq(visits.id, imagingOrders.visitId))
+                .where(and(
+                    sql`${imagingOrders.status} IN ('ordered','scheduled')`,
+                    ...(instJoin ? [instJoin] : []),
+                ))
+                .groupBy(imagingOrders.modality);
+            const pendingByModality: Record<string, number> = {};
+            for (const row of byModalityRows) {
+                if (row.modality) pendingByModality[row.modality] = Number(row.count);
             }
+
+            // 7-day activity
+            const weeklyActivity = await db.execute(sql`
+                SELECT
+                    DATE(io.updated_at) as date,
+                    COUNT(CASE WHEN io.status IN ('ordered','scheduled') THEN 1 END) as ordered,
+                    COUNT(CASE WHEN io.status = 'reported' THEN 1 END) as reported
+                FROM imaging_orders io
+                INNER JOIN visits v ON v.id = io.visit_id
+                WHERE io.updated_at >= ${weekAgo.toISOString()}
+                  ${institutionId ? sql`AND v.institution_id = ${institutionId}` : sql``}
+                GROUP BY DATE(io.updated_at)
+                ORDER BY date ASC
+            `);
+
+            return c.json({
+                success: true,
+                data: {
+                    totalPending,
+                    criticalCount,
+                    reportedToday,
+                    reportedWeek,
+                    pendingByModality,
+                    weeklyActivity: (weeklyActivity as any[]).map(r => ({
+                        date: r.date,
+                        ordered: Number(r.ordered),
+                        reported: Number(r.reported),
+                    })),
+                },
+            });
+        } catch (err: any) {
+            console.error('[RADIOLOGY_OVERVIEW]', err);
+            return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
         }
-    );
+    })
+
+    // ── GET /my-stats ─────────────────────────────────────────────────────────
+    .openapi(createRoute({
+        tags: ['Radiology'],
+        summary: 'Stats for the logged-in radiologist',
+        method: 'get', path: '/my-stats',
+        security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+        responses: {
+            200: { content: { 'application/json': { schema: successSchema } }, description: 'OK' },
+            403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+        },
+        // @ts-expect-error
+    }), async (c) => {
+        try {
+            const userType = c.get('userType');
+            const userId = c.get('userId');
+            if (!['radiologist', 'admin'].includes(userType))
+                return c.json({ success: false, error: { message: 'Radiologist access required' } }, 403);
+
+            const today = startOfToday();
+            const monthAgo = new Date(today); monthAgo.setUTCMonth(monthAgo.getUTCMonth() - 1);
+            const tomorrow = new Date(today); tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+
+            // Reports today by this radiologist
+            const todayRows = await db
+                .select({ count: count() })
+                .from(imagingOrders)
+                .where(and(
+                    eq(imagingOrders.reportedById, userId),
+                    eq(imagingOrders.status, 'reported'),
+                    gte(imagingOrders.updatedAt, today),
+                    lt(imagingOrders.updatedAt, tomorrow),
+                ));
+            const todayReports = Number(todayRows[0]?.count ?? 0);
+
+            // Reports this month
+            const monthRows = await db
+                .select({ count: count() })
+                .from(imagingOrders)
+                .where(and(
+                    eq(imagingOrders.reportedById, userId),
+                    eq(imagingOrders.status, 'reported'),
+                    gte(imagingOrders.updatedAt, monthAgo),
+                ));
+            const monthReports = Number(monthRows[0]?.count ?? 0);
+
+            // Modality breakdown for this radiologist
+            const modalityRows = await db
+                .select({ modality: imagingOrders.modality, count: count() })
+                .from(imagingOrders)
+                .where(and(
+                    eq(imagingOrders.reportedById, userId),
+                    eq(imagingOrders.status, 'reported'),
+                    gte(imagingOrders.updatedAt, monthAgo),
+                ))
+                .groupBy(imagingOrders.modality);
+            const modalityBreakdown: Record<string, number> = {};
+            for (const row of modalityRows) {
+                if (row.modality) modalityBreakdown[row.modality] = Number(row.count);
+            }
+
+            // Avg turnaround (ordered_at → updated_at) in minutes for reported orders
+            const turnaroundRows = await db.execute(sql`
+                SELECT AVG(EXTRACT(EPOCH FROM (updated_at - ordered_at)) / 60)::int as avg_mins
+                FROM imaging_orders
+                WHERE reported_by_id = ${userId}
+                  AND status = 'reported'
+                  AND updated_at >= ${monthAgo.toISOString()}
+                  AND ordered_at IS NOT NULL
+            `);
+            const avgTurnaroundMinutes = Number((turnaroundRows as any[])[0]?.avg_mins ?? 0);
+
+            return c.json({
+                success: true,
+                data: {
+                    todayReports,
+                    monthReports,
+                    modalityBreakdown,
+                    avgTurnaroundMinutes,
+                },
+            });
+        } catch (err: any) {
+            console.error('[RADIOLOGY_MY_STATS]', err);
+            return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+        }
+    });

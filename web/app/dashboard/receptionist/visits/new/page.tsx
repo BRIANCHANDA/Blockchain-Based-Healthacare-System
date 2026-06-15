@@ -4,7 +4,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useForm, type Resolver } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { api, visitApi, patientApi, practitionersApi } from "@/lib/api";
+import { visitApi, patientApi, practitionersApi } from "@/lib/api";
+import type { PatientSummary } from "@/lib/api";
+import PatientQRScanner from "@/components/PatientQRScanner";
 import {
   Search,
   UserPlus,
@@ -17,16 +19,10 @@ import {
   Activity,
   ChevronRight,
   Stethoscope,
+  QrCode,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
-interface PatientResult {
-  id: string;
-  firstName: string;
-  lastName: string;
-  gender: string;
-  blockchainAddress: string;
-}
 
 interface NurseResult {
   id: string;
@@ -141,12 +137,15 @@ function NewVisitPageInner() {
 
   const [step, setStep] = useState<1 | 2 | 3 | 4>(1);
 
+  // Step 1 — find mode (search vs scan)
+  const [findMode, setFindMode] = useState<"search" | "scan">("search");
+
   // Step 1 — patient search
   const [searchQuery, setSearchQuery] = useState("");
   const [searching, setSearching] = useState(false);
-  const [searchResults, setSearchResults] = useState<PatientResult[]>([]);
+  const [searchResults, setSearchResults] = useState<PatientSummary[]>([]);
   const [searchError, setSearchError] = useState("");
-  const [selectedPatient, setSelectedPatient] = useState<PatientResult | null>(
+  const [selectedPatient, setSelectedPatient] = useState<PatientSummary | null>(
     null,
   );
 
@@ -184,28 +183,35 @@ function NewVisitPageInner() {
   const [submitError, setSubmitError] = useState("");
 
   // ── Check whether the patient already has an active visit ─────────────────
-  const checkActiveVisit = useCallback(async (patientId: string) => {
-    setCheckingVisit(true);
-    setActiveVisit(null);
-    try {
-      const res = await visitApi.getTodayQueue(); // GET /visits/today
-      const visits: any[] = res.data.data?.visits ?? [];
-      const existing = visits.find((v: any) => v.patientId === patientId);
-      if (existing) {
-        setActiveVisit({
-          visitNumber: existing.visitNumber,
-          visitId: existing.id,
-        });
+  // shouldAdvance: auto-skip to step 2 when check passes (QR / URL flows only)
+  const checkActiveVisit = useCallback(
+    async (patientId: string, shouldAdvance = false) => {
+      setCheckingVisit(true);
+      setActiveVisit(null);
+      try {
+        const res = await visitApi.getTodayQueue();
+        const visits: any[] = res.data.data?.visits ?? [];
+        const existing = visits.find((v: any) => v.patientId === patientId);
+        if (existing) {
+          setActiveVisit({
+            visitNumber: existing.visitNumber,
+            visitId: existing.id,
+          });
+        } else if (shouldAdvance) {
+          setStep(2);
+        }
+      } catch {
+        // Fail silently — if check errors and we should advance, still advance
+        // so a network hiccup doesn't block the receptionist; server rejects duplicates.
+        if (shouldAdvance) setStep(2);
+      } finally {
+        setCheckingVisit(false);
       }
-    } catch {
-      // Fail silently — a network error should not prevent the user from
-      // proceeding; the server will reject the duplicate if one truly exists.
-    } finally {
-      setCheckingVisit(false);
-    }
-  }, []);
+    },
+    [],
+  );
 
-  // Pre-select patient from URL
+  // Pre-select patient from URL (?patientId=) — comes from the QR scan page
   useEffect(() => {
     const patientId = searchParams.get("patientId");
     if (patientId) {
@@ -214,13 +220,12 @@ function NewVisitPageInner() {
         .then((res) => {
           const patient = res.data.data;
           setSelectedPatient(patient);
-          checkActiveVisit(patient.id);
-          // Only jump to step 2 after the check resolves (handled by the UI
-          // below — if no active visit the "Continue" button advances the step)
+          // Auto-advance after check: the scan page already confirmed the patient
+          checkActiveVisit(patient.id, true);
         })
         .catch(console.error);
     }
-  }, [checkActiveVisit]);
+  }, [searchParams, checkActiveVisit]);
 
   // Load nurses when we reach step 3
   useEffect(() => {
@@ -244,7 +249,6 @@ function NewVisitPageInner() {
   // Search patients
   const handleSearch = useCallback((q: string) => {
     setSearchQuery(q);
-    // Clear any prior selection / check state when the user starts a new search
     setSelectedPatient(null);
     setActiveVisit(null);
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -266,6 +270,16 @@ function NewVisitPageInner() {
       }
     }, 400);
   }, []);
+
+  // Switch between search / scan tabs — clear prior state
+  const switchMode = (mode: "search" | "scan") => {
+    setFindMode(mode);
+    setSelectedPatient(null);
+    setActiveVisit(null);
+    setSearchQuery("");
+    setSearchResults([]);
+    setSearchError("");
+  };
 
   // Step 2 → create visit → go to step 3
   const onSubmitVisit = async (data: VisitForm) => {
@@ -312,6 +326,7 @@ function NewVisitPageInner() {
   // Full reset back to step 1
   const handleReset = () => {
     setStep(1);
+    setFindMode("search");
     setSelectedPatient(null);
     setActiveVisit(null);
     setCreatedVisit(null);
@@ -334,7 +349,7 @@ function NewVisitPageInner() {
       <div className="flex items-center gap-3 mb-6">
         <button
           onClick={() =>
-            step > 1 ? setStep((step - 1) as 1 | 2 | 3) : router.back()
+            step > 1 ? setStep((step - 1) as 1 | 2 | 3 | 4) : router.back()
           }
           className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors text-gray-500"
         >
@@ -354,96 +369,186 @@ function NewVisitPageInner() {
       {step === 1 && (
         <div className="space-y-4">
           <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            <div className="flex items-center gap-2 mb-5">
-              <Search className="w-4 h-4 text-green-700" />
-              <h2 className="text-sm font-bold text-gray-800">
-                Search for Patient
-              </h2>
-            </div>
-
-            <div className="relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-              <input
-                value={searchQuery}
-                onChange={(e) => handleSearch(e.target.value)}
-                placeholder="Enter patient ID or name…"
-                className={`${inputCls} pl-10`}
-                autoFocus
-              />
-              {searching && (
-                <Loader2 className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin" />
-              )}
-            </div>
-
-            <p className="text-xs text-gray-400 mt-2.5 flex items-center gap-1.5">
-              <AlertCircle className="w-3 h-3" /> Search By Patient's Name or
-              Patient's ID
-            </p>
-
-            {searchError && (
-              <p className="text-xs text-red-600 mt-2 flex items-center gap-1.5">
-                <AlertCircle className="w-3.5 h-3.5" /> {searchError}
-              </p>
-            )}
-
-            {/* ── Search results ── */}
-            {searchResults.length > 0 && (
-              <div className="mt-4 space-y-2">
-                {searchResults.map((p) => {
-                  const isSelected = selectedPatient?.id === p.id;
-                  return (
-                    <button
-                      key={p.id}
-                      onClick={() => {
-                        setSelectedPatient(p);
-                        checkActiveVisit(p.id);
-                      }}
-                      className="w-full flex items-center gap-3 p-3.5 rounded-xl border transition-all text-left group"
-                      style={
-                        isSelected
-                          ? { borderColor: "#166534", background: "#f0fdf4" }
-                          : {
-                              borderColor: "#f3f4f6",
-                              background: "#fff",
-                            }
-                      }
-                    >
-                      <div
-                        className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-                        style={{ background: "#166534" }}
-                      >
-                        {p.firstName?.[0]}
-                        {p.lastName?.[0]}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-800">
-                          {p.firstName} {p.lastName}
-                        </p>
-                      </div>
-                      <ChevronRight
-                        className="w-4 h-4 transition-colors"
-                        style={{ color: isSelected ? "#166534" : "#d1d5db" }}
-                      />
-                    </button>
-                  );
-                })}
+            {/* Header + Search / Scan tab toggle */}
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                {findMode === "scan" ? (
+                  <QrCode className="w-4 h-4 text-green-700" />
+                ) : (
+                  <Search className="w-4 h-4 text-green-700" />
+                )}
+                <h2 className="text-sm font-bold text-gray-800">
+                  Find Patient
+                </h2>
               </div>
+
+              <div
+                className="flex gap-0.5 p-1 rounded-xl"
+                style={{ background: "#f3f4f6" }}
+              >
+                <button
+                  onClick={() => switchMode("search")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                  style={
+                    findMode === "search"
+                      ? {
+                          background: "#fff",
+                          color: "#166534",
+                          boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+                        }
+                      : { color: "#9ca3af" }
+                  }
+                >
+                  <Search className="w-3 h-3" /> Search
+                </button>
+                <button
+                  onClick={() => switchMode("scan")}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                  style={
+                    findMode === "scan"
+                      ? {
+                          background: "#fff",
+                          color: "#166534",
+                          boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+                        }
+                      : { color: "#9ca3af" }
+                  }
+                >
+                  <QrCode className="w-3 h-3" /> Scan QR
+                </button>
+              </div>
+            </div>
+
+            {/* ── Search mode ── */}
+            {findMode === "search" && !selectedPatient && (
+              <>
+                <div className="relative">
+                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <input
+                    value={searchQuery}
+                    onChange={(e) => handleSearch(e.target.value)}
+                    placeholder="Enter patient ID or name…"
+                    className={`${inputCls} pl-10`}
+                    autoFocus
+                  />
+                  {searching && (
+                    <Loader2 className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin" />
+                  )}
+                </div>
+
+                <p className="text-xs text-gray-400 mt-2.5 flex items-center gap-1.5">
+                  <AlertCircle className="w-3 h-3" /> Search by patient's name
+                  or ID
+                </p>
+
+                {searchError && (
+                  <p className="text-xs text-red-600 mt-2 flex items-center gap-1.5">
+                    <AlertCircle className="w-3.5 h-3.5" /> {searchError}
+                  </p>
+                )}
+
+                {searchResults.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    {searchResults.map((patient: PatientSummary) => {
+                      const isSelected = false;
+                      return (
+                        <button
+                          key={patient.id}
+                          onClick={() => {
+                            setSelectedPatient(patient);
+                            // Manual selection: show Continue button, don't auto-advance
+                            checkActiveVisit(patient.id, false);
+                          }}
+                          className="w-full flex items-center gap-3 p-3.5 rounded-xl border transition-all text-left"
+                          style={
+                            isSelected
+                              ? {
+                                  borderColor: "#166534",
+                                  background: "#f0fdf4",
+                                }
+                              : { borderColor: "#f3f4f6", background: "#fff" }
+                          }
+                        >
+                          <div
+                            className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
+                            style={{ background: "#166534" }}
+                          >
+                            {patient.firstName?.[0]}
+                            {patient.lastName?.[0]}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm font-semibold text-gray-800">
+                              {patient.firstName} {patient.lastName}
+                            </p>
+                          </div>
+                          <ChevronRight
+                            className="w-4 h-4"
+                            style={{
+                              color: isSelected ? "#166534" : "#d1d5db",
+                            }}
+                          />
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {searchQuery &&
+                  !searching &&
+                  searchResults.length === 0 &&
+                  !searchError && (
+                    <div className="mt-4 py-8 text-center">
+                      <User className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+                      <p className="text-sm text-gray-400">No patients found</p>
+                    </div>
+                  )}
+              </>
             )}
 
-            {searchQuery &&
-              !searching &&
-              searchResults.length === 0 &&
-              !searchError && (
-                <div className="mt-4 py-8 text-center">
-                  <User className="w-8 h-8 text-gray-200 mx-auto mb-2" />
-                  <p className="text-sm text-gray-400">No patients found</p>
-                </div>
-              )}
+            {/* ── Scan mode ── */}
+            {findMode === "scan" && !selectedPatient && (
+              <PatientQRScanner
+                onFound={(patient) => {
+                  setSelectedPatient(patient as PatientSummary);
+                  // Auto-advance after check: QR already confirmed the patient
+                  checkActiveVisit(patient.id, true);
+                }}
+                hint="Hold the patient's QR code steady in the frame. Once scanned you'll go straight to visit details — no extra tap needed."
+              />
+            )}
 
-            {/* ── Active-visit check feedback + Continue button ── */}
+            {/* ── Active-visit check + Continue (shared for both modes) ── */}
             {selectedPatient && (
-              <div className="mt-4 space-y-3">
-                {/* Loading state */}
+              <div className="space-y-3">
+                {/* Selected patient card */}
+                <div className="flex items-center gap-3 p-3.5 rounded-xl border border-green-100 bg-green-50">
+                  <div
+                    className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
+                    style={{ background: "#166534" }}
+                  >
+                    {selectedPatient.firstName?.[0]}
+                    {selectedPatient.lastName?.[0]}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-gray-800">
+                      {selectedPatient.firstName} {selectedPatient.lastName}
+                    </p>
+                    <p className="text-xs text-gray-400 font-mono truncate">
+                      {selectedPatient.id}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setSelectedPatient(null);
+                      setActiveVisit(null);
+                    }}
+                    className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2 flex-shrink-0"
+                  >
+                    Change
+                  </button>
+                </div>
+
+                {/* Checking */}
                 {checkingVisit && (
                   <div className="flex items-center gap-2.5 p-3.5 rounded-xl bg-gray-50 border border-gray-100">
                     <Loader2 className="w-4 h-4 animate-spin text-gray-400 flex-shrink-0" />
@@ -501,8 +606,8 @@ function NewVisitPageInner() {
                   </div>
                 )}
 
-                {/* Clear — no active visit, show Continue */}
-                {!checkingVisit && !activeVisit && (
+                {/* Search mode only: explicit Continue button; scan mode auto-advances */}
+                {!checkingVisit && !activeVisit && findMode === "search" && (
                   <button
                     onClick={() => setStep(2)}
                     className="w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-semibold shadow-sm hover:shadow-md transition-all"

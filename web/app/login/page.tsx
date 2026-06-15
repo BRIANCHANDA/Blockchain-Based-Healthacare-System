@@ -2,642 +2,729 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { authApi } from "@/lib/api";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useAuthStore } from "@/lib/store";
-import { Eye, EyeOff, AlertCircle } from "lucide-react";
+import { api } from "@/lib/api";
+import {
+  Eye,
+  EyeOff,
+  Loader2,
+  AlertCircle,
+  Mail,
+  Hash,
+  ArrowLeft,
+} from "lucide-react";
 
-const schema = z.object({
+type LoginMode = "license" | "email";
+
+const licenseSchema = z.object({
   licenseNumber: z.string().min(1, "License number is required"),
   password: z.string().min(1, "Password is required"),
 });
-type FormData = z.infer<typeof schema>;
+const emailSchema = z.object({
+  email: z.string().email("Invalid email address"),
+  password: z.string().min(1, "Password is required"),
+});
+const otpSchema = z.object({
+  otp: z.string().length(6, "Code must be 6 digits"),
+});
+
+type LicenseForm = z.infer<typeof licenseSchema>;
+type EmailForm = z.infer<typeof emailSchema>;
+type OTPForm = z.infer<typeof otpSchema>;
 
 const ROLE_ROUTES: Record<string, string> = {
+  admin: "/dashboard/admin",
   practitioner: "/dashboard/doctor",
   nurse: "/dashboard/nurse",
+  receptionist: "/dashboard/receptionist",
   lab_technician: "/dashboard/laboratory",
   radiologist: "/dashboard/radiology",
   pharmacist: "/dashboard/pharmacy",
-  admin: "/dashboard/admin",
-  receptionist: "/dashboard/receptionist",
 };
 
 export default function LoginPage() {
   const router = useRouter();
-  const { setAuth } = useAuthStore();
-  const [showPassword, setShowPassword] = useState(false);
+  const setAuth = useAuthStore((s) => s.setAuth);
+
+  const [mode, setMode] = useState<LoginMode>("license");
+  const [showPw, setShowPw] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [otpStep, setOtpStep] = useState(false);
+  const [otpData, setOtpData] = useState<{
+    userId: string;
+    maskedEmail: string;
+  } | null>(null);
+  const [resending, setResending] = useState(false);
+  const [resendMsg, setResendMsg] = useState("");
 
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<FormData>({
-    resolver: zodResolver(schema),
+  const licenseForm = useForm<LicenseForm>({
+    resolver: zodResolver(licenseSchema),
   });
+  const emailForm = useForm<EmailForm>({ resolver: zodResolver(emailSchema) });
+  const otpForm = useForm<OTPForm>({ resolver: zodResolver(otpSchema) });
 
-  const onSubmit = async (data: FormData) => {
+  const onSubmitCredentials = async (data: LicenseForm | EmailForm) => {
     setLoading(true);
     setError("");
     try {
-      // Try practitioner first, then nurse
-      let res;
-      try {
-        res = await authApi.loginStaff({
-          licenseNumber: data.licenseNumber,
-          password: data.password,
-        });
-      } catch {
-        res = await authApi.loginNurse({
-          licenseNumber: data.licenseNumber,
-          password: data.password,
-        });
-      }
-      const { token, user } = res.data.data;
-      setAuth(user, token);
-      router.push(ROLE_ROUTES[user.type] ?? "/dashboard");
-    } catch (err: any) {
-      const msg = err.response?.data?.error?.message;
-      if (msg === "Account pending verification by administrator") {
-        setError(
-          "Your account is pending verification. Please contact your administrator.",
-        );
-      } else if (msg === "Invalid credentials") {
-        setError("Incorrect license number or password.");
+      const payload =
+        mode === "license"
+          ? {
+              licenseNumber: (data as LicenseForm).licenseNumber,
+              password: data.password,
+            }
+          : { email: (data as EmailForm).email, password: data.password };
+      const res = await api.post("/api/auth/login/staff", payload);
+      const d = res.data.data;
+      if (d.requiresOTP) {
+        setOtpData({ userId: d.userId, maskedEmail: d.maskedEmail });
+        setOtpStep(true);
       } else {
-        setError(msg || "Sign in failed. Please check your credentials.");
+        setAuth(d.user, d.token);
+        if (d.user.mustChangePassword) {
+          router.replace("/change-password");
+          return;
+        }
+        router.replace(ROLE_ROUTES[d.user.type] ?? "/dashboard/admin");
       }
+    } catch (err: any) {
+      setError(
+        err.response?.data?.error?.message ??
+          "Invalid credentials. Please try again.",
+      );
     } finally {
       setLoading(false);
     }
   };
 
+  const onSubmitOTP = async (data: OTPForm) => {
+    if (!otpData) return;
+    setLoading(true);
+    setError("");
+    try {
+      const res = await api.post("/api/auth/verify-otp", {
+        userId: otpData.userId,
+        userType: "staff",
+        otp: data.otp,
+      });
+      const d = res.data.data;
+      setAuth(d.user, d.token);
+      if (d.user.mustChangePassword) {
+        router.replace("/change-password");
+        return;
+      }
+      router.replace(ROLE_ROUTES[d.user.type] ?? "/dashboard/admin");
+    } catch (err: any) {
+      setError(
+        err.response?.data?.error?.message ??
+          "Invalid or expired code. Please try again.",
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (!otpData) return;
+    setResending(true);
+    setResendMsg("");
+    try {
+      const res = await api.post("/api/auth/resend-otp", {
+        userId: otpData.userId,
+        userType: "staff",
+      });
+      setResendMsg(res.data.data.message);
+    } catch {
+      setResendMsg("Failed to resend. Please try again.");
+    } finally {
+      setResending(false);
+    }
+  };
+
   return (
-    <div className="hc-root" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "#f8f9fc",
+        fontFamily: "'DM Sans', sans-serif",
+        padding: 24,
+      }}
+    >
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@400;500;600;700&display=swap');
-
-        .hc-root {
-          min-height: 100vh;
-          display: flex;
-          background: #f7f8f5;
-          overflow: hidden;
-          position: relative;
-        }
-
-        /* ── Decorative left panel ── */
-        .hc-panel {
-          width: 52%;
-          position: relative;
-          background: linear-gradient(160deg, #0a3d1f 0%, #166534 45%, #15803d 100%);
-          display: flex;
-          flex-direction: column;
-          justify-content: space-between;
-          padding: 52px 56px;
-          overflow: hidden;
-        }
-        @media (max-width: 900px) { .hc-panel { display: none; } }
-
-        /* Subtle dot-grid overlay */
-        .hc-panel::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          background-image: radial-gradient(circle, rgba(255,255,255,0.07) 1px, transparent 1px);
-          background-size: 28px 28px;
-          pointer-events: none;
-        }
-
-        /* Large decorative ring */
-        .hc-ring {
-          position: absolute;
-          border-radius: 50%;
-          border: 1px solid rgba(255,255,255,0.08);
-        }
-        .hc-ring-1 { width: 520px; height: 520px; right: -160px; top: -100px; }
-        .hc-ring-2 { width: 380px; height: 380px; right: -80px; bottom: 40px; border-color: rgba(255,255,255,0.05); }
-        .hc-ring-3 { width: 220px; height: 220px; left: 60px; bottom: -60px; }
-
-        /* Glowing orb */
-        .hc-orb {
-          position: absolute;
-          border-radius: 50%;
-          filter: blur(80px);
-          pointer-events: none;
-        }
-        .hc-orb-1 { width: 340px; height: 340px; background: rgba(34,197,94,0.18); top: -80px; right: -80px; }
-        .hc-orb-2 { width: 240px; height: 240px; background: rgba(20,83,45,0.5); bottom: 0; left: -40px; }
-
-        /* Stat cards on panel */
-        .hc-stat {
-          display: flex;
-          align-items: center;
-          gap: 14px;
-          background: rgba(255,255,255,0.07);
-          border: 1px solid rgba(255,255,255,0.12);
-          border-radius: 16px;
-          padding: 16px 20px;
-          backdrop-filter: blur(8px);
-        }
-        .hc-stat-icon {
-          width: 40px; height: 40px;
-          border-radius: 10px;
-          background: rgba(255,255,255,0.12);
-          display: flex; align-items: center; justify-content: center;
-          flex-shrink: 0;
-        }
-
-        /* ── Right form side ── */
-        .hc-form-side {
-          flex: 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          padding: 48px 32px;
-        }
-        .hc-form-wrap {
-          width: 100%;
-          max-width: 400px;
-        }
-
-        /* Input */
-        .hc-input {
-          width: 100%;
-          padding: 13px 16px;
-          border-radius: 12px;
-          border: 1.5px solid #e2e8e0;
-          background: #fff;
-          font-size: 14px;
-          color: #111;
-          outline: none;
-          transition: border-color 0.15s, box-shadow 0.15s;
-          font-family: 'DM Sans', sans-serif;
-          box-sizing: border-box;
-        }
-        .hc-input::placeholder { color: #aab8ad; }
-        .hc-input:focus {
-          border-color: #166534;
-          box-shadow: 0 0 0 3px rgba(22,101,52,0.1);
-        }
-        .hc-input-wrap { position: relative; }
-        .hc-eye {
-          position: absolute; right: 14px; top: 50%; transform: translateY(-50%);
-          background: none; border: none; cursor: pointer; color: #9aada3;
-          display: flex; align-items: center; padding: 0;
-        }
-        .hc-eye:hover { color: #5a7a6a; }
-
-        /* Submit button */
-        .hc-btn {
-          width: 100%;
-          padding: 14px;
-          border-radius: 12px;
-          border: none;
-          background: linear-gradient(135deg, #166534, #15803d);
-          color: #fff;
-          font-size: 14.5px;
-          font-weight: 600;
-          font-family: 'DM Sans', sans-serif;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-          transition: opacity 0.15s, transform 0.1s, box-shadow 0.15s;
-          box-shadow: 0 4px 16px rgba(22,101,52,0.25);
-          letter-spacing: 0.01em;
-        }
-        .hc-btn:hover:not(:disabled) {
-          opacity: 0.92;
-          transform: translateY(-1px);
-          box-shadow: 0 6px 24px rgba(22,101,52,0.3);
-        }
-        .hc-btn:active:not(:disabled) { transform: translateY(0); }
-        .hc-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-
-        /* Error banner */
-        .hc-error {
-          display: flex;
-          align-items: flex-start;
-          gap: 10px;
-          padding: 12px 14px;
-          background: #fff5f5;
-          border: 1px solid #fecaca;
-          border-radius: 12px;
-          color: #b91c1c;
-          font-size: 13.5px;
-        }
-
-        /* Field error */
-        .hc-field-err {
-          display: flex; align-items: center; gap: 5px;
-          font-size: 12px; color: #dc2626; margin-top: 4px;
-        }
-
-        /* Divider line */
-        .hc-divider {
-          display: flex; align-items: center; gap: 12px;
-          color: #c5d0c8; font-size: 12px; margin: 8px 0;
-        }
-        .hc-divider::before, .hc-divider::after {
-          content: ''; flex: 1; height: 1px; background: #e8ede9;
-        }
-
-        /* Spinner */
-        @keyframes hc-spin { to { transform: rotate(360deg); } }
-        .hc-spinner {
-          width: 18px; height: 18px;
-          border: 2.5px solid rgba(255,255,255,0.35);
-          border-top-color: #fff;
-          border-radius: 50%;
-          animation: hc-spin 0.7s linear infinite;
-        }
-
-        /* Blockchain badge */
-        .hc-badge {
-          display: inline-flex; align-items: center; gap: 6px;
-          padding: 5px 12px;
-          background: rgba(22,101,52,0.07);
-          border: 1px solid rgba(22,101,52,0.15);
-          border-radius: 999px;
-          font-size: 11.5px;
-          color: #166534;
-          font-weight: 500;
-        }
-        .hc-badge-dot {
-          width: 6px; height: 6px;
-          border-radius: 50%;
-          background: #22c55e;
-          box-shadow: 0 0 0 2px rgba(34,197,94,0.3);
-          animation: hc-pulse 2s ease-in-out infinite;
-        }
-        @keyframes hc-pulse {
-          0%, 100% { box-shadow: 0 0 0 2px rgba(34,197,94,0.3); }
-          50%       { box-shadow: 0 0 0 5px rgba(34,197,94,0.1); }
-        }
-
-        /* Role pill */
-        .hc-role {
-          display: inline-flex; align-items: center; gap: 6px;
-          padding: 3px 10px;
-          background: rgba(255,255,255,0.1);
-          border: 1px solid rgba(255,255,255,0.15);
-          border-radius: 999px;
-          font-size: 11px; color: rgba(255,255,255,0.7);
-          margin-bottom: 4px;
-          text-transform: uppercase; letter-spacing: 0.06em;
-        }
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap');
+        @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+        .input-field { width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid #e5e7eb; background:#fff; font-size:14px; color:#111827; outline:none; transition:all 0.15s; font-family:'DM Sans',sans-serif; box-sizing:border-box; }
+        .input-field:focus { border-color:#166534; box-shadow:0 0 0 3px rgba(22,101,52,0.07); }
+        .input-field::placeholder { color:#d1d5db; }
+        .submit-btn { width:100%; padding:12px; border-radius:10px; border:none; background:#166534; color:#fff; font-size:14px; font-weight:700; cursor:pointer; transition:all 0.15s; display:flex; align-items:center; justify-content:center; gap:8px; font-family:'DM Sans',sans-serif; }
+        .submit-btn:hover:not(:disabled) { background:#15803d; }
+        .submit-btn:disabled { opacity:0.55; cursor:not-allowed; }
+        .mode-btn { flex:1; padding:9px; border-radius:9px; border:1.5px solid #e5e7eb; background:#fff; font-size:13px; font-weight:600; color:#6b7280; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; transition:all 0.15s; font-family:'DM Sans',sans-serif; }
+        .mode-btn.active { border-color:#166534; background:#f0fdf4; color:#166534; }
+        .otp-input { width:100%; padding:14px; border-radius:10px; border:1.5px solid #e5e7eb; background:#fff; font-size:32px; font-weight:800; color:#111827; outline:none; transition:all 0.15s; font-family:monospace; text-align:center; letter-spacing:12px; box-sizing:border-box; }
+        .otp-input:focus { border-color:#166534; box-shadow:0 0 0 3px rgba(22,101,52,0.07); }
       `}</style>
 
-      {/* ── Left decorative panel ── */}
-      <div className="hc-panel">
-        <div className="hc-ring hc-ring-1" />
-        <div className="hc-ring hc-ring-2" />
-        <div className="hc-ring hc-ring-3" />
-        <div className="hc-orb hc-orb-1" />
-        <div className="hc-orb hc-orb-2" />
-
-        {/* Brand */}
-        <div style={{ position: "relative", zIndex: 1 }}>
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 400,
+          animation: "fadeUp 0.3s ease both",
+        }}
+      >
+        {/* Logo */}
+        <div style={{ textAlign: "center", marginBottom: 32 }}>
           <div
             style={{
+              width: 44,
+              height: 44,
+              borderRadius: 12,
+              background: "#166534",
               display: "flex",
               alignItems: "center",
-              gap: 10,
-              marginBottom: 40,
+              justifyContent: "center",
+              margin: "0 auto 12px",
             }}
           >
-            <div
-              style={{
-                width: 38,
-                height: 38,
-                borderRadius: 10,
-                background: "rgba(255,255,255,0.15)",
-                border: "1px solid rgba(255,255,255,0.2)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              {/* Simple cross/health icon */}
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <rect
-                  x="7"
-                  y="2"
-                  width="4"
-                  height="14"
-                  rx="1.5"
-                  fill="white"
-                  opacity="0.9"
-                />
-                <rect
-                  x="2"
-                  y="7"
-                  width="14"
-                  height="4"
-                  rx="1.5"
-                  fill="white"
-                  opacity="0.9"
-                />
-              </svg>
-            </div>
-            <span
-              style={{
-                color: "rgba(255,255,255,0.9)",
-                fontWeight: 700,
-                fontSize: 15,
-                letterSpacing: "0.01em",
-              }}
-            >
-              MedLink
-            </span>
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+              <rect
+                x="8"
+                y="2"
+                width="4"
+                height="16"
+                rx="2"
+                fill="white"
+                opacity="0.95"
+              />
+              <rect
+                x="2"
+                y="8"
+                width="16"
+                height="4"
+                rx="2"
+                fill="white"
+                opacity="0.95"
+              />
+            </svg>
           </div>
-
-          <h1
-            style={{
-              fontFamily: "'Playfair Display', serif",
-              fontSize: 42,
-              fontWeight: 700,
-              color: "#fff",
-              lineHeight: 1.15,
-              marginBottom: 16,
-            }}
-          >
-            Zambia's
-            <br />
-            <span style={{ color: "rgba(255,255,255,0.55)" }}>
-              Digital Health
-            </span>
-            <br />
-            Healthcare
-          </h1>
           <p
             style={{
-              color: "rgba(255,255,255,0.5)",
-              fontSize: 14,
-              lineHeight: 1.6,
-              maxWidth: 280,
+              fontFamily: "'Playfair Display',serif",
+              fontSize: 20,
+              fontWeight: 700,
+              color: "#111827",
+              margin: 0,
             }}
           >
-            Patient-consented, secure, and real-time access to medical records
-            for better care coordination and outcomes.
+            MedLink
+          </p>
+          <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 3 }}>
+            Staff Portal · Zambia
           </p>
         </div>
 
-        {/* Stats row */}
-        <div style={{ position: "relative", zIndex: 1 }}>
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: 10,
-              marginBottom: 40,
-            }}
-          >
-            {[
-              {
-                icon: "🔗",
-                label: "MedLink secured",
-                value: "Every record",
-              },
-              {
-                icon: "📱",
-                label: "Patient-controlled",
-                value: "Consent via mobile",
-              },
-              {
-                icon: "⚡",
-                label: "Real-time access",
-                value: "Instant approval",
-              },
-            ].map((s) => (
-              <div key={s.label} className="hc-stat">
-                <div className="hc-stat-icon">
-                  <span style={{ fontSize: 17 }}>{s.icon}</span>
-                </div>
-                <div>
-                  <p
-                    style={{
-                      color: "rgba(255,255,255,0.45)",
-                      fontSize: 11,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.07em",
-                      marginBottom: 1,
-                    }}
-                  >
-                    {s.label}
-                  </p>
-                  <p style={{ color: "#fff", fontSize: 13.5, fontWeight: 600 }}>
-                    {s.value}
-                  </p>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Fabric badge */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div
-              style={{
-                width: 7,
-                height: 7,
-                borderRadius: "50%",
-                background: "#4ade80",
-                boxShadow: "0 0 0 3px rgba(74,222,128,0.2)",
-              }}
-            />
-            <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 12 }}>
-              Protected by MedLink Security
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Right form side ── */}
-      <div className="hc-form-side">
-        <div className="hc-form-wrap">
-          {/* Header */}
-          <div style={{ marginBottom: 32 }}>
-            {/* Mobile-only logo */}
-            <div
-              style={{
-                display: "none",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 24,
-              }}
-              className="hc-mobile-logo"
-            >
-              <div
+        {/* Card */}
+        <div
+          style={{
+            background: "#fff",
+            borderRadius: 16,
+            border: "1px solid #e5e7eb",
+            padding: "32px 28px",
+            boxShadow:
+              "0 1px 3px rgba(0,0,0,0.05), 0 4px 16px rgba(0,0,0,0.04)",
+          }}
+        >
+          {!otpStep ? (
+            <>
+              <h1
                 style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 8,
-                  background: "#166534",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
+                  fontFamily: "'Playfair Display',serif",
+                  fontSize: 22,
+                  fontWeight: 700,
+                  color: "#111827",
+                  marginBottom: 4,
+                  marginTop: 0,
                 }}
               >
-                <svg width="15" height="15" viewBox="0 0 18 18" fill="none">
-                  <rect
-                    x="7"
-                    y="2"
-                    width="4"
-                    height="14"
-                    rx="1.5"
-                    fill="white"
-                  />
-                  <rect
-                    x="2"
-                    y="7"
-                    width="14"
-                    height="4"
-                    rx="1.5"
-                    fill="white"
-                  />
-                </svg>
-              </div>
-              <span style={{ fontWeight: 700, color: "#166534", fontSize: 15 }}>
-                MedLink
-              </span>
-            </div>
-
-            <h2
-              style={{
-                fontFamily: "'Playfair Display', serif",
-                fontSize: 28,
-                fontWeight: 600,
-                color: "#111",
-                marginBottom: 6,
-              }}
-            >
-              Staff Sign In
-            </h2>
-            <p style={{ color: "#8a9e90", fontSize: 14 }}>
-              Access the clinical portal with your credentials
-            </p>
-          </div>
-
-          <form
-            onSubmit={handleSubmit(onSubmit)}
-            style={{ display: "flex", flexDirection: "column", gap: 18 }}
-          >
-            {/* License Number */}
-            <div>
-              <label
+                Sign in
+              </h1>
+              <p
                 style={{
-                  display: "block",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: "#3a4f42",
-                  marginBottom: 7,
+                  fontSize: 13.5,
+                  color: "#9ca3af",
+                  marginBottom: 24,
+                  marginTop: 0,
                 }}
               >
-                License / Staff Number
-              </label>
-              <input
-                {...register("licenseNumber")}
-                placeholder="e.g. LIC-DR-001"
-                className="hc-input"
-              />
-              {errors.licenseNumber && (
-                <p className="hc-field-err">
-                  <AlertCircle size={12} /> {errors.licenseNumber.message}
-                </p>
-              )}
-            </div>
+                Enter your credentials to continue
+              </p>
 
-            {/* Password */}
-            <div>
-              <label
-                style={{
-                  display: "block",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  color: "#3a4f42",
-                  marginBottom: 7,
-                }}
-              >
-                Password
-              </label>
-              <div className="hc-input-wrap">
-                <input
-                  {...register("password")}
-                  type={showPassword ? "text" : "password"}
-                  placeholder="Enter your password"
-                  className="hc-input"
-                  style={{ paddingRight: 44 }}
-                />
+              {/* Mode toggle */}
+              <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
                 <button
-                  type="button"
-                  className="hc-eye"
-                  onClick={() => setShowPassword((v) => !v)}
+                  className={`mode-btn ${mode === "license" ? "active" : ""}`}
+                  onClick={() => {
+                    setMode("license");
+                    setError("");
+                  }}
                 >
-                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                  <Hash size={13} /> License No.
+                </button>
+                <button
+                  className={`mode-btn ${mode === "email" ? "active" : ""}`}
+                  onClick={() => {
+                    setMode("email");
+                    setError("");
+                  }}
+                >
+                  <Mail size={13} /> Email
                 </button>
               </div>
-              {errors.password && (
-                <p className="hc-field-err">
-                  <AlertCircle size={12} /> {errors.password.message}
-                </p>
-              )}
-            </div>
 
-            {/* Error */}
-            {error && (
-              <div className="hc-error">
-                <AlertCircle
-                  size={15}
-                  style={{ flexShrink: 0, marginTop: 1 }}
-                />
-                <span>{error}</span>
-              </div>
-            )}
-
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={loading}
-              className="hc-btn"
-              style={{ marginTop: 4 }}
-            >
-              {loading ? (
-                <div className="hc-spinner" />
-              ) : (
-                <>
-                  <svg
-                    width="15"
-                    height="15"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
+              {/* License form */}
+              {mode === "license" && (
+                <form
+                  onSubmit={licenseForm.handleSubmit(onSubmitCredentials)}
+                  style={{ display: "flex", flexDirection: "column", gap: 14 }}
+                >
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        color: "#374151",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                        marginBottom: 6,
+                      }}
+                    >
+                      License Number
+                    </label>
+                    <input
+                      {...licenseForm.register("licenseNumber")}
+                      placeholder="e.g. LIC-2024-001"
+                      className="input-field"
+                      autoComplete="username"
+                    />
+                    {licenseForm.formState.errors.licenseNumber && (
+                      <p
+                        style={{ fontSize: 12, color: "#ef4444", marginTop: 4 }}
+                      >
+                        {licenseForm.formState.errors.licenseNumber.message}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        color: "#374151",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                        marginBottom: 6,
+                      }}
+                    >
+                      Password
+                    </label>
+                    <div style={{ position: "relative" }}>
+                      <input
+                        {...licenseForm.register("password")}
+                        type={showPw ? "text" : "password"}
+                        placeholder="Enter your password"
+                        className="input-field"
+                        style={{ paddingRight: 42 }}
+                        autoComplete="current-password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPw((v) => !v)}
+                        style={{
+                          position: "absolute",
+                          right: 12,
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          color: "#9ca3af",
+                          display: "flex",
+                          padding: 0,
+                        }}
+                      >
+                        {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                    </div>
+                    {licenseForm.formState.errors.password && (
+                      <p
+                        style={{ fontSize: 12, color: "#ef4444", marginTop: 4 }}
+                      >
+                        {licenseForm.formState.errors.password.message}
+                      </p>
+                    )}
+                  </div>
+                  {error && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 9,
+                        padding: "10px 13px",
+                        borderRadius: 9,
+                        background: "#fef2f2",
+                        border: "1px solid #fecaca",
+                      }}
+                    >
+                      <AlertCircle
+                        size={14}
+                        style={{ color: "#dc2626", flexShrink: 0 }}
+                      />
+                      <p style={{ fontSize: 13, color: "#dc2626", margin: 0 }}>
+                        {error}
+                      </p>
+                    </div>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="submit-btn"
                   >
-                    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                  </svg>
-                  Sign in to Portal
-                </>
+                    {loading ? (
+                      <>
+                        <Loader2 size={15} className="animate-spin" /> Signing
+                        in…
+                      </>
+                    ) : (
+                      "Sign In"
+                    )}
+                  </button>
+                </form>
               )}
-            </button>
-          </form>
 
-          {/* Bottom badge */}
-          <div
-            style={{ display: "flex", justifyContent: "center", marginTop: 28 }}
-          >
-            <div className="hc-badge">
-              <div className="hc-badge-dot" />
-              Protected by MedLink Security
-            </div>
-          </div>
+              {/* Email form */}
+              {mode === "email" && (
+                <form
+                  onSubmit={emailForm.handleSubmit(onSubmitCredentials)}
+                  style={{ display: "flex", flexDirection: "column", gap: 14 }}
+                >
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        color: "#374151",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                        marginBottom: 6,
+                      }}
+                    >
+                      Email Address
+                    </label>
+                    <input
+                      {...emailForm.register("email")}
+                      type="email"
+                      placeholder="your@email.com"
+                      className="input-field"
+                      autoComplete="email"
+                    />
+                    {emailForm.formState.errors.email && (
+                      <p
+                        style={{ fontSize: 12, color: "#ef4444", marginTop: 4 }}
+                      >
+                        {emailForm.formState.errors.email.message}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label
+                      style={{
+                        display: "block",
+                        fontSize: 11.5,
+                        fontWeight: 700,
+                        color: "#374151",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.06em",
+                        marginBottom: 6,
+                      }}
+                    >
+                      Password
+                    </label>
+                    <div style={{ position: "relative" }}>
+                      <input
+                        {...emailForm.register("password")}
+                        type={showPw ? "text" : "password"}
+                        placeholder="Enter your password"
+                        className="input-field"
+                        style={{ paddingRight: 42 }}
+                        autoComplete="current-password"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPw((v) => !v)}
+                        style={{
+                          position: "absolute",
+                          right: 12,
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          background: "none",
+                          border: "none",
+                          cursor: "pointer",
+                          color: "#9ca3af",
+                          display: "flex",
+                          padding: 0,
+                        }}
+                      >
+                        {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
+                      </button>
+                    </div>
+                    {emailForm.formState.errors.password && (
+                      <p
+                        style={{ fontSize: 12, color: "#ef4444", marginTop: 4 }}
+                      >
+                        {emailForm.formState.errors.password.message}
+                      </p>
+                    )}
+                  </div>
+                  {error && (
+                    <div
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 9,
+                        padding: "10px 13px",
+                        borderRadius: 9,
+                        background: "#fef2f2",
+                        border: "1px solid #fecaca",
+                      }}
+                    >
+                      <AlertCircle
+                        size={14}
+                        style={{ color: "#dc2626", flexShrink: 0 }}
+                      />
+                      <p style={{ fontSize: 13, color: "#dc2626", margin: 0 }}>
+                        {error}
+                      </p>
+                    </div>
+                  )}
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="submit-btn"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 size={15} className="animate-spin" /> Signing
+                        in…
+                      </>
+                    ) : (
+                      "Sign In"
+                    )}
+                  </button>
+                </form>
+              )}
+            </>
+          ) : (
+            /* OTP step */
+            <>
+              <button
+                onClick={() => {
+                  setOtpStep(false);
+                  setError("");
+                  otpForm.reset();
+                }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 7,
+                  fontSize: 13,
+                  color: "#6b7280",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  marginBottom: 24,
+                  padding: 0,
+                  fontFamily: "'DM Sans',sans-serif",
+                }}
+              >
+                <ArrowLeft size={14} /> Back
+              </button>
+
+              <div style={{ marginBottom: 24 }}>
+                <h1
+                  style={{
+                    fontFamily: "'Playfair Display',serif",
+                    fontSize: 22,
+                    fontWeight: 700,
+                    color: "#111827",
+                    marginBottom: 4,
+                    marginTop: 0,
+                  }}
+                >
+                  Check your email
+                </h1>
+                <p
+                  style={{
+                    fontSize: 13.5,
+                    color: "#9ca3af",
+                    marginTop: 0,
+                    lineHeight: 1.6,
+                  }}
+                >
+                  We sent a 6-digit code to{" "}
+                  <strong style={{ color: "#374151" }}>
+                    {otpData?.maskedEmail}
+                  </strong>
+                </p>
+              </div>
+
+              <form
+                onSubmit={otpForm.handleSubmit(onSubmitOTP)}
+                style={{ display: "flex", flexDirection: "column", gap: 14 }}
+              >
+                <div>
+                  <label
+                    style={{
+                      display: "block",
+                      fontSize: 11.5,
+                      fontWeight: 700,
+                      color: "#374151",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.06em",
+                      marginBottom: 6,
+                    }}
+                  >
+                    Verification Code
+                  </label>
+                  <input
+                    {...otpForm.register("otp")}
+                    className="otp-input"
+                    placeholder="000000"
+                    maxLength={6}
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    autoFocus
+                  />
+                  {otpForm.formState.errors.otp && (
+                    <p
+                      style={{
+                        fontSize: 12,
+                        color: "#ef4444",
+                        marginTop: 4,
+                        textAlign: "center",
+                      }}
+                    >
+                      {otpForm.formState.errors.otp.message}
+                    </p>
+                  )}
+                </div>
+
+                {error && (
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 9,
+                      padding: "10px 13px",
+                      borderRadius: 9,
+                      background: "#fef2f2",
+                      border: "1px solid #fecaca",
+                    }}
+                  >
+                    <AlertCircle
+                      size={14}
+                      style={{ color: "#dc2626", flexShrink: 0 }}
+                    />
+                    <p style={{ fontSize: 13, color: "#dc2626", margin: 0 }}>
+                      {error}
+                    </p>
+                  </div>
+                )}
+                {resendMsg && (
+                  <p
+                    style={{
+                      fontSize: 12,
+                      color: "#166534",
+                      textAlign: "center",
+                      margin: 0,
+                    }}
+                  >
+                    {resendMsg}
+                  </p>
+                )}
+
+                <button type="submit" disabled={loading} className="submit-btn">
+                  {loading ? (
+                    <>
+                      <Loader2 size={15} className="animate-spin" /> Verifying…
+                    </>
+                  ) : (
+                    "Verify Code"
+                  )}
+                </button>
+
+                <p
+                  style={{
+                    fontSize: 13,
+                    color: "#9ca3af",
+                    textAlign: "center",
+                    margin: 0,
+                  }}
+                >
+                  Didn't receive it?{" "}
+                  <button
+                    type="button"
+                    onClick={handleResend}
+                    disabled={resending}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      color: "#166534",
+                      fontWeight: 700,
+                      fontSize: 13,
+                      textDecoration: "underline",
+                      fontFamily: "'DM Sans',sans-serif",
+                      padding: 0,
+                    }}
+                  >
+                    {resending ? "Sending…" : "Resend"}
+                  </button>
+                </p>
+
+                <p
+                  style={{
+                    fontSize: 11.5,
+                    color: "#d1d5db",
+                    textAlign: "center",
+                    margin: 0,
+                  }}
+                >
+                  Expires in 5 minutes
+                </p>
+              </form>
+            </>
+          )}
         </div>
+
+        <p
+          style={{
+            fontSize: 12,
+            color: "#d1d5db",
+            textAlign: "center",
+            marginTop: 20,
+          }}
+        >
+          MedLink EMR · Copperbelt University · {new Date().getFullYear()}
+        </p>
       </div>
     </div>
   );

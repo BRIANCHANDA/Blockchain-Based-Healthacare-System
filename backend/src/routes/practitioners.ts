@@ -1,380 +1,145 @@
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq, and, ilike, or, sql, desc } from 'drizzle-orm';
+import { eq, and, desc, sql } from 'drizzle-orm';
 import { db } from '../db';
-import {
-  practitioners,
-  institutions,
-  userTypeEnum,
-} from '../db/schema';
+import { practitioners, institutions } from '../db/schema';
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
 import { encrypt, decrypt, hashData, generateRecordHash } from '../services/crypto';
-import { storeRecordHash, checkPermission } from '../services/fabric';
+import { storeRecordHash } from '../services/fabric';
 import crypto from 'crypto';
 
-const errorSchema = z.object({
-  success: z.boolean(),
-  error: z.object({ message: z.string() }),
-});
+const errorSchema = z.object({ success: z.boolean(), error: z.object({ message: z.string() }) });
 
-// ==================== Registration Schema ====================
-const registerPractitionerSchema = z.object({
-  // Personal Information (encrypted)
-  firstName: z.string().min(1),
-  lastName: z.string().min(1),
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-  // Professional Information
-  licenseNumber: z.string().min(1),
-  institutionalId: z.string().min(1),
-  specialization: z.string().min(1),
-  department: z.string().optional(),
-
-  // Contact (encrypted)
-  phoneNumber: z.string().min(5),
-  email: z.string().email(),
-
-  // Credentials (optional, encrypted)
-  credentials: z.string().optional(),
-  qualifications: z.string().optional(),
-
-  // Authentication
-  password: z.string().min(8),
-
-  // Optional institution association at creation
-  institutionId: z.string().uuid(),
-});
-
-// ==================== Update Profile Schema ====================
-const updatePractitionerSchema = z.object({
-  firstName: z.string().min(1).optional(),
-  lastName: z.string().min(1).optional(),
-  specialization: z.string().min(1).optional(),
-  department: z.string().optional(),
-  phoneNumber: z.string().min(5).optional(),
-  email: z.string().email().optional(),
-  credentials: z.string().optional(),
-  qualifications: z.string().optional(),
-  password: z.string().min(8).optional(),
-});
-
-
-// ── HELPER FUNCTION (add this BEFORE the router definition) ──────────────────
 async function getStaffInstitution(staffId: string): Promise<string | null> {
-  console.log('[HELPER] 🔍 Getting institution for staff:', staffId);
-  try {
-    const staff = await db.select({ institutionId: practitioners.institutionId })
-      .from(practitioners)
-      .where(eq(practitioners.id, staffId))
-      .limit(1);
-
-    const institutionId = staff[0]?.institutionId || null;
-    console.log('[HELPER] ✅ Institution found:', institutionId || 'NULL');
-    return institutionId;
-  } catch (err: any) {
-    console.error('[HELPER] ❌ Error getting institution:', err.message);
-    return null;
-  }
+  const row = await db
+    .select({ institutionId: practitioners.institutionId })
+    .from(practitioners)
+    .where(eq(practitioners.id, staffId))
+    .limit(1);
+  return row[0]?.institutionId ?? null;
 }
+
+// ── Router ────────────────────────────────────────────────────────────────────
 
 export const practitionerRouter = createRouter()
 
-  // ========== REGISTER NEW PRACTITIONER ==========
+  // ── REGISTER ─────────────────────────────────────────────────────────────
   .openapi(createRoute({
     tags: ['Practitioners'],
-    summary: 'Register a new practitioner (requires admin verification)',
+    summary: 'Register a new practitioner (pending verification)',
     method: 'post',
     path: '/',
     request: {
-      body: { content: { 'application/json': { schema: registerPractitionerSchema } } },
-    },
-    responses: {
-      201: {
+      body: {
         content: {
           'application/json': {
             schema: z.object({
-              success: z.boolean(),
-              data: z.object({
-                practitionerId: z.string().uuid(),
-                blockchainAddress: z.string(),
-                message: z.string(),
-              })
-            })
-          }
+              firstName: z.string().min(1),
+              lastName: z.string().min(1),
+              licenseNumber: z.string().min(1),
+              institutionalId: z.string().min(1),
+              specialization: z.string().min(1),
+              department: z.string().optional(),
+              phoneNumber: z.string().min(5),
+              email: z.string().email(),
+              credentials: z.string().optional(),
+              qualifications: z.string().optional(),
+              password: z.string().min(8),
+              institutionId: z.string().uuid(),
+            }),
+          },
         },
-        description: 'Practitioner registered successfully, pending verification',
       },
-      409: { content: { 'application/json': { schema: errorSchema } }, description: 'License number already exists' },
+    },
+    responses: {
+      201: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } }, description: 'Registered' },
+      409: { content: { 'application/json': { schema: errorSchema } }, description: 'License exists' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
       const body = c.req.valid('json');
+      const existing = await db.select({ id: practitioners.id }).from(practitioners).where(eq(practitioners.licenseNumber, body.licenseNumber)).limit(1);
+      if (existing.length) return c.json({ success: false, error: { message: 'License number already registered' } }, 409);
 
-      // Check if license number already exists (unique)
-      const existing = await db.select().from(practitioners)
-        .where(eq(practitioners.licenseNumber, body.licenseNumber))
-        .limit(1);
-      if (existing.length) {
-        return c.json({ success: false, error: { message: 'License number already registered' } }, 409);
-      }
+      const blockchainAddress = `practitioner:${crypto.createHash('sha256').update(body.licenseNumber + (process.env.BLOCKCHAIN_SALT || 'salt')).digest('hex')}`;
 
-      // Generate blockchain address (deterministic based on license number + salt)
-      const blockchainAddress = `practitioner:${crypto.createHash('sha256').update(body.licenseNumber + process.env.BLOCKCHAIN_SALT || 'salt').digest('hex')}`;
-
-      // Encrypt fields
-      const encrypted = {
+      const result = await db.insert(practitioners).values({
+        blockchainAddress,
+        institutionId: body.institutionId,
         firstNameEncrypted: encrypt(body.firstName),
         lastNameEncrypted: encrypt(body.lastName),
         phoneNumberEncrypted: encrypt(body.phoneNumber),
         emailEncrypted: encrypt(body.email),
         credentialsEncrypted: body.credentials ? encrypt(body.credentials) : null,
-      };
-
-      // Hash password
-      const passwordHash = hashData(body.password);
-
-      // Insert practitioner (not verified initially)
-      const result = await db.insert(practitioners).values({
-        blockchainAddress,
-        institutionId: body.institutionId,
-        ...encrypted,
         licenseNumber: body.licenseNumber,
         institutionalId: body.institutionalId,
         specialization: body.specialization,
         department: body.department ?? null,
         qualifications: body.qualifications ?? null,
-        passwordHash,
+        passwordHash: hashData(body.password),
         isVerified: false,
         isActive: true,
       }).returning({ id: practitioners.id, blockchainAddress: practitioners.blockchainAddress });
 
-      // Store creation hash on blockchain
-      const creationHash = generateRecordHash({ practitionerId: result[0].id, licenseNumber: body.licenseNumber, timestamp: new Date().toISOString() });
-      await storeRecordHash(result[0].id, blockchainAddress, creationHash, 'practitioner_registration').catch(() => { });
+      const hash = generateRecordHash({ practitionerId: result[0].id, licenseNumber: body.licenseNumber, timestamp: new Date().toISOString() });
+      storeRecordHash(result[0].id, blockchainAddress, hash, 'practitioner_registration').catch(() => { });
 
-      return c.json({
-        success: true,
-        data: {
-          practitionerId: result[0].id,
-          blockchainAddress: result[0].blockchainAddress,
-          message: 'Registration successful. Awaiting admin verification.',
-        }
-      }, 201);
-
+      return c.json({ success: true, data: { practitionerId: result[0].id, blockchainAddress: result[0].blockchainAddress, message: 'Registration successful. Awaiting admin verification.' } }, 201);
     } catch (err: any) {
-      console.error('Practitioner registration error:', err);
+      console.error('[PRACTITIONER_REGISTER]', err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   })
 
-
-
-
-
-
-
-  // ── GET ONLINE STAFF ENDPOINT (add this to your router) ──────────────────────
+  // ── GET ONLINE STAFF ──────────────────────────────────────────────────────
   .openapi(createRoute({
     tags: ['Practitioners'],
-    summary: 'Get online staff by role (same institution)',
+    summary: 'Get recently active staff by role (same institution)',
     method: 'get',
     path: '/online',
     security: [{ bearerAuth: [] }],
     middleware: [authMiddleware],
     request: {
       query: z.object({
-        role: z
-          .enum([
-            'nurse',
-            'practitioner',
-            'lab_technician',
-            'radiologist',
-            'pharmacist',
-            'receptionist',
-            'admin',
-          ])
-          .optional(),
+        role: z.enum(['nurse', 'practitioner', 'lab_technician', 'radiologist', 'pharmacist', 'receptionist', 'admin']).optional(),
       }).passthrough(),
     },
     responses: {
-      200: {
-        content: {
-          'application/json': {
-            schema: z.object({
-              success: z.boolean(),
-              data: z.object({
-                staff: z.array(
-                  z.object({
-                    id: z.string(),
-                    firstName: z.string(),
-                    lastName: z.string(),
-                    role: z.string(),
-                    specialization: z.string().nullable(),
-                    lastSeenAt: z.string().nullable(),
-                  })
-                ),
-              }),
-            }),
-          },
-        },
-        description: 'List of online staff members',
-      },
-      400: {
-        content: {
-          'application/json': {
-            schema: z.object({
-              success: z.boolean(),
-              error: z.object({
-                message: z.string(),
-                code: z.string().optional(),
-              }),
-            }),
-          },
-        },
-        description: 'Invalid role parameter',
-      },
-      403: {
-        content: {
-          'application/json': {
-            schema: z.object({
-              success: z.boolean(),
-              error: z.object({ message: z.string() }),
-            }),
-          },
-        },
-        description: 'Forbidden - user not associated with institution',
-      },
-      500: {
-        content: {
-          'application/json': {
-            schema: z.object({
-              success: z.boolean(),
-              error: z.object({ message: z.string() }),
-            }),
-          },
-        },
-        description: 'Server error',
-      },
+      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } }, description: 'Online staff' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
-      const userType = c.get('userType');
       const userId = c.get('userId');
       const rawUrl = c.req.raw.url;
-
-      console.log('[ONLINE_STAFF] 🔍 Fetching online staff:', {
-        userType,
-        userId,
-        url: rawUrl,
-      });
-
-      // ── Get staff's institution ────────────────────────────────────────
-      const staffInstitutionId = await getStaffInstitution(userId);
-
-      if (!staffInstitutionId) {
-        console.log('[ONLINE_STAFF] ❌ Staff not associated with institution');
-        return c.json(
-          {
-            success: false,
-            error: {
-              message: 'Your account is not associated with an institution. Contact your administrator.',
-              code: 'NO_INSTITUTION',
-            },
-          },
-          403
-        );
-      }
-
-      console.log('[ONLINE_STAFF] ✅ Staff institution:', staffInstitutionId);
-
-      // ── Parse role from query ──────────────────────────────────────────
-      const queryString = rawUrl.split('?')[1] || '';
-      const params = new URLSearchParams(queryString);
+      const params = new URLSearchParams(rawUrl.split('?')[1] || '');
       const roleParam = params.get('role');
 
-      console.log('[ONLINE_STAFF] 📋 Query:', {
-        role: roleParam,
-        rawQuery: queryString,
-      });
+      const staffInstitutionId = await getStaffInstitution(userId);
+      if (!staffInstitutionId)
+        return c.json({ success: false, error: { message: 'Your account is not associated with an institution.' } }, 403);
 
-      // ── Validate role ──────────────────────────────────────────────────
-      const VALID_ROLES = [
-        'nurse',
-        'practitioner',
-        'lab_technician',
-        'radiologist',
-        'pharmacist',
-        'receptionist',
-        'admin',
-      ];
-
-      if (roleParam && !VALID_ROLES.includes(roleParam.toLowerCase())) {
-        console.log('[ONLINE_STAFF] ❌ Invalid role:', roleParam);
-        return c.json(
-          {
-            success: false,
-            error: {
-              message: `Invalid role: "${roleParam}". Must be one of: ${VALID_ROLES.join(', ')}`,
-              code: 'INVALID_ROLE',
-            },
-          },
-          400
-        );
-      }
-
-      // ── Build query ────────────────────────────────────────────────────
       const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
 
-      console.log('[ONLINE_STAFF] 🏥 Querying for:', {
-        institution: staffInstitutionId,
-        role: roleParam || 'all',
-        recentlyOnline: fiveMinutesAgo.toISOString(),
-      });
+      const conditions: any[] = [
+        eq(practitioners.institutionId, staffInstitutionId),
+        eq(practitioners.isActive, true),
+        eq(practitioners.isVerified, true),
+        sql`${practitioners.lastSeenAt} >= ${fiveMinutesAgo.toISOString()}`,
+      ];
+      if (roleParam) conditions.push(eq(practitioners.role, roleParam as any));
 
-      // ── Query online staff ─────────────────────────────────────────────
-      let query = db
-        .select({
-          id: practitioners.id,
-          firstNameEncrypted: practitioners.firstNameEncrypted,
-          lastNameEncrypted: practitioners.lastNameEncrypted,
-          role: practitioners.role,
-          specialization: practitioners.specialization,
-          lastSeenAt: practitioners.lastSeenAt,
-        })
+      const rows = await db
+        .select({ id: practitioners.id, firstNameEncrypted: practitioners.firstNameEncrypted, lastNameEncrypted: practitioners.lastNameEncrypted, role: practitioners.role, specialization: practitioners.specialization, lastSeenAt: practitioners.lastSeenAt })
         .from(practitioners)
-        .where(
-          and(
-            eq(practitioners.institutionId, staffInstitutionId),
-            eq(practitioners.isActive, true),
-            eq(practitioners.isVerified, true),
-            sql`${practitioners.lastSeenAt} >= ${fiveMinutesAgo}`
-          )
-        );
+        .where(and(...conditions))
+        .orderBy(desc(practitioners.lastSeenAt));
 
-      // Add role filter if provided
-      if (roleParam) {
-        console.log('[ONLINE_STAFF] 🔎 Adding role filter:', roleParam);
-        query = query.where(eq(practitioners.role, roleParam));
-      }
-
-      // Execute query
-      const onlineStaff = await query.orderBy(desc(practitioners.lastSeenAt));
-
-      console.log('[ONLINE_STAFF] ✅ Query complete:', {
-        count: onlineStaff.length,
-        role: roleParam || 'all',
-      });
-
-      if (onlineStaff.length === 0) {
-        console.log(
-          '[ONLINE_STAFF] ℹ️ No online staff found',
-          roleParam ? `for role: ${roleParam}` : ''
-        );
-      }
-
-      // ── Decrypt and format response ────────────────────────────────────
-      const { decrypt } = await import('../services/crypto');
-      const result = onlineStaff.map((s) => ({
+      const staff = rows.map(s => ({
         id: s.id,
         firstName: decrypt(s.firstNameEncrypted),
         lastName: decrypt(s.lastNameEncrypted),
@@ -383,222 +148,161 @@ export const practitionerRouter = createRouter()
         lastSeenAt: s.lastSeenAt?.toISOString() ?? null,
       }));
 
-      console.log('[ONLINE_STAFF] 📤 Returning staff list');
-
-      return c.json({ success: true, data: { staff: result } });
-
+      return c.json({ success: true, data: { staff } });
     } catch (err: any) {
-      console.error('[ONLINE_STAFF] ❌ ERROR:', err.message);
-      console.error('[ONLINE_STAFF] Stack:', err.stack);
-
-      // Handle Zod validation errors
-      if (err.issues) {
-        console.error('[ONLINE_STAFF] 🔴 Validation issues:', err.issues);
-        return c.json(
-          {
-            success: false,
-            error: {
-              message: `Validation error: ${err.issues.map((i: any) => i.message).join(', ')}`,
-              code: 'VALIDATION_ERROR',
-            },
-          },
-          400
-        );
-      }
-
-      return c.json(
-        {
-          success: false,
-          error: {
-            message: 'Failed to fetch online staff',
-            code: 'INTERNAL_ERROR',
-          },
-        },
-        500
-      );
+      console.error('[ONLINE_STAFF]', err);
+      return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   })
 
-  // ========== GET MY PROFILE ==========
+  // ── GET MY PROFILE ────────────────────────────────────────────────────────
   .openapi(createRoute({
     tags: ['Practitioners'],
-    summary: 'Get authenticated practitioner profile',
-    method: 'get',
-    path: '/me',
-    security: [{ bearerAuth: [] }],
-    middleware: [authMiddleware],
+    summary: 'Get authenticated staff profile (any role)',
+    method: 'get', path: '/me',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
     responses: {
-      200: {
-        content: {
-          'application/json': {
-            schema: z.object({
-              success: z.boolean(),
-              data: z.object({
-                id: z.string(),
-                blockchainAddress: z.string(),
-                firstName: z.string(),
-                lastName: z.string(),
-                licenseNumber: z.string(),
-                institutionalId: z.string(),
-                specialization: z.string(),
-                department: z.string().optional(),
-                phoneNumber: z.string(),
-                email: z.string(),
-                credentials: z.string().optional(),
-                qualifications: z.string().optional(),
-                institutionId: z.string().optional(),
-                isVerified: z.boolean(),
-                isActive: z.boolean(),
-                createdAt: z.string(),
-              })
-            })
-          }
-        },
-        description: 'Practitioner profile',
-      },
-      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
-      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Practitioner not found' },
+      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } }, description: 'Profile' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Patients not allowed' },
+      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
       const userType = c.get('userType');
-      if (userType !== 'practitioner') {
-        return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+      const userId = c.get('userId');
+
+      if (userType === 'patient')
+        return c.json({ success: false, error: { message: 'Patients cannot use this endpoint' } }, 403);
+
+      const s = (await db.select().from(practitioners).where(eq(practitioners.id, userId)).limit(1))[0];
+      if (!s) return c.json({ success: false, error: { message: 'Profile not found' } }, 404);
+
+      // Resolve institution name
+      let institutionName: string | null = null;
+      if (s.institutionId) {
+        const inst = await db
+          .select({ name: institutions.institutionName })
+          .from(institutions)
+          .where(eq(institutions.id, s.institutionId))
+          .limit(1);
+        institutionName = inst[0]?.name ?? null;
       }
 
-      const practitionerId = c.get('userId');
+      const safe = (fn: () => string): string | null => { try { return fn(); } catch { return null; } };
 
-      const practitioner = await db.select().from(practitioners).where(eq(practitioners.id, practitionerId)).limit(1);
-      if (!practitioner.length) {
-        return c.json({ success: false, error: { message: 'Practitioner not found' } }, 404);
-      }
-
-      const p = practitioner[0];
-
-      // Decrypt fields
-      const profile = {
-        id: p.id,
-        blockchainAddress: p.blockchainAddress,
-        firstName: decrypt(p.firstNameEncrypted),
-        lastName: decrypt(p.lastNameEncrypted),
-        licenseNumber: p.licenseNumber,
-        institutionalId: p.institutionalId,
-        specialization: p.specialization,
-        department: p.department ?? undefined,
-        phoneNumber: decrypt(p.phoneNumberEncrypted),
-        email: decrypt(p.emailEncrypted),
-        credentials: p.credentialsEncrypted ? decrypt(p.credentialsEncrypted) : undefined,
-        qualifications: p.qualifications ?? undefined,
-        institutionId: p.institutionId ?? undefined,
-        isVerified: p.isVerified,
-        isActive: p.isActive,
-        createdAt: p.createdAt.toISOString(),
-      };
-
-      return c.json({ success: true, data: profile });
-
+      return c.json({
+        success: true,
+        data: {
+          id: s.id,
+          role: s.role,
+          licenseNumber: s.licenseNumber,
+          institutionalId: s.institutionalId ?? null,
+          firstName: safe(() => decrypt(s.firstNameEncrypted)),
+          lastName: safe(() => decrypt(s.lastNameEncrypted)),
+          email: safe(() => decrypt(s.emailEncrypted)),
+          phoneNumber: safe(() => decrypt(s.phoneNumberEncrypted)),
+          specialization: s.specialization ?? null,
+          department: s.department ?? null,
+          qualifications: s.qualifications ?? null,
+          credentials: s.credentialsEncrypted ? safe(() => decrypt(s.credentialsEncrypted!)) : null,
+          institutionId: s.institutionId ?? null,
+          institutionName,
+          blockchainAddress: s.blockchainAddress,
+          isVerified: s.isVerified,
+          isActive: s.isActive,
+          mustChangePassword: (s as any).mustChangePassword ?? false,
+          lastSeenAt: s.lastSeenAt?.toISOString() ?? null,
+          createdAt: s.createdAt?.toISOString() ?? null,
+        },
+      });
     } catch (err: any) {
-      console.error('Get practitioner profile error:', err);
+      console.error('[PRACTITIONER_ME]', err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   })
 
-  // ========== UPDATE MY PROFILE ==========
+  // ── UPDATE MY PROFILE ─────────────────────────────────────────────────────
   .openapi(createRoute({
     tags: ['Practitioners'],
     summary: 'Update authenticated practitioner profile',
-    method: 'patch',
-    path: '/me',
-    security: [{ bearerAuth: [] }],
-    middleware: [authMiddleware],
+    method: 'patch', path: '/me',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
     request: {
-      body: { content: { 'application/json': { schema: updatePractitionerSchema } } },
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              firstName: z.string().min(1).optional(),
+              lastName: z.string().min(1).optional(),
+              specialization: z.string().min(1).optional(),
+              department: z.string().optional(),
+              phoneNumber: z.string().min(5).optional(),
+              email: z.string().email().optional(),
+              credentials: z.string().optional(),
+              qualifications: z.string().optional(),
+              password: z.string().min(8).optional(),
+            }),
+          },
+        },
+      },
     },
     responses: {
-      200: {
-        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ message: z.string() }) }) } },
-        description: 'Profile updated',
-      },
+      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } }, description: 'Updated' },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
-      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Practitioner not found' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
       const userType = c.get('userType');
-      if (userType !== 'practitioner') {
-        return c.json({ success: false, error: { message: 'Access denied' } }, 403);
-      }
-
-      const practitionerId = c.get('userId');
+      if (userType !== 'practitioner') return c.json({ success: false, error: { message: 'Access denied' } }, 403);
       const body = c.req.valid('json');
-
-      // Build update object with encrypted fields where needed
-      const updateData: any = {};
-
-      if (body.firstName) updateData.firstNameEncrypted = encrypt(body.firstName);
-      if (body.lastName) updateData.lastNameEncrypted = encrypt(body.lastName);
-      if (body.specialization) updateData.specialization = body.specialization;
-      if (body.department !== undefined) updateData.department = body.department;
-      if (body.phoneNumber) updateData.phoneNumberEncrypted = encrypt(body.phoneNumber);
-      if (body.email) updateData.emailEncrypted = encrypt(body.email);
-      if (body.credentials !== undefined) updateData.credentialsEncrypted = body.credentials ? encrypt(body.credentials) : null;
-      if (body.qualifications !== undefined) updateData.qualifications = body.qualifications;
-      if (body.password) updateData.passwordHash = hashData(body.password);
-
-      updateData.updatedAt = new Date();
-
-      if (Object.keys(updateData).length === 0) {
-        return c.json({ success: true, data: { message: 'No fields to update' } });
-      }
-
-      const result = await db.update(practitioners)
-        .set(updateData)
-        .where(eq(practitioners.id, practitionerId))
-        .returning({ blockchainAddress: practitioners.blockchainAddress });
-
-      if (!result.length) {
-        return c.json({ success: false, error: { message: 'Practitioner not found' } }, 404);
-      }
-
-      // Optionally store update hash on blockchain
-      const updateHash = generateRecordHash({ practitionerId, updates: Object.keys(body), timestamp: new Date().toISOString() });
-      await storeRecordHash(practitionerId, result[0].blockchainAddress, updateHash, 'practitioner_update').catch(() => { });
-
+      const u: any = {};
+      if (body.firstName) u.firstNameEncrypted = encrypt(body.firstName);
+      if (body.lastName) u.lastNameEncrypted = encrypt(body.lastName);
+      if (body.specialization) u.specialization = body.specialization;
+      if (body.department !== undefined) u.department = body.department;
+      if (body.phoneNumber) u.phoneNumberEncrypted = encrypt(body.phoneNumber);
+      if (body.email) u.emailEncrypted = encrypt(body.email);
+      if (body.credentials !== undefined) u.credentialsEncrypted = body.credentials ? encrypt(body.credentials) : null;
+      if (body.qualifications !== undefined) u.qualifications = body.qualifications;
+      if (body.password) u.passwordHash = hashData(body.password);
+      u.updatedAt = new Date();
+      if (Object.keys(u).length === 1) return c.json({ success: true, data: { message: 'No fields to update' } });
+      const result = await db.update(practitioners).set(u).where(eq(practitioners.id, c.get('userId'))).returning({ blockchainAddress: practitioners.blockchainAddress });
+      if (!result.length) return c.json({ success: false, error: { message: 'Not found' } }, 404);
+      const hash = generateRecordHash({ practitionerId: c.get('userId'), updates: Object.keys(body), timestamp: new Date().toISOString() });
+      storeRecordHash(c.get('userId'), result[0].blockchainAddress, hash, 'practitioner_update').catch(() => { });
       return c.json({ success: true, data: { message: 'Profile updated successfully' } });
-
     } catch (err: any) {
-      console.error('Update practitioner error:', err);
+      console.error('[PRACTITIONER_UPDATE]', err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   })
 
-  // ========== LIST PRACTITIONERS ==========
-  // Admins: see all practitioners system-wide with full filters
-  // All other authenticated staff: see only practitioners in their own institution
-  // Supports ?role=nurse|practitioner|... for role filtering (used by receptionist nurse dropdown)
+  // ── LIST PRACTITIONERS ────────────────────────────────────────────────────
+  // Super admin (institutionId = null) → all practitioners, optionally filtered
+  // Hospital admin / staff (institutionId set) → scoped to their institution
+  // Supports: role, verified, active, search (in-memory after decrypt), page, limit
   .openapi(createRoute({
     tags: ['Practitioners'],
-    summary: 'List practitioners (admin sees all; staff sees own institution only)',
-    method: 'get',
-    path: '/',
-    security: [{ bearerAuth: [] }],
-    middleware: [authMiddleware],
+    summary: 'List practitioners — scoped by caller institution',
+    method: 'get', path: '/',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
     request: {
       query: z.object({
         limit: z.string().regex(/^\d+$/).transform(Number).optional().default('100'),
         offset: z.string().regex(/^\d+$/).transform(Number).optional().default('0'),
+        page: z.string().regex(/^\d+$/).transform(Number).optional(),
         verified: z.enum(['true', 'false']).optional(),
         active: z.enum(['true', 'false']).optional(),
         role: z.enum(['nurse', 'practitioner', 'lab_technician', 'radiologist', 'pharmacist', 'receptionist', 'admin']).optional(),
+        search: z.string().optional(),
+        institutionId: z.string().uuid().optional(), // super admin can filter by specific institution
       }),
     },
     responses: {
-      200: {
-        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } },
-        description: 'List of practitioners',
-      },
+      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } }, description: 'List' },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
@@ -606,95 +310,119 @@ export const practitionerRouter = createRouter()
     try {
       const userType = c.get('userType');
       const userId = c.get('userId');
-      const { limit, offset, verified, active, role } = c.req.valid('query');
 
-      // Build the base WHERE conditions
+      if (!['admin', 'practitioner', 'nurse', 'receptionist', 'lab_technician', 'radiologist', 'pharmacist'].includes(userType))
+        return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+
+      const { role, verified, active, search, institutionId: filterInstitutionId } = c.req.valid('query');
+
+      // page param support: page=1 means offset=0, page=2 means offset=limit, etc.
+      const rawQuery = c.req.valid('query');
+      const limit = rawQuery.limit;
+      const offset = rawQuery.page ? (rawQuery.page - 1) * limit : rawQuery.offset;
+
+      // Determine institution scope
+      const callerInstitutionId = await getStaffInstitution(userId);
+      const isSuperAdmin = callerInstitutionId === null && userType === 'admin';
+
       const conditions: any[] = [];
 
-      // ── Institution scoping ─────────────────────────────────────────────────
-      // Always look up the caller's institutionId from DB
-      const callerInstitutionId = await getStaffInstitution(userId);
-
-      if (callerInstitutionId) {
-        // Scope to their institution (applies to admin, receptionist, nurse, etc.)
+      if (isSuperAdmin) {
+        // Super admin: optionally filter by a specific institution
+        if (filterInstitutionId) {
+          conditions.push(eq(practitioners.institutionId, filterInstitutionId));
+        }
+        // No institution filter = return everyone
+      } else if (callerInstitutionId) {
+        // Hospital admin or staff: always scope to their institution
         conditions.push(eq(practitioners.institutionId, callerInstitutionId));
-      } else if (userType !== 'admin') {
-        // Non-admin with no institutionId: their own record may not have it set yet.
-        // Rather than blocking them, log a warning and return all active staff of the
-        // requested role. This is a degraded-but-functional fallback for dev/seed data.
-        console.warn(`⚠️  Staff ${userId} (${userType}) has no institutionId — returning unscoped results for role=${role}`);
-        // No institution filter — will return all matching role globally.
-        // In production, always ensure institutionId is set at registration.
       }
-      // Admin with no institutionId = super-admin, sees everything (no condition added)
 
-      // ── Optional filters ────────────────────────────────────────────────────
+      // Role filter
       if (role) conditions.push(eq(practitioners.role, role));
-      if (verified) conditions.push(eq(practitioners.isVerified, verified === 'true'));
-      if (active) conditions.push(eq(practitioners.isActive, active === 'true'));
 
-      // Always default to only active practitioners unless caller overrides
-      if (!active) conditions.push(eq(practitioners.isActive, true));
+      // Verified filter
+      if (verified !== undefined) conditions.push(eq(practitioners.isVerified, verified === 'true'));
 
-      const practitionersList = await db.select({
-        id: practitioners.id,
-        firstNameEncrypted: practitioners.firstNameEncrypted,
-        lastNameEncrypted: practitioners.lastNameEncrypted,
-        licenseNumber: practitioners.licenseNumber,
-        role: practitioners.role,
-        specialization: practitioners.specialization,
-        department: practitioners.department,
-        institutionId: practitioners.institutionId,
-        isVerified: practitioners.isVerified,
-        isActive: practitioners.isActive,
-        createdAt: practitioners.createdAt,
-      })
+      // Active filter — default to active only
+      conditions.push(eq(practitioners.isActive, active === 'false' ? false : true));
+
+      const rows = await db
+        .select({
+          id: practitioners.id,
+          firstNameEncrypted: practitioners.firstNameEncrypted,
+          lastNameEncrypted: practitioners.lastNameEncrypted,
+          licenseNumber: practitioners.licenseNumber,
+          role: practitioners.role,
+          specialization: practitioners.specialization,
+          department: practitioners.department,
+          institutionId: practitioners.institutionId,
+          isVerified: practitioners.isVerified,
+          isActive: practitioners.isActive,
+          createdAt: practitioners.createdAt,
+        })
         .from(practitioners)
-        .where(and(...conditions))
-        .limit(limit)
-        .offset(offset)
+        .where(conditions.length ? and(...conditions) : undefined)
         .orderBy(practitioners.createdAt);
 
-      const result = practitionersList.map(p => ({
-        id: p.id,
-        firstName: decrypt(p.firstNameEncrypted),
-        lastName: decrypt(p.lastNameEncrypted),
-        licenseNumber: p.licenseNumber,
-        role: p.role,
-        specialization: p.specialization,
-        department: p.department,
-        institutionId: p.institutionId,
-        isVerified: p.isVerified,
-        isActive: p.isActive,
-        createdAt: p.createdAt,
-      }));
+      // Decrypt + optionally join institution name
+      let result = rows.map(p => {
+        let firstName = '', lastName = '';
+        try { firstName = decrypt(p.firstNameEncrypted); } catch { firstName = 'Unknown'; }
+        try { lastName = decrypt(p.lastNameEncrypted); } catch { lastName = ''; }
+        return { id: p.id, firstName, lastName, licenseNumber: p.licenseNumber, role: p.role, specialization: p.specialization, department: p.department, institutionId: p.institutionId, isVerified: p.isVerified, isActive: p.isActive, createdAt: p.createdAt };
+      });
 
-      return c.json({ success: true, data: { practitioners: result, total: result.length, limit, offset } });
+      // In-memory search (names are encrypted so SQL LIKE won't work)
+      if (search) {
+        const q = search.toLowerCase();
+        result = result.filter(p =>
+          `${p.firstName} ${p.lastName}`.toLowerCase().includes(q) ||
+          p.licenseNumber.toLowerCase().includes(q) ||
+          (p.specialization ?? '').toLowerCase().includes(q)
+        );
+      }
 
+      // Join institution names for super admin view
+      if (isSuperAdmin && result.length) {
+        const instIds = [...new Set(result.map(p => p.institutionId).filter(Boolean))] as string[];
+        if (instIds.length) {
+          const instRows = await db
+            .select({ id: institutions.id, name: institutions.institutionName })
+            .from(institutions)
+            .where(eq(institutions.id, instIds[0])); // simple — expand with inArray if needed
+
+          const { inArray } = await import('drizzle-orm');
+          const allInst = instIds.length > 1
+            ? await db.select({ id: institutions.id, name: institutions.institutionName }).from(institutions).where(inArray(institutions.id, instIds))
+            : instRows;
+
+          const instMap = new Map(allInst.map(i => [i.id, i.name]));
+          result = result.map(p => ({ ...p, institutionName: p.institutionId ? (instMap.get(p.institutionId) ?? null) : null }));
+        }
+      }
+
+      const total = result.length;
+      const paginated = result.slice(offset, offset + limit);
+
+      return c.json({ success: true, data: { practitioners: paginated, total, limit, offset } });
     } catch (err: any) {
-      console.error('List practitioners error:', err);
+      console.error('[PRACTITIONERS_LIST]', err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   })
 
-  // ========== GET PRACTITIONER BY ID (Admin or self) ==========
+  // ── GET BY ID ─────────────────────────────────────────────────────────────
   .openapi(createRoute({
     tags: ['Practitioners'],
-    summary: 'Get practitioner details by ID (admin or self)',
-    method: 'get',
-    path: '/:practitionerId',
-    security: [{ bearerAuth: [] }],
-    middleware: [authMiddleware],
-    request: {
-      params: z.object({ practitionerId: z.string().uuid() }),
-    },
+    summary: 'Get practitioner by ID (admin or self)',
+    method: 'get', path: '/:practitionerId',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    request: { params: z.object({ practitionerId: z.string().uuid() }) },
     responses: {
-      200: {
-        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } },
-        description: 'Practitioner details',
-      },
+      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } }, description: 'Practitioner' },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
-      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Practitioner not found' },
+      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
@@ -702,141 +430,198 @@ export const practitionerRouter = createRouter()
       const userType = c.get('userType');
       const userId = c.get('userId');
       const { practitionerId } = c.req.valid('param');
-
-      // Allow access only if admin or the practitioner themselves
-      if (userType !== 'admin' && userId !== practitionerId) {
+      if (userType !== 'admin' && userId !== practitionerId)
         return c.json({ success: false, error: { message: 'Access denied' } }, 403);
-      }
-
-      const practitioner = await db.select().from(practitioners).where(eq(practitioners.id, practitionerId)).limit(1);
-      if (!practitioner.length) {
-        return c.json({ success: false, error: { message: 'Practitioner not found' } }, 404);
-      }
-
-      const p = practitioner[0];
-
-      const profile = {
-        id: p.id,
-        blockchainAddress: p.blockchainAddress,
-        firstName: decrypt(p.firstNameEncrypted),
-        lastName: decrypt(p.lastNameEncrypted),
-        licenseNumber: p.licenseNumber,
-        institutionalId: p.institutionalId,
-        specialization: p.specialization,
-        department: p.department,
-        phoneNumber: decrypt(p.phoneNumberEncrypted),
-        email: decrypt(p.emailEncrypted),
-        credentials: p.credentialsEncrypted ? decrypt(p.credentialsEncrypted) : null,
-        qualifications: p.qualifications,
-        institutionId: p.institutionId,
-        isVerified: p.isVerified,
-        isActive: p.isActive,
-        createdAt: p.createdAt,
-      };
-
-      return c.json({ success: true, data: profile });
-
+      const p = (await db.select().from(practitioners).where(eq(practitioners.id, practitionerId)).limit(1))[0];
+      if (!p) return c.json({ success: false, error: { message: 'Not found' } }, 404);
+      return c.json({ success: true, data: { id: p.id, blockchainAddress: p.blockchainAddress, firstName: decrypt(p.firstNameEncrypted), lastName: decrypt(p.lastNameEncrypted), licenseNumber: p.licenseNumber, institutionalId: p.institutionalId, specialization: p.specialization, department: p.department, phoneNumber: decrypt(p.phoneNumberEncrypted), email: decrypt(p.emailEncrypted), credentials: p.credentialsEncrypted ? decrypt(p.credentialsEncrypted) : null, qualifications: p.qualifications, institutionId: p.institutionId, isVerified: p.isVerified, isActive: p.isActive, createdAt: p.createdAt } });
     } catch (err: any) {
-      console.error('Get practitioner by ID error:', err);
+      console.error('[PRACTITIONER_GET]', err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   })
 
-  // ========== VERIFY PRACTITIONER (Admin only) ==========
+  // ── VERIFY ────────────────────────────────────────────────────────────────
   .openapi(createRoute({
     tags: ['Practitioners'],
     summary: 'Verify a practitioner (admin only)',
-    method: 'patch',
-    path: '/:practitionerId/verify',
-    security: [{ bearerAuth: [] }],
-    middleware: [authMiddleware],
-    request: {
-      params: z.object({ practitionerId: z.string().uuid() }),
-    },
+    method: 'patch', path: '/:practitionerId/verify',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    request: { params: z.object({ practitionerId: z.string().uuid() }) },
     responses: {
-      200: {
-        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ message: z.string() }) }) } },
-        description: 'Practitioner verified',
-      },
+      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } }, description: 'Verified' },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
-      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Practitioner not found' },
+      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
-      const userType = c.get('userType');
-      if (userType !== 'admin') {
-        return c.json({ success: false, error: { message: 'Admin access required' } }, 403);
-      }
-
+      if (c.get('userType') !== 'admin') return c.json({ success: false, error: { message: 'Admin only' } }, 403);
       const { practitionerId } = c.req.valid('param');
-
-      const result = await db.update(practitioners)
-        .set({ isVerified: true, updatedAt: new Date() })
-        .where(eq(practitioners.id, practitionerId))
-        .returning({ blockchainAddress: practitioners.blockchainAddress });
-
-      if (!result.length) {
-        return c.json({ success: false, error: { message: 'Practitioner not found' } }, 404);
-      }
-
-      // Blockchain log
-      const verifyHash = generateRecordHash({ practitionerId, action: 'verify', timestamp: new Date().toISOString() });
-      await storeRecordHash(practitionerId, result[0].blockchainAddress, verifyHash, 'practitioner_verify').catch(() => { });
-
+      const result = await db.update(practitioners).set({ isVerified: true, updatedAt: new Date() }).where(eq(practitioners.id, practitionerId)).returning({ blockchainAddress: practitioners.blockchainAddress });
+      if (!result.length) return c.json({ success: false, error: { message: 'Not found' } }, 404);
+      const hash = generateRecordHash({ practitionerId, action: 'verify', timestamp: new Date().toISOString() });
+      storeRecordHash(practitionerId, result[0].blockchainAddress, hash, 'practitioner_verify').catch(() => { });
       return c.json({ success: true, data: { message: 'Practitioner verified successfully' } });
-
     } catch (err: any) {
-      console.error('Verify practitioner error:', err);
+      console.error('[PRACTITIONER_VERIFY]', err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   })
 
-  // ========== DEACTIVATE PRACTITIONER (Admin only) ==========
+
+
+  // ── TOGGLE ACTIVE ─────────────────────────────────────────────────────────
+  // Add after the VERIFY endpoint in practitioners.ts
   .openapi(createRoute({
     tags: ['Practitioners'],
-    summary: 'Deactivate a practitioner (admin only)',
-    method: 'delete',
-    path: '/:practitionerId',
-    security: [{ bearerAuth: [] }],
-    middleware: [authMiddleware],
-    request: {
-      params: z.object({ practitionerId: z.string().uuid() }),
-    },
+    summary: 'Toggle active status of a practitioner (admin only)',
+    method: 'patch', path: '/:practitionerId/toggle-active',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    request: { params: z.object({ practitionerId: z.string().uuid() }) },
     responses: {
-      200: {
-        content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ message: z.string() }) }) } },
-        description: 'Practitioner deactivated',
-      },
+      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } }, description: 'Toggled' },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
-      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Practitioner not found' },
+      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
-      const userType = c.get('userType');
-      if (userType !== 'admin') {
-        return c.json({ success: false, error: { message: 'Admin access required' } }, 403);
-      }
+      if (c.get('userType') !== 'admin')
+        return c.json({ success: false, error: { message: 'Admin only' } }, 403);
 
       const { practitionerId } = c.req.valid('param');
 
-      const result = await db.update(practitioners)
-        .set({ isActive: false, updatedAt: new Date() })
+      const existing = await db
+        .select({ isActive: practitioners.isActive, blockchainAddress: practitioners.blockchainAddress })
+        .from(practitioners)
         .where(eq(practitioners.id, practitionerId))
-        .returning({ blockchainAddress: practitioners.blockchainAddress });
+        .limit(1);
 
-      if (!result.length) {
-        return c.json({ success: false, error: { message: 'Practitioner not found' } }, 404);
-      }
+      if (!existing.length)
+        return c.json({ success: false, error: { message: 'Not found' } }, 404);
 
-      const deactivateHash = generateRecordHash({ practitionerId, action: 'deactivate', timestamp: new Date().toISOString() });
-      await storeRecordHash(practitionerId, result[0].blockchainAddress, deactivateHash, 'practitioner_deactivate').catch(() => { });
+      const newStatus = !existing[0].isActive;
 
-      return c.json({ success: true, data: { message: 'Practitioner deactivated successfully' } });
+      await db
+        .update(practitioners)
+        .set({ isActive: newStatus, updatedAt: new Date() })
+        .where(eq(practitioners.id, practitionerId));
 
+      const hash = generateRecordHash({
+        practitionerId,
+        action: newStatus ? 'activate' : 'deactivate',
+        timestamp: new Date().toISOString(),
+      });
+      storeRecordHash(practitionerId, existing[0].blockchainAddress, hash, 'practitioner_status').catch(() => { });
+
+      return c.json({
+        success: true,
+        data: {
+          message: `Account ${newStatus ? 'activated' : 'deactivated'} successfully`,
+          isActive: newStatus,
+        },
+      });
     } catch (err: any) {
-      console.error('Deactivate practitioner error:', err);
+      console.error('[PRACTITIONER_TOGGLE]', err);
+      return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+    }
+  })
+
+  // ── RESET PASSWORD (Admin) ────────────────────────────────────────────────
+  // Add after TOGGLE ACTIVE in practitioners.ts
+  .openapi(createRoute({
+    tags: ['Practitioners'],
+    summary: 'Admin resets a staff member password',
+    method: 'patch', path: '/:practitionerId/reset-password',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    request: {
+      params: z.object({ practitionerId: z.string().uuid() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              newPassword: z.string().min(8),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } }, description: 'Reset' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+    },
+  }), async (c) => {
+    try {
+      if (c.get('userType') !== 'admin')
+        return c.json({ success: false, error: { message: 'Admin only' } }, 403);
+
+      const { practitionerId } = c.req.valid('param');
+      const { newPassword } = c.req.valid('json');
+
+      // bcryptjs is already used in auth.ts — import at top of practitioners.ts:
+      // import { hash } from 'bcryptjs';
+      const { hash } = await import('bcryptjs');
+      const passwordHash = await hash(newPassword, 12);
+
+      const result = await db
+        .update(practitioners)
+        .set({
+          passwordHash,
+          mustChangePassword: true, // force them to change on next login
+          updatedAt: new Date(),
+        } as any)
+        .where(eq(practitioners.id, practitionerId))
+        .returning({ id: practitioners.id, blockchainAddress: practitioners.blockchainAddress });
+
+      if (!result.length)
+        return c.json({ success: false, error: { message: 'Not found' } }, 404);
+
+      const recordHash = generateRecordHash({
+        practitionerId,
+        action: 'password_reset',
+        resetBy: c.get('userId'),
+        timestamp: new Date().toISOString(),
+      });
+      storeRecordHash(practitionerId, result[0].blockchainAddress, recordHash, 'password_reset').catch(() => { });
+
+      return c.json({
+        success: true,
+        data: { message: 'Password reset successfully. Staff member must change password on next login.' },
+      });
+    } catch (err: any) {
+      console.error('[PRACTITIONER_RESET_PW]', err);
+      return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+    }
+  })
+
+
+  // ── DEACTIVATE ────────────────────────────────────────────────────────────
+  .openapi(createRoute({
+    tags: ['Practitioners'],
+    summary: 'Deactivate a practitioner (admin only)',
+    method: 'delete', path: '/:practitionerId',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    request: { params: z.object({ practitionerId: z.string().uuid() }) },
+    responses: {
+      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } }, description: 'Deactivated' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+    },
+  }), async (c) => {
+    try {
+      if (c.get('userType') !== 'admin') return c.json({ success: false, error: { message: 'Admin only' } }, 403);
+      const { practitionerId } = c.req.valid('param');
+      const result = await db.update(practitioners).set({ isActive: false, updatedAt: new Date() }).where(eq(practitioners.id, practitionerId)).returning({ blockchainAddress: practitioners.blockchainAddress });
+      if (!result.length) return c.json({ success: false, error: { message: 'Not found' } }, 404);
+      const hash = generateRecordHash({ practitionerId, action: 'deactivate', timestamp: new Date().toISOString() });
+      storeRecordHash(practitionerId, result[0].blockchainAddress, hash, 'practitioner_deactivate').catch(() => { });
+      return c.json({ success: true, data: { message: 'Practitioner deactivated successfully' } });
+    } catch (err: any) {
+      console.error('[PRACTITIONER_DEACTIVATE]', err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   });

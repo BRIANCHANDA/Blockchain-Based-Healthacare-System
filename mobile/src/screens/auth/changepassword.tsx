@@ -6,16 +6,19 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
+  StatusBar,
 } from "react-native";
 import { useForm, Controller } from "react-hook-form";
 import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { MaterialIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Toast from "react-native-toast-message";
 
 import Input from "../../components/common/Input";
-import Button from "../../components/common/Button";
-import { changePassword } from "../../api/auth"; // ← correct import
+import { changePassword } from "../../api/auth";
 import { useAuthStore } from "../../store/authStore";
 import { AuthStackParamList } from "../../types";
 
@@ -32,29 +35,38 @@ const schema = z
 type FormData = z.infer<typeof schema>;
 type Props = NativeStackScreenProps<AuthStackParamList, "ChangePassword">;
 
+// ── Design tokens ────────────────────────────────────────────────────────────
+const C = {
+  primary: "#059669",
+  primaryDark: "#047857",
+  primaryGhost: "#ECFDF5",
+  coral: "#FF5757",
+  ink: "#0A0E1A",
+  inkSoft: "#4B5563",
+  inkMuted: "#9CA3AF",
+  bg: "#FAFAFB",
+  bgAlt: "#F4F5F7",
+  card: "#FFFFFF",
+  cardBorder: "#E5E7EB",
+};
+
 export default function ChangePasswordScreen(_: Props) {
   const [loading, setLoading] = useState(false);
   const { token, user, setAuth } = useAuthStore();
+  const insets = useSafeAreaInsets();
 
   const {
     control,
     handleSubmit,
     formState: { errors },
-  } = useForm<FormData>({
-    resolver: zodResolver(schema),
-  });
+  } = useForm<FormData>({ resolver: zodResolver(schema) });
 
   const onSubmit = async (data: FormData) => {
     setLoading(true);
     try {
-      // On forced first-login, the old password is always the default 'test1234'.
-      // changePassword(oldPassword, newPassword)
       await changePassword("test1234", data.newPassword);
-
-      // Clear the flag locally so the app doesn't redirect again
       const updatedUser = { ...user!, mustChangePassword: false };
       await setAuth(token!, updatedUser);
-
       Toast.show({
         type: "success",
         text1: "Password Changed",
@@ -71,101 +83,207 @@ export default function ChangePasswordScreen(_: Props) {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={styles.container}
-        keyboardShouldPersistTaps="handled"
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={styles.header}>
-          <View style={styles.iconCircle}>
-            <Text style={styles.iconText}>🔐</Text>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scroll,
+            { paddingTop: insets.top + 32, paddingBottom: insets.bottom + 32 },
+          ]}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* ── Lock icon ── */}
+          <View style={styles.iconWrap}>
+            <View style={styles.iconBox}>
+              <MaterialIcons name="lock-outline" size={32} color="#fff" />
+            </View>
           </View>
-          <Text style={styles.title}>Set Your Password</Text>
-          <Text style={styles.subtitle}>
-            For your security, please set a personal password before continuing.
-          </Text>
-        </View>
 
-        <View style={styles.form}>
-          <Controller
-            control={control}
-            name="newPassword"
-            render={({ field: { onChange, value } }) => (
-              <Input
-                label="New Password"
-                placeholder="At least 8 characters"
-                value={value}
-                onChangeText={onChange}
-                secureTextEntry
-                secureToggle
-                error={errors.newPassword?.message}
-              />
-            )}
-          />
+          {/* ── Headline ── */}
+          <View style={styles.headlineWrap}>
+            <Text style={styles.headline}>Set your{"\n"}new password</Text>
+            <Text style={styles.subheadline}>
+              For your security, please set a personal password before
+              continuing.
+            </Text>
+          </View>
 
-          <Controller
-            control={control}
-            name="confirmPassword"
-            render={({ field: { onChange, value } }) => (
-              <Input
-                label="Confirm Password"
-                placeholder="Re-enter new password"
-                value={value}
-                onChangeText={onChange}
-                secureTextEntry
-                secureToggle
-                error={errors.confirmPassword?.message}
-              />
-            )}
-          />
+          {/* ── Form ── */}
+          <View style={styles.formWrap}>
+            <Controller
+              control={control}
+              name="newPassword"
+              render={({ field: { onChange, value } }) => (
+                <Input
+                  label="New Password"
+                  placeholder="At least 8 characters"
+                  value={value}
+                  onChangeText={onChange}
+                  secureTextEntry
+                  secureToggle
+                  error={errors.newPassword?.message}
+                />
+              )}
+            />
 
-          <Button
-            label={loading ? "Updating..." : "Set Password"}
-            onPress={handleSubmit(onSubmit)}
-            loading={loading}
-            style={{ marginTop: 16 }}
-          />
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+            <Controller
+              control={control}
+              name="confirmPassword"
+              render={({ field: { onChange, value } }) => (
+                <Input
+                  label="Confirm Password"
+                  placeholder="Re-enter new password"
+                  value={value}
+                  onChangeText={onChange}
+                  secureTextEntry
+                  secureToggle
+                  error={errors.confirmPassword?.message}
+                />
+              )}
+            />
+
+            <Pressable
+              onPress={handleSubmit(onSubmit)}
+              disabled={loading}
+              style={({ pressed }) => [
+                styles.submitBtn,
+                pressed && { opacity: 0.92, transform: [{ scale: 0.99 }] },
+                loading && { opacity: 0.6 },
+              ]}
+            >
+              <Text style={styles.submitText}>
+                {loading ? "Updating…" : "Set Password"}
+              </Text>
+              {!loading && (
+                <MaterialIcons name="arrow-forward" size={18} color="#fff" />
+              )}
+            </Pressable>
+          </View>
+
+          {/* ── Security tips ── */}
+          <View style={styles.tipsBox}>
+            <Text style={styles.tipsTitle}>Password tips</Text>
+            {[
+              "Use at least 8 characters",
+              "Mix letters, numbers and symbols",
+              "Don't reuse old passwords",
+            ].map((tip, i) => (
+              <View key={i} style={styles.tipRow}>
+                <MaterialIcons
+                  name="check-circle"
+                  size={14}
+                  color={C.primary}
+                />
+                <Text style={styles.tipText}>{tip}</Text>
+              </View>
+            ))}
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flexGrow: 1,
-    backgroundColor: "#F0F4FF",
-    padding: 24,
-    justifyContent: "center",
+  scroll: { flexGrow: 1, paddingHorizontal: 24 },
+
+  iconWrap: {
+    alignItems: "flex-start",
+    marginBottom: 28,
   },
-  header: { alignItems: "center", marginBottom: 40 },
-  iconCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "rgb(2, 77, 36)",
+  iconBox: {
+    width: 60,
+    height: 60,
+    borderRadius: 18,
+    backgroundColor: C.ink,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 12,
+    ...Platform.select({
+      ios: {
+        shadowColor: C.ink,
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.2,
+        shadowRadius: 12,
+      },
+      android: { elevation: 6 },
+    }),
   },
-  iconText: { fontSize: 36 },
-  title: { fontSize: 24, fontWeight: "800", color: "#1E3A5F" },
-  subtitle: {
+
+  headlineWrap: { marginBottom: 36 },
+  headline: {
+    fontSize: 30,
+    fontWeight: "800",
+    color: C.ink,
+    letterSpacing: -1.2,
+    lineHeight: 36,
+  },
+  subheadline: {
     fontSize: 14,
-    color: "#6B7280",
-    marginTop: 8,
-    textAlign: "center",
+    color: C.inkSoft,
+    marginTop: 10,
+    lineHeight: 21,
+    fontWeight: "500",
   },
-  form: {
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 24,
-    shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 3,
+
+  formWrap: { gap: 4 },
+
+  submitBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: C.ink,
+    paddingVertical: 17,
+    borderRadius: 14,
+    marginTop: 16,
+    ...Platform.select({
+      ios: {
+        shadowColor: C.ink,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.15,
+        shadowRadius: 12,
+      },
+      android: { elevation: 4 },
+    }),
+  },
+  submitText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#fff",
+    letterSpacing: 0.2,
+  },
+
+  tipsBox: {
+    marginTop: 32,
+    padding: 16,
+    backgroundColor: C.primaryGhost,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+  tipsTitle: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: C.primaryDark,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    marginBottom: 10,
+  },
+  tipRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 6,
+  },
+  tipText: {
+    fontSize: 13,
+    color: C.inkSoft,
+    fontWeight: "500",
   },
 });

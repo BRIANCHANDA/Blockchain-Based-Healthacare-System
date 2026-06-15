@@ -5,13 +5,14 @@ import {
   patients, institutions, patientInstitutionRegistrations,
   visits, consultations, diagnoses, imagingOrders, imagingReports,
   labTestOrders, labTestResults, prescriptionItems, prescriptions,
-  vitalSigns, practitioners,
+  vitalSigns, practitioners, allergies,
 } from '../db/schema';
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
 import { encrypt, decrypt, hashData, generateRecordHash } from '../services/crypto';
 import { storeRecordHash, checkPermission } from '../services/fabric';
 import crypto from 'crypto';
+import { hash } from 'bcryptjs'
 
 const errorSchema = z.object({ success: z.boolean(), error: z.object({ message: z.string() }) });
 const successData = z.object({ success: z.boolean(), data: z.any() });
@@ -245,7 +246,7 @@ export const patientRouter = createRouter()
     try {
       const userType = c.get('userType');
       const userId = c.get('userId');
-      if (!['receptionist', 'nurse', 'practitioner', 'admin'].includes(userType))
+      if (!['receptionist', 'nurse', 'practitioner', 'lab_technician', 'radiologist', 'admin'].includes(userType))
         return c.json({ success: false, error: { message: 'Access denied' } }, 403);
 
       const { q, limit, offset } = c.req.valid('query');
@@ -297,6 +298,221 @@ export const patientRouter = createRouter()
     }
   })
 
+
+  // ── ADD TO backend/src/routes/patients.ts ────────────────────────────────────
+  // Add these imports at top if not already present:
+  //   import { eq, desc, inArray } from 'drizzle-orm';
+  //   import { visits, institutions } from '../db/schema';
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // GET /patients/my-institutions
+  // Returns the distinct hospitals where the patient has had any past visit.
+  // Used by the mobile app to populate the "select hospital" picker when
+  // the patient wants to request a new appointment.
+  // ══════════════════════════════════════════════════════════════════════════
+  .openapi(createRoute({
+    tags: ['Patients'],
+    summary: 'Patient — institutions I have visited',
+    method: 'get',
+    path: '/my-institutions',
+    security: [{ bearerAuth: [] }],
+    middleware: [authMiddleware],
+    responses: {
+      200: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              success: z.boolean(),
+              data: z.object({
+                institutions: z.array(z.object({
+                  id: z.string(),
+                  institutionName: z.string(),
+                  institutionType: z.string(),
+                  lastVisitDate: z.string().nullable(),
+                  visitCount: z.number(),
+                })),
+              }),
+            }),
+          },
+        },
+        description: 'My institutions',
+      },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+    },
+  }), async (c) => {
+    try {
+      const userType = c.get('userType');
+      const userId = c.get('userId');
+
+      if (userType !== 'patient')
+        return c.json({ success: false, error: { message: 'Patients only' } }, 403);
+
+      // Get distinct institution IDs with visit counts and last visit date
+      const rows = await db.execute(sql`
+                SELECT
+                    i.id               AS id,
+                    i.institution_name AS "institutionName",
+                    i.institution_type AS "institutionType",
+                    COUNT(v.id)::int   AS "visitCount",
+                    MAX(v.admission_date) AS "lastVisitDate"
+                FROM visits v
+                JOIN institutions i ON i.id = v.institution_id
+                WHERE v.patient_id = ${userId}
+                  AND v.institution_id IS NOT NULL
+                  AND i.is_active = true
+                GROUP BY i.id, i.institution_name, i.institution_type
+                ORDER BY MAX(v.admission_date) DESC
+            `);
+
+      return c.json({
+        success: true,
+        data: {
+          institutions: (rows as any[]).map(r => ({
+            id: r.id,
+            institutionName: r.institutionName,
+            institutionType: r.institutionType,
+            visitCount: Number(r.visitCount),
+            lastVisitDate: r.lastVisitDate ? new Date(r.lastVisitDate).toISOString() : null,
+          })),
+        },
+      });
+    } catch (err: any) {
+      console.error('[MY_INSTITUTIONS]', err);
+      return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+    }
+  })
+
+  // ── ADD TO backend/src/routes/patients.ts ────────────────────────────────────
+  //
+  // IMPORTANT: Hono matches routes in declaration order. Place this BEFORE the
+  // parameterized /:patientId route (same rule as /my-institutions).
+  //
+  // Imports needed (add if missing):
+  //   import { vitalSigns, visits } from '../db/schema';
+  //   import { desc, asc } from 'drizzle-orm';
+
+  // ─── GET /my-vitals-trends ─────────────────────────────────────────────────
+  // Patient's own vitals across all visits, oldest→newest, for trend charts.
+  .openapi(createRoute({
+    tags: ['Patients'],
+    summary: 'Patient vitals history for trend charts',
+    method: 'get',
+    path: '/my-vitals-trends',
+    security: [{ bearerAuth: [] }],
+    middleware: [authMiddleware],
+    responses: {
+      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } }, description: 'Vitals trends' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+    },
+  }), async (c) => {
+    try {
+      const userType = c.get('userType');
+      const userId = c.get('userId');
+      if (userType !== 'patient')
+        return c.json({ success: false, error: { message: 'Patients only' } }, 403);
+
+      const rows = await db.select({
+        id: vitalSigns.id,
+        recordedAt: vitalSigns.recordedAt,
+        temperature: vitalSigns.temperature,
+        bloodPressureSystolic: vitalSigns.bloodPressureSystolic,
+        bloodPressureDiastolic: vitalSigns.bloodPressureDiastolic,
+        pulseRate: vitalSigns.pulseRate,
+        respiratoryRate: vitalSigns.respiratoryRate,
+        oxygenSaturation: vitalSigns.oxygenSaturation,
+        weight: vitalSigns.weight,
+        height: vitalSigns.height,
+        visitNumber: visits.visitNumber,
+      })
+        .from(vitalSigns)
+        .leftJoin(visits, eq(visits.id, vitalSigns.visitId))
+        .where(eq(vitalSigns.patientId, userId))
+        .orderBy(vitalSigns.recordedAt)   // oldest first for charts
+        .limit(100);
+
+      const points = rows.map(r => ({
+        date: r.recordedAt,
+        visitNumber: r.visitNumber,
+        systolic: r.bloodPressureSystolic,
+        diastolic: r.bloodPressureDiastolic,
+        pulse: r.pulseRate,
+        temperature: r.temperature ? parseFloat(r.temperature as any) : null,
+        spo2: r.oxygenSaturation,
+        weight: r.weight ? parseFloat(r.weight as any) : null,
+      }));
+
+      // Latest values + simple deltas for the summary cards
+      const latest = points[points.length - 1] ?? null;
+      const previous = points[points.length - 2] ?? null;
+      const delta = (k: keyof typeof points[0]) =>
+        latest && previous && latest[k] != null && previous[k] != null
+          ? Number(latest[k]) - Number(previous[k]) : null;
+
+      return c.json({
+        success: true,
+        data: {
+          points,
+          total: points.length,
+          latest,
+          deltas: latest ? {
+            systolic: delta('systolic'),
+            weight: delta('weight'),
+            pulse: delta('pulse'),
+          } : null,
+        },
+      });
+    } catch (err: any) {
+      console.error('[VITALS_TRENDS]', err);
+      return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+    }
+  })
+
+  // ── GET MY HEALTH — blood type + allergies for the patient portal ───────────
+  .openapi(createRoute({
+    tags: ['Patients'], summary: 'Patient health summary (blood type + allergies)',
+    method: 'get', path: '/my-health',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    responses: {
+      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.any() }) } }, description: 'Health summary' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+    },
+  }), async (c) => {
+    try {
+      if (c.get('userType') !== 'patient')
+        return c.json({ success: false, error: { message: 'Patients only' } }, 403);
+      const patientId = c.get('userId');
+
+      const [patientRow, allergyRows] = await Promise.all([
+        db.select({ bloodType: patients.bloodType })
+          .from(patients)
+          .where(eq(patients.id, patientId))
+          .limit(1),
+        db.select({
+          id:          allergies.id,
+          allergen:    allergies.allergen,
+          allergyType: allergies.allergyType,
+          severity:    allergies.severity,
+          reaction:    allergies.reaction,
+        })
+          .from(allergies)
+          .where(and(eq(allergies.patientId, patientId), eq(allergies.isActive, true)))
+          .orderBy(desc(allergies.severity)),
+      ]);
+
+      return c.json({
+        success: true,
+        data: {
+          bloodType: patientRow[0]?.bloodType ?? 'unknown',
+          allergies: allergyRows,
+        },
+      });
+    } catch (err: any) {
+      console.error('[MY_HEALTH]', err);
+      return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+    }
+  })
+
   // ── GET BY ID ─────────────────────────────────────────────────────────────
   .openapi(createRoute({
     tags: ['Patients'], summary: 'Get patient by ID',
@@ -314,7 +530,7 @@ export const patientRouter = createRouter()
       const userType = c.get('userType');
       const userId = c.get('userId');
       const { patientId } = c.req.valid('param');
-      if (!['practitioner', 'nurse', 'receptionist', 'admin'].includes(userType))
+      if (!['practitioner', 'nurse', 'receptionist', 'lab_technician', 'radiologist', 'admin'].includes(userType))
         return c.json({ success: false, error: { message: 'Access denied' } }, 403);
 
       const row = await db.select().from(patients).where(eq(patients.id, patientId)).limit(1);
@@ -349,7 +565,7 @@ export const patientRouter = createRouter()
   }), async (c) => {
     try {
       const userType = c.get('userType');
-      if (!['admin', 'practitioner', 'receptionist', 'nurse'].includes(userType)) return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+      if (!['admin', 'practitioner', 'receptionist', 'nurse', 'lab_technician', 'radiologist'].includes(userType)) return c.json({ success: false, error: { message: 'Access denied' } }, 403);
       const { search, limit, offset } = c.req.valid('query');
       let query = db.select({ id: patients.id, blockchainAddress: patients.blockchainAddress, firstNameEncrypted: patients.firstNameEncrypted, lastNameEncrypted: patients.lastNameEncrypted, gender: patients.gender, createdAt: patients.createdAt }).from(patients);
       if (search) {
@@ -412,7 +628,7 @@ export const patientRouter = createRouter()
       const staffBlockchainAddress = c.get('blockchainAddress') as string | undefined;
       const { patientId } = c.req.valid('param');
 
-      if (!['practitioner', 'nurse', 'admin', 'patient', 'receptionist'].includes(userType))
+      if (!['practitioner', 'nurse', 'admin', 'patient', 'lab_technician', 'radiologist', 'receptionist'].includes(userType))
         return c.json({ success: false, error: { message: 'Access denied' } }, 403);
 
       const patientRow = await db.select().from(patients).where(eq(patients.id, patientId)).limit(1);
@@ -536,29 +752,82 @@ export const patientRouter = createRouter()
   })
 
   // ── RESET PASSWORD ────────────────────────────────────────────────────────
+  // ── RESET PASSWORD ────────────────────────────────────────────────────────
   .openapi(createRoute({
     tags: ['Patients'], summary: 'Reset patient password — receptionist accessible',
     method: 'post', path: '/:patientId/reset-password',
     security: [{ bearerAuth: [] }], middleware: [authMiddleware],
-    request: { params: z.object({ patientId: z.string().uuid() }), body: { content: { 'application/json': { schema: z.object({ newPassword: z.string().min(8) }) } } } },
-    responses: { 200: { content: { 'application/json': { schema: successData } }, description: 'Reset' }, 403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' }, 404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' }, 500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' } },
+    request: {
+      params: z.object({ patientId: z.string().uuid() }),
+      body: { content: { 'application/json': { schema: z.object({ newPassword: z.string().min(8) }) } } },
+    },
+    responses: {
+      200: { content: { 'application/json': { schema: successData } }, description: 'Reset' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+    },
   }), async (c) => {
     try {
       const userType = c.get('userType');
       const userId = c.get('userId');
       const { patientId } = c.req.valid('param');
       const { newPassword } = c.req.valid('json');
-      if (!['receptionist', 'admin'].includes(userType)) return c.json({ success: false, error: { message: 'Access denied' } }, 403);
 
+      if (!['receptionist', 'admin'].includes(userType))
+        return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+
+      // Verify the patient is registered at this staff member's institution
       const sid = await getStaffInstitution(userId);
-      if (sid) { const reg = await db.select().from(patientInstitutionRegistrations).where(and(eq(patientInstitutionRegistrations.patientId, patientId), eq(patientInstitutionRegistrations.institutionId, sid), eq(patientInstitutionRegistrations.isActive, true))).limit(1); if (!reg.length) return c.json({ success: false, error: { message: 'Patient not registered at your institution' } }, 403); }
+      if (sid) {
+        const reg = await db
+          .select({ id: patientInstitutionRegistrations.id })
+          .from(patientInstitutionRegistrations)
+          .where(and(
+            eq(patientInstitutionRegistrations.patientId, patientId),
+            eq(patientInstitutionRegistrations.institutionId, sid),
+            eq(patientInstitutionRegistrations.isActive, true),
+          ))
+          .limit(1);
+        if (!reg.length)
+          return c.json({ success: false, error: { message: 'Patient not registered at your institution' } }, 403);
+      }
 
-      const existing = await db.select({ id: patients.id, blockchainAddress: patients.blockchainAddress }).from(patients).where(eq(patients.id, patientId)).limit(1);
-      if (!existing.length) return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
+      // Fetch patient for blockchain address
+      const existing = await db
+        .select({ id: patients.id, blockchainAddress: patients.blockchainAddress })
+        .from(patients)
+        .where(eq(patients.id, patientId))
+        .limit(1);
 
-      await db.update(patients).set({ passwordHash: hashData(newPassword), updatedAt: new Date() }).where(eq(patients.id, patientId));
-      storeRecordHash(patientId, existing[0].blockchainAddress, generateRecordHash({ patientId, resetBy: userId, timestamp: new Date().toISOString() }), 'patient_password_reset').catch(() => { });
+      if (!existing.length)
+        return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
 
-      return c.json({ success: true, data: { message: 'Password reset successfully. Advise the patient to change it after logging in.' } });
-    } catch (err: any) { console.error('[RESET-PASSWORD]', err); return c.json({ success: false, error: { message: 'Internal server error' } }, 500); }
-  });
+      // Hash with bcryptjs — ONLY update once, ONLY use bcrypt
+      const passwordHash = await hash(newPassword, 12);
+
+      await db
+        .update(patients)
+        .set({ passwordHash, updatedAt: new Date() })
+        .where(eq(patients.id, patientId));
+
+      // Audit trail on blockchain (non-blocking)
+      storeRecordHash(
+        patientId,
+        existing[0].blockchainAddress,
+        generateRecordHash({ patientId, resetBy: userId, timestamp: new Date().toISOString() }),
+        'patient_password_reset',
+      ).catch(() => { });
+
+      return c.json({
+        success: true,
+        data: { message: 'Password reset successfully. Advise the patient to change it after logging in.' },
+      });
+    } catch (err: any) {
+      console.error('[RESET-PASSWORD]', err);
+      return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+    }
+  })
+
+
+  ;

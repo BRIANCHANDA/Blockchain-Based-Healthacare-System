@@ -149,6 +149,7 @@ export default function DoctorVisitPage() {
   }, [permStage, loadVisit]);
 
   const visit = visitData?.visit;
+  const patient = visitData?.patient;
   const consultations = visitData?.consultations ?? [];
   const diagnoses = visitData?.diagnoses ?? [];
   const vitals = visitData?.vitalSigns ?? [];
@@ -158,7 +159,7 @@ export default function DoctorVisitPage() {
   const ps = PRIORITY_STYLE[visit?.priority] ?? PRIORITY_STYLE.routine;
   const latestConsultation = consultations[consultations.length - 1];
 
-  // ── Permission checking ───────────────────────────────────────────────────
+  // ── Permission states ─────────────────────────────────────────────────────
   if (permStage === "checking") {
     return (
       <div className="flex flex-col items-center justify-center min-h-64 gap-4">
@@ -230,7 +231,7 @@ export default function DoctorVisitPage() {
     <div className="max-w-5xl mx-auto">
       {toast && <Toast message={toast.message} type={toast.type} />}
 
-      {/* ── Visit header ─────────────────────────────────────────────────── */}
+      {/* ── Visit header ── */}
       <div className="flex items-start gap-3 mb-5">
         <button
           onClick={() => router.back()}
@@ -285,7 +286,7 @@ export default function DoctorVisitPage() {
         </button>
       </div>
 
-      {/* ── Tab bar ──────────────────────────────────────────────────────── */}
+      {/* ── Tab bar ── */}
       <div className="flex gap-1 overflow-x-auto pb-1 mb-4 scrollbar-hide">
         {TABS.map(({ key, label, icon: Icon }) => {
           const done =
@@ -320,7 +321,7 @@ export default function DoctorVisitPage() {
         })}
       </div>
 
-      {/* ── Tab content ──────────────────────────────────────────────────── */}
+      {/* ── Tab content ── */}
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         {activeTab === "overview" && (
           <OverviewTab
@@ -341,6 +342,9 @@ export default function DoctorVisitPage() {
           <ConsultationTab
             visitId={visitId}
             consultations={consultations}
+            patient={patient}
+            vitalSigns={vitals}
+            diagnoses={diagnoses}
             onSaved={() => {
               showToast("Consultation saved.", "success");
               loadVisit(true);
@@ -403,7 +407,6 @@ export default function DoctorVisitPage() {
           />
         )}
 
-        {/* ── Referrals tab — modal lives INSIDE ReferralTab with its own state ── */}
         {activeTab === "referrals" && (
           <ReferralTab
             visitId={visitId}
@@ -420,6 +423,13 @@ export default function DoctorVisitPage() {
           <DischargeTab
             visitId={visitId}
             visit={visit}
+            patient={patient}
+            consultations={consultations}
+            diagnoses={diagnoses}
+            vitalSigns={vitals}
+            labOrders={labOrders}
+            imagingOrders={imagingOrders}
+            prescriptions={prescriptions}
             onSaved={() => {
               showToast("Patient discharged.", "success");
               loadVisit(true);

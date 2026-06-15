@@ -1,8 +1,12 @@
 import { db } from '../db';
 import { eq, and, or, gte, lt, sql } from 'drizzle-orm';
 import { crossInstitutionAccess, emergencyAccessLogs, patients, visits, consultations } from '../db/schema';
-import { storeRecordHash, generateRecordHash } from './fabric';
+import { storeRecordHash } from './fabric';
 import crypto from 'crypto';
+
+function generateRecordHash(data: object): string {
+    return crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex');
+}
 
 export interface AccessGrant {
     patientId: string;
@@ -39,7 +43,20 @@ export async function grantCrossInstitutionAccess(grant: AccessGrant): Promise<s
         reason: grant.reason,
         status: 'active',
         blockchainHash: hash,
-    }).returning({ id: crossInstitutionAccess.id });
+    })
+    .onConflictDoUpdate({
+        target: [crossInstitutionAccess.patientId, crossInstitutionAccess.sourceInstitutionId, crossInstitutionAccess.targetInstitutionId],
+        set: {
+            status: 'active',
+            expiresAt,
+            reason: grant.reason,
+            grantedBy: grant.grantedBy,
+            accessType: grant.accessType,
+            blockchainHash: hash,
+            updatedAt: new Date(),
+        },
+    })
+    .returning({ id: crossInstitutionAccess.id });
 
     await storeRecordHash(result[0].id, grant.sourceInstitutionId, hash, 'cross_institution_access');
 

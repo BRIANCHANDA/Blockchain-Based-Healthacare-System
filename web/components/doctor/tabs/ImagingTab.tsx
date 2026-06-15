@@ -279,6 +279,19 @@ export function ImagingTab({
       .finally(() => setRadiosLoading(false));
   }, []);
 
+  // Pre-populate reports from embedded report data in the order props
+  useEffect(() => {
+    const preloaded: Record<string, any> = {};
+    for (const order of imagingOrders) {
+      if (order.report !== undefined) {
+        preloaded[order.id] = order.report; // null means no report yet
+      }
+    }
+    if (Object.keys(preloaded).length > 0) {
+      setReports((prev) => ({ ...preloaded, ...prev }));
+    }
+  }, [imagingOrders]);
+
   const f = (field: keyof typeof form) => (v: string) =>
     setForm((p) => ({ ...p, [field]: v }));
 

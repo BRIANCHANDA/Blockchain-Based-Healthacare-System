@@ -11,6 +11,7 @@ import {
     decimal,
     date,
     unique,
+    varchar,
     serial
 } from 'drizzle-orm/pg-core';
 
@@ -256,6 +257,7 @@ export const practitioners = pgTable('practitioners', {
     qualifications: text('qualifications'),                // for practitioners
     role: userTypeEnum('role').notNull(),                  // e.g. 'nurse', 'practitioner', 'pharmacist', etc.
     isVerified: boolean('is_verified').default(false).notNull(),
+    mustChangePassword: boolean('must_change_password').default(true).notNull(),
     isActive: boolean('is_active').default(true).notNull(),
     passwordHash: text('password_hash').notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -686,6 +688,18 @@ export const authSessions = pgTable('auth_sessions', {
     tokenIdx: index('idx_auth_sessions_jwt_token').on(table.jwtToken),
 }));
 
+
+export const otpCodes = pgTable('otp_codes', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id').notNull(),
+    userType: varchar('user_type', { length: 20 }).notNull(), // 'staff' | 'patient'
+    code: varchar('code', { length: 6 }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    used: boolean('used').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+
 export const twoFaSecrets = pgTable('two_fa_secrets', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').notNull(),
@@ -798,3 +812,35 @@ export const emergencyAccessLogs = pgTable('emergency_access_logs', {
     patientIdx: index('idx_emergency_patient').on(table.patientId),
     accessedByIdx: index('idx_emergency_accessed_by').on(table.accessedBy),
 }));
+
+
+
+export const medicationStock = pgTable('medication_stock', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    institutionId: uuid('institution_id').notNull(),
+    medicationName: text('medication_name').notNull(),
+    genericName: text('generic_name'),
+    strength: text('strength').notNull(),
+    dosageForm: text('dosage_form').notNull(),
+    unit: text('unit').notNull().default('units'),
+    quantity: integer('quantity').notNull().default(0),
+    reorderLevel: integer('reorder_level').notNull().default(10),
+    batchNumber: text('batch_number'),
+    expiryDate: date('expiry_date'),
+    supplier: text('supplier'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const stockMovements = pgTable('stock_movements', {
+    id: uuid('id').primaryKey().defaultRandom(),
+    stockId: uuid('stock_id').notNull(),
+    institutionId: uuid('institution_id').notNull(),
+    changeType: text('change_type').notNull(),
+    quantityChange: integer('quantity_change').notNull(),
+    quantityAfter: integer('quantity_after').notNull(),
+    referenceId: uuid('reference_id'),
+    performedBy: uuid('performed_by').notNull(),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});

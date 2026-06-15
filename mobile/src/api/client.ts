@@ -3,8 +3,8 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Change this to your machine's local IP when testing on a physical device
 // e.g. 'http://192.168.1.100:3000' — NOT localhost (that points to the phone itself)
-export const BASE_URL = 'http://192.168.1.208:3000/api'; // Android emulator → host machine
-
+export const BASE_URL = 'http://192.168.0.126:3000/api'; // Android emulator → host machine
+// export const BASE_URL = 'https://blockchain-based-healthacare-system.onrender.com/api';
 const client = axios.create({
     baseURL: BASE_URL,
     timeout: 30000,

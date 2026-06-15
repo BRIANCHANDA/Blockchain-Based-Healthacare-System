@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { ProfileDrawer } from "@/components/ProfileDrawer";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
 import {
@@ -33,6 +34,7 @@ export default function RadiologyLayout({
   const pathname = usePathname();
   const { user, isAuthenticated, clearAuth, initFromStorage } = useAuthStore();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   useEffect(() => {
     initFromStorage();
@@ -80,9 +82,7 @@ export default function RadiologyLayout({
             <Scan className="w-4 h-4 text-white" />
           </div>
           <div>
-            <p className="text-white font-bold text-sm leading-none">
-              HealthChain
-            </p>
+            <p className="text-white font-bold text-sm leading-none">MedLink</p>
             <p className="text-green-300 text-xs mt-0.5">Zambia</p>
           </div>
           <button
@@ -188,7 +188,8 @@ export default function RadiologyLayout({
               <Bell className="w-4 h-4" />
             </button>
             <div
-              className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
+              onClick={() => setProfileOpen(true)}
+              className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white cursor-pointer hover:opacity-80 transition-opacity"
               style={{ background: "#166534" }}
             >
               {user?.firstName?.[0]}
@@ -198,6 +199,8 @@ export default function RadiologyLayout({
         </header>
         <main className="flex-1 p-6 overflow-y-auto">{children}</main>
       </div>
+
+      <ProfileDrawer open={profileOpen} onClose={() => setProfileOpen(false)} />
     </div>
   );
 }

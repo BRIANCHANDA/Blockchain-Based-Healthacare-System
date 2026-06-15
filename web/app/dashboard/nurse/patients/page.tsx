@@ -1,77 +1,25 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { patientApi, visitApi } from "@/lib/api";
 import {
-  Users,
-  RefreshCw,
   Search,
   X,
-  Clock,
-  CheckCircle2,
-  Activity,
-  AlertTriangle,
-  Zap,
+  Users,
   ChevronRight,
+  RefreshCw,
+  Activity,
+  CheckCircle2,
+  Clock,
   Droplets,
-  User,
   AlertCircle,
+  ArrowLeft,
+  Heart,
+  Thermometer,
+  Wind,
+  Gauge,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-interface AssignedPatient {
-  id: string; // visitId
-  visitNumber: string;
-  patientId: string;
-  patientName: string;
-  gender: string;
-  bloodType: string;
-  chiefComplaint: string;
-  priority: string;
-  status: string;
-  admissionDate: string;
-  wardOrRoom?: string | null;
-  assignedDoctorId?: string | null;
-  doctorName?: string | null;
-  hasVitals: boolean;
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-const PRIORITY: Record<
-  string,
-  { color: string; bg: string; border: string; dot: string; label: string }
-> = {
-  critical: {
-    color: "#dc2626",
-    bg: "#fef2f2",
-    border: "#fecaca",
-    dot: "#ef4444",
-    label: "Critical",
-  },
-  emergency: {
-    color: "#ea580c",
-    bg: "#fff7ed",
-    border: "#fed7aa",
-    dot: "#f97316",
-    label: "Emergency",
-  },
-  urgent: {
-    color: "#d97706",
-    bg: "#fffbeb",
-    border: "#fde68a",
-    dot: "#f59e0b",
-    label: "Urgent",
-  },
-  routine: {
-    color: "#16a34a",
-    bg: "#f0fdf4",
-    border: "#bbf7d0",
-    dot: "#22c55e",
-    label: "Routine",
-  },
-};
-const getP = (p: string) => PRIORITY[p] ?? PRIORITY.routine;
 
 const BLOOD_COLOR: Record<string, string> = {
   "A+": "#3b82f6",
@@ -82,579 +30,596 @@ const BLOOD_COLOR: Record<string, string> = {
   "AB-": "#ef4444",
   "O+": "#10b981",
   "O-": "#14b8a6",
-  unknown: "#9ca3af",
 };
 
-function waitMins(iso: string) {
-  return Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
-}
-function waitLabel(mins: number) {
-  if (mins < 60) return `${mins}m`;
-  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
-}
-function waitColor(mins: number) {
-  return mins > 60 ? "#dc2626" : mins > 30 ? "#d97706" : "#9ca3af";
-}
+const PRIORITY: Record<string, { color: string; bg: string; label: string }> = {
+  critical: { color: "#dc2626", bg: "#fef2f2", label: "Critical" },
+  emergency: { color: "#ea580c", bg: "#fff7ed", label: "Emergency" },
+  urgent: { color: "#d97706", bg: "#fffbeb", label: "Urgent" },
+  routine: { color: "#16a34a", bg: "#f0fdf4", label: "Routine" },
+};
 
-function safeDistance(iso: string) {
-  try {
-    return formatDistanceToNow(new Date(iso), { addSuffix: true });
-  } catch {
-    return "—";
-  }
-}
-
-// ── Gender avatar colour ──────────────────────────────────────────────────────
-function avatarBg(gender: string) {
-  if (gender === "female") return "#ec4899";
-  if (gender === "male") return "#3b82f6";
-  return "#8b5cf6";
-}
-
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
-
-// ── Sub-components ────────────────────────────────────────────────────────────
-function PulseDot({
-  color,
-  animate = false,
-}: {
-  color: string;
-  animate?: boolean;
-}) {
-  return (
-    <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
-      {animate && (
-        <span
-          className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-40"
-          style={{ background: color }}
-        />
-      )}
-      <span
-        className="relative inline-flex rounded-full h-2.5 w-2.5"
-        style={{ background: color }}
-      />
-    </span>
+function calcAge(dob?: string) {
+  if (!dob) return null;
+  return Math.floor(
+    (Date.now() - new Date(dob).getTime()) / (1000 * 60 * 60 * 24 * 365.25),
   );
 }
 
-function TriageStatus({ hasVitals }: { hasVitals: boolean }) {
-  return hasVitals ? (
-    <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-green-50 text-green-700 border border-green-100">
-      <CheckCircle2 className="w-3 h-3" /> Triaged
-    </span>
-  ) : (
-    <span className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100">
-      <Activity className="w-3 h-3" /> Pending Triage
-    </span>
-  );
-}
-
-// ── Patient card ──────────────────────────────────────────────────────────────
-function PatientCard({
-  patient,
-  onClick,
-}: {
-  patient: AssignedPatient;
-  onClick: () => void;
-}) {
-  const p = getP(patient.priority);
-  const mins = waitMins(patient.admissionDate);
-  const isUrgent = ["critical", "emergency"].includes(patient.priority);
-
+function SkeletonRow() {
   return (
-    <button
-      onClick={onClick}
-      className="w-full text-left bg-white rounded-2xl border shadow-sm hover:shadow-md transition-all overflow-hidden group"
-      style={{ borderColor: isUrgent ? p.border : "#f1f5f9" }}
-    >
-      {/* Priority strip */}
-      <div className="h-0.5 w-full" style={{ background: p.dot }} />
-
-      <div className="p-5">
-        <div className="flex items-start gap-4">
-          {/* Avatar */}
+    <tr className="border-b border-gray-50">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <td key={i} className="py-4 px-4">
           <div
-            className="w-11 h-11 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-            style={{ background: avatarBg(patient.gender) }}
+            className="h-4 bg-gray-100 rounded animate-pulse"
+            style={{ width: i === 1 ? "70%" : "50%" }}
+          />
+        </td>
+      ))}
+    </tr>
+  );
+}
+
+// ── Patient detail panel ──────────────────────────────────────────────────────
+function PatientDetailPanel({
+  patientId,
+  onClose,
+}: {
+  patientId: string;
+  onClose: () => void;
+}) {
+  const [patient, setPatient] = useState<any>(null);
+  const [history, setHistory] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [pRes, hRes] = await Promise.all([
+          patientApi.getById(patientId),
+          patientApi.getHistory(patientId),
+        ]);
+        setPatient(pRes.data.data);
+        setHistory(hRes.data.data);
+      } catch {
+        setError("Could not load patient data.");
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [patientId]);
+
+  // Extract triage-relevant data: vitals + nursing assessments from all visits
+  const triageHistory =
+    history?.ownVisits?.map((v: any) => ({
+      visit: v.visit,
+      vitals: v.vitals ?? [],
+      nursingAssessment: v.nursingAssessment ?? null,
+    })) ?? [];
+
+  const age = calcAge(patient?.dateOfBirth);
+
+  if (loading)
+    return (
+      <div className="flex items-center justify-center h-64 gap-3">
+        <div className="w-5 h-5 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm text-gray-500">Loading patient…</p>
+      </div>
+    );
+
+  if (error)
+    return (
+      <div className="flex items-center gap-3 p-4 rounded-xl bg-red-50 border border-red-100">
+        <AlertCircle className="w-4 h-4 text-red-500" />
+        <p className="text-sm text-red-700">{error}</p>
+      </div>
+    );
+
+  return (
+    <div>
+      {/* Back */}
+      <button
+        onClick={onClose}
+        className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-5 transition-colors"
+      >
+        <ArrowLeft className="w-4 h-4" /> Back to all patients
+      </button>
+
+      {/* Patient header */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-5">
+        <div className="flex items-center gap-4">
+          <div
+            className="w-14 h-14 rounded-2xl flex items-center justify-center text-lg font-bold text-white flex-shrink-0"
+            style={{
+              background:
+                patient?.gender === "female"
+                  ? "linear-gradient(135deg,#ec4899,#db2777)"
+                  : "linear-gradient(135deg,#166534,#15803d)",
+            }}
           >
-            {getInitials(patient.patientName)}
+            {patient?.firstName?.[0]}
+            {patient?.lastName?.[0]}
           </div>
-
-          {/* Main info */}
-          <div className="flex-1 min-w-0">
-            <div className="flex items-start justify-between gap-2 flex-wrap">
-              <div>
-                <p className="text-sm font-bold text-gray-900 leading-snug">
-                  {patient.patientName}
-                </p>
-                <p className="text-xs font-mono text-gray-400 mt-0.5">
-                  {patient.visitNumber}
-                </p>
-              </div>
-              <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-green-600 transition-colors flex-shrink-0 mt-0.5" />
-            </div>
-
-            {/* Tags row */}
-            <div className="flex flex-wrap items-center gap-2 mt-2">
-              {/* Priority badge */}
-              <span
-                className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize"
-                style={{
-                  background: p.bg,
-                  color: p.color,
-                  border: `1px solid ${p.border}`,
-                }}
-              >
-                <PulseDot
-                  color={p.dot}
-                  animate={isUrgent && !patient.hasVitals}
-                />
-                {p.label}
-              </span>
-
-              {/* Triage status */}
-              <TriageStatus hasVitals={patient.hasVitals} />
-
-              {/* Blood type */}
-              {patient.bloodType && patient.bloodType !== "unknown" && (
+          <div className="flex-1">
+            <h2
+              className="text-xl font-bold text-gray-900"
+              style={{ fontFamily: "'Playfair Display',serif" }}
+            >
+              {patient?.firstName} {patient?.lastName}
+            </h2>
+            <div className="flex flex-wrap gap-3 mt-1.5">
+              {age !== null && (
+                <span className="text-sm text-gray-500">{age} yrs</span>
+              )}
+              {patient?.gender && (
+                <span className="text-sm text-gray-500 capitalize">
+                  {patient.gender}
+                </span>
+              )}
+              {patient?.bloodType && patient.bloodType !== "unknown" && (
                 <span
-                  className="inline-flex items-center gap-1 text-xs font-bold px-2 py-0.5 rounded-full text-white"
+                  className="text-xs font-bold px-2 py-0.5 rounded-full text-white"
                   style={{
                     background: BLOOD_COLOR[patient.bloodType] ?? "#6b7280",
                   }}
                 >
-                  <Droplets className="w-2.5 h-2.5" />
                   {patient.bloodType}
                 </span>
               )}
             </div>
-
-            {/* Complaint */}
-            <p className="text-xs text-gray-500 mt-2 truncate">
-              {patient.chiefComplaint || "No chief complaint recorded"}
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">
+              Total Visits
             </p>
+            <p className="text-2xl font-bold text-gray-900">
+              {triageHistory.length}
+            </p>
+          </div>
+        </div>
+      </div>
 
-            {/* Footer row */}
-            <div className="flex flex-wrap items-center gap-3 mt-2.5">
-              {/* Wait time */}
+      {/* Triage history */}
+      <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-3">
+        Triage & Nursing History
+      </h3>
+
+      {triageHistory.length === 0 ? (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm py-12 text-center">
+          <Activity className="w-8 h-8 text-gray-200 mx-auto mb-3" />
+          <p className="text-sm font-semibold text-gray-400">
+            No triage history found
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {triageHistory.map((item: any, i: number) => {
+            const v = item.visit;
+            const p = PRIORITY[v?.priority] ?? PRIORITY.routine;
+            const latestVitals = item.vitals?.[0];
+            const na = item.nursingAssessment;
+
+            return (
               <div
-                className="flex items-center gap-1 text-xs font-medium"
-                style={{ color: waitColor(mins) }}
+                key={v?.id ?? i}
+                className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
               >
-                <Clock className="w-3 h-3" />
-                {waitLabel(mins)} wait
-                {mins > 45 && (
-                  <span className="ml-1 text-red-500">· overdue</span>
-                )}
+                {/* Visit header */}
+                <div
+                  className="px-5 py-3 border-b border-gray-50 flex items-center justify-between"
+                  style={{ background: p.bg }}
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="text-xs font-bold px-2.5 py-1 rounded-full"
+                      style={{ background: "#fff", color: p.color }}
+                    >
+                      {p.label}
+                    </span>
+                    <span className="text-sm font-semibold text-gray-700 font-mono">
+                      {v?.visitNumber}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {item.vitals?.length > 0 ? (
+                      <span className="flex items-center gap-1 text-xs font-semibold text-green-700">
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Triaged
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 text-xs font-semibold text-amber-600">
+                        <Clock className="w-3.5 h-3.5" /> Not triaged
+                      </span>
+                    )}
+                    {v?.admissionDate && (
+                      <span className="text-xs text-gray-500">
+                        {format(new Date(v.admissionDate), "dd MMM yyyy")}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="p-5">
+                  {/* Chief complaint */}
+                  {v?.chiefComplaint && (
+                    <div className="mb-4">
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
+                        Chief Complaint
+                      </p>
+                      <p className="text-sm text-gray-700">
+                        {v.chiefComplaint}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Latest vitals */}
+                  {latestVitals && (
+                    <div className="mb-4">
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                        Latest Vitals
+                      </p>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        {[
+                          {
+                            icon: Heart,
+                            label: "Heart Rate",
+                            value: latestVitals.heartRate,
+                            unit: "bpm",
+                          },
+                          {
+                            icon: Thermometer,
+                            label: "Temperature",
+                            value: latestVitals.temperature,
+                            unit: "°C",
+                          },
+                          {
+                            icon: Wind,
+                            label: "Respiratory",
+                            value: latestVitals.respiratoryRate,
+                            unit: "/min",
+                          },
+                          {
+                            icon: Gauge,
+                            label: "Blood Pressure",
+                            value: latestVitals.bloodPressureSystolic
+                              ? `${latestVitals.bloodPressureSystolic}/${latestVitals.bloodPressureDiastolic}`
+                              : null,
+                            unit: "mmHg",
+                          },
+                        ]
+                          .filter((f) => f.value)
+                          .map((f) => (
+                            <div
+                              key={f.label}
+                              className="bg-gray-50 rounded-xl p-3 border border-gray-100"
+                            >
+                              <div className="flex items-center gap-1.5 mb-1">
+                                <f.icon className="w-3 h-3 text-gray-400" />
+                                <p className="text-xs text-gray-400 font-semibold">
+                                  {f.label}
+                                </p>
+                              </div>
+                              <p className="text-base font-bold text-gray-800">
+                                {f.value}{" "}
+                                <span className="text-xs font-normal text-gray-400">
+                                  {f.unit}
+                                </span>
+                              </p>
+                            </div>
+                          ))}
+                      </div>
+                      {latestVitals.oxygenSaturation && (
+                        <div className="mt-2 flex items-center gap-2">
+                          <span className="text-xs text-gray-400">SpO₂:</span>
+                          <span
+                            className={`text-sm font-bold ${latestVitals.oxygenSaturation < 95 ? "text-red-600" : "text-green-600"}`}
+                          >
+                            {latestVitals.oxygenSaturation}%
+                          </span>
+                        </div>
+                      )}
+                      <p className="text-xs text-gray-400 mt-1">
+                        Recorded{" "}
+                        {latestVitals.recordedAt
+                          ? formatDistanceToNow(
+                              new Date(latestVitals.recordedAt),
+                              { addSuffix: true },
+                            )
+                          : "—"}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Nursing assessment */}
+                  {na && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                        Nursing Assessment
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                        {[
+                          {
+                            label: "Pain Scale",
+                            value:
+                              na.painScale !== undefined
+                                ? `${na.painScale}/10`
+                                : null,
+                          },
+                          {
+                            label: "Consciousness",
+                            value: na.consciousnessLevel,
+                          },
+                          { label: "Skin Condition", value: na.skinCondition },
+                          { label: "Mobility", value: na.mobilityStatus },
+                        ]
+                          .filter((f) => f.value)
+                          .map((f) => (
+                            <div
+                              key={f.label}
+                              className="flex justify-between bg-gray-50 rounded-lg px-3 py-2 border border-gray-100"
+                            >
+                              <span className="text-xs text-gray-500 font-semibold">
+                                {f.label}
+                              </span>
+                              <span className="text-xs text-gray-800 font-bold capitalize">
+                                {f.value}
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                      {na.notes && (
+                        <p className="text-xs text-gray-500 italic mt-2 bg-gray-50 rounded-lg p-3">
+                          {na.notes}
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {!latestVitals && !na && (
+                    <p className="text-sm text-gray-400 italic">
+                      No triage data recorded for this visit.
+                    </p>
+                  )}
+                </div>
               </div>
-
-              {/* Ward */}
-              {patient.wardOrRoom && (
-                <span className="text-xs text-gray-400">
-                  Ward: {patient.wardOrRoom}
-                </span>
-              )}
-
-              {/* Doctor */}
-              {patient.doctorName ? (
-                <span className="text-xs text-green-600 font-medium">
-                  Dr. {patient.doctorName}
-                </span>
-              ) : (
-                <span className="text-xs text-gray-400 italic">
-                  No doctor assigned
-                </span>
-              )}
-            </div>
-          </div>
+            );
+          })}
         </div>
-      </div>
-    </button>
-  );
-}
-
-// ── Skeleton card ─────────────────────────────────────────────────────────────
-function SkeletonCard() {
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 animate-pulse">
-      <div className="flex items-start gap-4">
-        <div className="w-11 h-11 rounded-full bg-gray-100 flex-shrink-0" />
-        <div className="flex-1 space-y-2">
-          <div className="h-4 w-36 bg-gray-100 rounded" />
-          <div className="h-3 w-24 bg-gray-100 rounded" />
-          <div className="flex gap-2 mt-2">
-            <div className="h-5 w-16 bg-gray-100 rounded-full" />
-            <div className="h-5 w-20 bg-gray-100 rounded-full" />
-          </div>
-          <div className="h-3 w-48 bg-gray-100 rounded" />
-        </div>
-      </div>
+      )}
     </div>
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+// ── Main patients list ────────────────────────────────────────────────────────
 export default function NursePatientsPage() {
-  const router = useRouter();
-
-  const [patients, setPatients] = useState<AssignedPatient[]>([]);
+  const [patients, setPatients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [inputVal, setInputVal] = useState("");
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "pending" | "triaged">("all");
-  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const PER_PAGE = 20;
 
-  // ── Fetch ──────────────────────────────────────────────────────────────────
-  const load = useCallback(async (silent = false) => {
-    if (silent) setRefreshing(true);
-    else setLoading(true);
-    setError(null);
-
-    try {
-      const res = await api.get("/api/visits/assigned-to-me");
-      console.log("[NursePatients] response:", res.data);
-
-      // The endpoint returns an array directly in data
-      const raw: any[] = res.data?.data ?? [];
-      const sorted = [...raw].sort((a, b) => {
-        const order: Record<string, number> = {
-          critical: 0,
-          emergency: 1,
-          urgent: 2,
-          routine: 3,
-        };
-        return (order[a.priority] ?? 9) - (order[b.priority] ?? 9);
-      });
-      setPatients(sorted);
-      setLastRefresh(new Date());
-    } catch (err: any) {
-      console.error(
-        "[NursePatients] error:",
-        err.response?.status,
-        err.response?.data,
-      );
-      setError(
-        err.response?.data?.error?.message ??
-          err.message ??
-          "Failed to load patients.",
-      );
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
+  const load = useCallback(
+    async (silent = false) => {
+      if (silent) setRefreshing(true);
+      else setLoading(true);
+      try {
+        const res = await patientApi.searchPaginated({
+          q: search,
+          limit: PER_PAGE,
+          offset: (page - 1) * PER_PAGE,
+        });
+        setPatients(res.data.data?.patients ?? []);
+        setTotal(res.data.data?.total ?? 0);
+      } catch {
+        setPatients([]);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [search, page],
+  );
 
   useEffect(() => {
     load();
-    const interval = setInterval(() => load(true), 30_000);
-    return () => clearInterval(interval);
   }, [load]);
+  useEffect(() => {
+    setPage(1);
+  }, [search]);
 
-  // ── Derived ────────────────────────────────────────────────────────────────
-  const pendingCount = patients.filter((p) => !p.hasVitals).length;
-  const triagedCount = patients.filter((p) => p.hasVitals).length;
+  const totalPages = Math.ceil(total / PER_PAGE);
 
-  const filtered = patients.filter((p) => {
-    const matchFilter =
-      filter === "all"
-        ? true
-        : filter === "pending"
-          ? !p.hasVitals
-          : p.hasVitals;
+  if (selectedId)
+    return (
+      <PatientDetailPanel
+        patientId={selectedId}
+        onClose={() => setSelectedId(null)}
+      />
+    );
 
-    const q = search.toLowerCase();
-    const matchSearch =
-      !q ||
-      [p.patientName, p.visitNumber, p.chiefComplaint, p.doctorName].some((f) =>
-        f?.toLowerCase().includes(q),
-      );
-
-    return matchFilter && matchSearch;
-  });
-
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+    <div style={{ fontFamily: "'DM Sans',sans-serif" }}>
+      <div className="flex items-center justify-between mb-6">
         <div>
           <h1
             className="text-2xl font-bold text-gray-900"
-            style={{ fontFamily: "'Playfair Display', serif" }}
+            style={{ fontFamily: "'Playfair Display',serif" }}
           >
-            My Patients
+            All Patients
           </h1>
-          <p className="text-gray-400 text-sm mt-1">
-            {format(new Date(), "EEEE, d MMMM yyyy")}
-            {!loading && (
-              <>
-                {" "}
-                ·{" "}
-                <span className="font-medium text-gray-700">
-                  {patients.length}
-                </span>{" "}
-                assigned patient{patients.length !== 1 ? "s" : ""}
-                {pendingCount > 0 && (
-                  <span className="text-amber-500 ml-2">
-                    · {pendingCount} awaiting triage
-                  </span>
-                )}
-              </>
-            )}
+          <p className="text-sm text-gray-400 mt-0.5">
+            Search and view patient triage history
           </p>
         </div>
-
-        <div className="flex items-center gap-2">
-          {lastRefresh && !loading && (
-            <span className="text-xs text-gray-400 hidden sm:block">
-              Updated {format(lastRefresh, "HH:mm")}
-            </span>
-          )}
-          <button
-            onClick={() => load(true)}
-            disabled={refreshing || loading}
-            className="p-2.5 rounded-xl border border-gray-200 text-gray-400 hover:text-gray-600 hover:bg-white transition-all disabled:opacity-40"
-          >
-            <RefreshCw
-              className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
-            />
-          </button>
-        </div>
-      </div>
-
-      {/* Error */}
-      {error && (
-        <div className="mb-5 flex items-center gap-2.5 px-4 py-3 rounded-xl bg-red-50 border border-red-100">
-          <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-          <p className="text-sm text-red-700 flex-1">{error}</p>
-          <button
-            onClick={() => load(false)}
-            className="text-xs font-semibold text-red-700 underline"
-          >
-            Retry
-          </button>
-        </div>
-      )}
-
-      {/* Stat cards */}
-      <div className="grid grid-cols-3 gap-3 mb-5">
-        {[
-          {
-            label: "Total",
-            value: patients.length,
-            color: "#166534",
-            bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
-            border: "#bbf7d0",
-            icon: Users,
-          },
-          {
-            label: "Pending",
-            value: pendingCount,
-            color: "#d97706",
-            bg: "linear-gradient(135deg,#fffbeb,#fef3c7)",
-            border: "#fde68a",
-            icon: AlertTriangle,
-          },
-          {
-            label: "Triaged",
-            value: triagedCount,
-            color: "#1d4ed8",
-            bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
-            border: "#bfdbfe",
-            icon: CheckCircle2,
-          },
-        ].map(({ label, value, color, bg, border, icon: Icon }) => (
-          <div
-            key={label}
-            className="relative rounded-2xl p-4 border overflow-hidden"
-            style={{ background: bg, borderColor: border }}
-          >
-            <div
-              className="absolute -right-2 -bottom-2 w-12 h-12 rounded-full opacity-10"
-              style={{ background: color }}
-            />
-            <Icon className="w-3.5 h-3.5 mb-2" style={{ color }} />
-            <p
-              className="text-2xl font-extrabold leading-none"
-              style={{ color }}
-            >
-              {loading ? (
-                <span
-                  className="inline-block w-5 h-5 rounded animate-pulse"
-                  style={{ background: `${color}20` }}
-                />
-              ) : (
-                value
-              )}
-            </p>
-            <p
-              className="text-xs font-semibold mt-1"
-              style={{ color, opacity: 0.65 }}
-            >
-              {label}
-            </p>
-          </div>
-        ))}
-      </div>
-
-      {/* Filter + search */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-5">
-        <div className="flex gap-1.5 p-1 rounded-xl bg-gray-100/80 w-fit">
-          {(["all", "pending", "triaged"] as const).map((key) => {
-            const count =
-              key === "all"
-                ? patients.length
-                : key === "pending"
-                  ? pendingCount
-                  : triagedCount;
-            const activeColor =
-              key === "pending"
-                ? "#d97706"
-                : key === "triaged"
-                  ? "#1d4ed8"
-                  : "#166534";
-            const activeBg =
-              key === "pending"
-                ? "#fffbeb"
-                : key === "triaged"
-                  ? "#eff6ff"
-                  : "#f0fdf4";
-            return (
-              <button
-                key={key}
-                onClick={() => setFilter(key)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all capitalize"
-                style={
-                  filter === key
-                    ? {
-                        background: "#fff",
-                        color: activeColor,
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-                      }
-                    : { color: "#6b7280" }
-                }
-              >
-                {key === "all"
-                  ? "All"
-                  : key === "pending"
-                    ? "Pending Triage"
-                    : "Triaged"}
-                {count > 0 && (
-                  <span
-                    className="text-xs font-bold px-1.5 rounded-full"
-                    style={
-                      filter === key
-                        ? { background: activeBg, color: activeColor }
-                        : { background: "rgba(0,0,0,0.06)", color: "#9ca3af" }
-                    }
-                  >
-                    {count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        <div className="relative max-w-xs">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search patient, visit, complaint…"
-            className="w-full pl-9 pr-8 py-2 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/10 placeholder:text-gray-400 transition-all"
+        <button
+          onClick={() => load(true)}
+          disabled={refreshing}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-40"
+        >
+          <RefreshCw
+            className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
           />
-          {search && (
-            <button
-              onClick={() => setSearch("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
+        </button>
       </div>
 
-      {/* Patient list */}
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {[...Array(6)].map((_, i) => (
-            <SkeletonCard key={i} />
-          ))}
-        </div>
-      ) : filtered.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm py-20 text-center">
-          <div
-            className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
-            style={{ background: "#f0fdf4" }}
-          >
-            <Users className="w-6 h-6 text-green-300" />
-          </div>
-          <p className="text-sm font-semibold text-gray-500">
-            {patients.length === 0
-              ? "No patients assigned to you"
-              : "No patients match your filters"}
-          </p>
-          <p className="text-xs text-gray-400 mt-1">
-            {patients.length === 0
-              ? "The receptionist will assign patients to you"
-              : "Try clearing your search or changing the filter"}
-          </p>
-          {(search || filter !== "all") && (
-            <button
-              onClick={() => {
-                setSearch("");
-                setFilter("all");
-              }}
-              className="mt-4 text-xs font-semibold px-4 py-2 rounded-xl transition-all"
-              style={{ background: "#f0fdf4", color: "#166534" }}
-            >
-              Clear filters
-            </button>
-          )}
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {filtered.map((p) => (
-            <PatientCard
-              key={p.id}
-              patient={p}
-              onClick={() => router.push(`/dashboard/nurse/triage/${p.id}`)}
+      {/* Search */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-4">
+        <div className="flex gap-3">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <input
+              value={inputVal}
+              onChange={(e) => setInputVal(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && setSearch(inputVal.trim())}
+              placeholder="Search by name or patient ID…"
+              className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-600 focus:ring-2 focus:ring-green-600/10 focus:bg-white transition-all"
             />
-          ))}
-        </div>
-      )}
-
-      {/* Footer count */}
-      {!loading && patients.length > 0 && (
-        <p className="text-xs text-center text-gray-400 mt-5">
-          Showing {filtered.length} of {patients.length} patient
-          {patients.length !== 1 ? "s" : ""}
-          {(search || filter !== "all") && (
-            <>
-              {" "}
-              ·{" "}
+            {inputVal && (
               <button
                 onClick={() => {
+                  setInputVal("");
                   setSearch("");
-                  setFilter("all");
                 }}
-                className="underline hover:text-gray-600 transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
               >
-                clear
+                <X className="w-4 h-4" />
               </button>
-            </>
-          )}
-        </p>
-      )}
+            )}
+          </div>
+          <button
+            onClick={() => setSearch(inputVal.trim())}
+            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md"
+            style={{ background: "linear-gradient(135deg,#166534,#15803d)" }}
+          >
+            Search
+          </button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="border-b border-gray-100">
+                {["Patient", "Age", "Gender", "Blood Type", ""].map((h, i) => (
+                  <th
+                    key={i}
+                    className={`py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide ${i === 0 ? "pl-5 pr-3" : i === 4 ? "pl-3 pr-5" : "px-3"}`}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
+              ) : patients.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-16 text-center">
+                    <Users className="w-10 h-10 text-gray-200 mx-auto mb-3" />
+                    <p className="text-sm font-semibold text-gray-400">
+                      {search
+                        ? "No patients found"
+                        : "Search for a patient above"}
+                    </p>
+                  </td>
+                </tr>
+              ) : (
+                patients.map((p) => {
+                  const age = calcAge(p.dateOfBirth);
+                  return (
+                    <tr
+                      key={p.id}
+                      onClick={() => setSelectedId(p.id)}
+                      className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors cursor-pointer group"
+                    >
+                      <td className="py-3.5 pl-5 pr-3">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                            style={{
+                              background:
+                                p.gender === "female"
+                                  ? "linear-gradient(135deg,#ec4899,#db2777)"
+                                  : "linear-gradient(135deg,#166534,#15803d)",
+                            }}
+                          >
+                            {p.firstName?.[0]}
+                            {p.lastName?.[0]}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-800">
+                              {p.firstName} {p.lastName}
+                            </p>
+                            <p className="text-xs text-gray-400 font-mono">
+                              {p.id?.slice(0, 8)}…
+                            </p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-3 text-sm text-gray-600">
+                        {age !== null ? `${age} yrs` : "—"}
+                      </td>
+                      <td className="py-3.5 px-3">
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded-full capitalize bg-gray-100 text-gray-600">
+                          {p.gender ?? "—"}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-3">
+                        {p.bloodType && p.bloodType !== "unknown" ? (
+                          <span
+                            className="text-xs font-bold px-2.5 py-1 rounded-full text-white"
+                            style={{
+                              background: BLOOD_COLOR[p.bloodType] ?? "#6b7280",
+                            }}
+                          >
+                            {p.bloodType}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">—</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 pl-3 pr-5">
+                        <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-500 transition-colors ml-auto" />
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100">
+            <p className="text-xs text-gray-400">
+              Page {page} of {totalPages} · {total} total
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 disabled:opacity-40 hover:bg-gray-50"
+              >
+                Previous
+              </button>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 disabled:opacity-40 hover:bg-gray-50"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

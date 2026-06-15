@@ -1,8 +1,15 @@
 import React, { useEffect, useState } from "react";
-import { View, Text, ScrollView, StyleSheet, Platform } from "react-native";
+import {
+  View,
+  Text,
+  ScrollView,
+  StyleSheet,
+  Platform,
+  TouchableOpacity,
+  StatusBar,
+} from "react-native";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { MaterialIcons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { getVisitDetail } from "../../api/records";
@@ -14,26 +21,30 @@ type Props = NativeStackScreenProps<RecordsStackParamList, "RecordDetail">;
 
 // ── Design tokens ────────────────────────────────────────────────────────────
 const C = {
-  ink: "#1A1D2E",
-  inkSoft: "#5A5F7A",
-  inkMuted: "#9498B3",
-  teal: "#0D9488",
-  tealDark: "#0F766E",
-  tealDeep: "#115E59",
-  tealGhost: "#F0FDFA",
+  primary: "#059669",
+  primaryDark: "#047857",
+  primaryDeep: "#064E3B",
+  primaryGhost: "#ECFDF5",
+
+  coral: "#FF5757",
+  coralLight: "#FFE4E4",
   amber: "#F59E0B",
   amberLight: "#FEF3C7",
-  coral: "#EF4444",
-  coralLight: "#FEE2E2",
-  violet: "#7C3AED",
   blue: "#3B82F6",
-  blueGhost: "#EFF6FF",
-  rose: "#F43F5E",
-  roseGhost: "#FFF1F2",
-  bg: "#F8F9FC",
+  blueLight: "#DBEAFE",
+  violet: "#8B5CF6",
+  violetLight: "#EDE9FE",
+
+  ink: "#0A0E1A",
+  inkSoft: "#4B5563",
+  inkMuted: "#9CA3AF",
+  inkSubtle: "#D1D5DB",
+
+  bg: "#FAFAFB",
+  bgAlt: "#F4F5F7",
   card: "#FFFFFF",
-  cardBorder: "#ECEEF4",
-  divider: "#F1F2F6",
+  cardBorder: "#E5E7EB",
+  divider: "#F3F4F6",
 };
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -104,7 +115,7 @@ interface VisitDetail {
 
 // ── Sub-components ───────────────────────────────────────────────────────────
 
-function SectionCard({
+function Section({
   icon,
   title,
   iconColor,
@@ -120,21 +131,19 @@ function SectionCard({
   children: React.ReactNode;
 }) {
   return (
-    <View style={styles.sectionCard}>
+    <View style={styles.section}>
       <View style={styles.sectionHeader}>
         <View style={[styles.sectionIconWrap, { backgroundColor: iconBg }]}>
-          <MaterialIcons name={icon} size={14} color={iconColor} />
+          <MaterialIcons name={icon} size={16} color={iconColor} />
         </View>
         <Text style={styles.sectionTitle}>{title}</Text>
         {count !== undefined && (
-          <View style={[styles.countBadge, { backgroundColor: iconBg }]}>
-            <Text style={[styles.countText, { color: iconColor }]}>
-              {count}
-            </Text>
+          <View style={styles.sectionCount}>
+            <Text style={styles.sectionCountText}>{count}</Text>
           </View>
         )}
       </View>
-      {children}
+      <View style={styles.sectionBody}>{children}</View>
     </View>
   );
 }
@@ -152,7 +161,7 @@ function VitalTile({
 }) {
   return (
     <View style={styles.vitalTile}>
-      <View style={[styles.vitalIconWrap, { backgroundColor: `${color}15` }]}>
+      <View style={[styles.vitalIconWrap, { backgroundColor: `${color}18` }]}>
         <MaterialIcons name={icon} size={14} color={color} />
       </View>
       <Text style={styles.vitalValue}>{value}</Text>
@@ -163,13 +172,13 @@ function VitalTile({
 
 function StatusBadge({ status }: { status?: string }) {
   const map: Record<string, { color: string; bg: string }> = {
-    resulted: { color: C.teal, bg: C.tealGhost },
-    reported: { color: C.teal, bg: C.tealGhost },
-    dispensed: { color: C.teal, bg: C.tealGhost },
+    resulted: { color: C.primary, bg: C.primaryGhost },
+    reported: { color: C.primary, bg: C.primaryGhost },
+    dispensed: { color: C.primary, bg: C.primaryGhost },
     pending: { color: C.amber, bg: C.amberLight },
-    ordered: { color: C.blue, bg: C.blueGhost },
+    ordered: { color: C.blue, bg: C.blueLight },
   };
-  const cfg = map[status ?? ""] ?? { color: C.inkMuted, bg: "#F3F4F6" };
+  const cfg = map[status ?? ""] ?? { color: C.inkMuted, bg: C.bgAlt };
   return (
     <View style={[styles.badge, { backgroundColor: cfg.bg }]}>
       <Text style={[styles.badgeText, { color: cfg.color }]}>
@@ -217,7 +226,7 @@ function ListItem({
 
 // ── Screen ───────────────────────────────────────────────────────────────────
 
-export default function RecordDetailScreen({ route }: Props) {
+export default function RecordDetailScreen({ route, navigation }: Props) {
   const { visitId } = route.params;
   const user = useAuthStore((s) => s.user);
   const insets = useSafeAreaInsets();
@@ -264,301 +273,324 @@ export default function RecordDetailScreen({ route }: Props) {
     year: "numeric",
   });
 
-  const statusColor =
-    visit.status === "in-progress"
-      ? "#6FCF97"
-      : visit.status === "completed"
-        ? "#6FCF97"
-        : "#F59E0B";
+  const statusColor = visit.status === "completed" ? C.primary : C.amber;
+  const statusLabel =
+    visit.status === "in-progress" ? "Active" : (visit.status ?? "Completed");
 
   return (
-    <ScrollView
-      style={styles.root}
-      contentContainerStyle={styles.content}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* ── Hero ── */}
-      <LinearGradient
-        colors={[C.tealDeep, C.tealDark, C.teal]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.hero, { paddingTop: insets.top + 8 }]}
+    <View style={styles.root}>
+      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
+
+      {/* ── Custom header bar ── */}
+      <View style={[styles.headerBar, { paddingTop: insets.top + 8 }]}>
+        <TouchableOpacity
+          onPress={() => navigation.goBack()}
+          style={styles.backBtn}
+          activeOpacity={0.6}
+        >
+          <MaterialIcons name="arrow-back" size={20} color={C.ink} />
+        </TouchableOpacity>
+        <Text style={styles.headerTitle}>Visit Details</Text>
+        <View style={{ width: 40 }} />
+      </View>
+
+      <ScrollView
+        style={{ flex: 1 }}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
       >
-        {/* Decorative */}
-        <View
-          style={[
-            styles.deco,
-            { width: 140, height: 140, top: -30, right: -30 },
-          ]}
-        />
-        <View
-          style={[
-            styles.deco,
-            { width: 90, height: 90, bottom: 10, left: -20 },
-          ]}
-        />
-
-        <Text style={styles.heroTag}>
-          {visit.visitType?.replace(/-/g, " ").toUpperCase()} VISIT
-        </Text>
-        <Text style={styles.heroNum}>{visit.visitNumber}</Text>
-        <Text style={styles.heroComplaint}>
-          {visit.chiefComplaint || "No complaint"}
-        </Text>
-
-        <View style={styles.heroPills}>
-          <View style={styles.heroPill}>
-            <View style={[styles.heroDot, { backgroundColor: statusColor }]} />
-            <Text style={styles.heroPillText}>
-              {visit.status?.replace(/-/g, " ")}
-            </Text>
+        {/* ── Hero — clean, no gradient ── */}
+        <View style={styles.hero}>
+          <View style={styles.heroTopRow}>
+            <Text style={styles.heroVisitNum}>{visit.visitNumber}</Text>
+            <View
+              style={[
+                styles.statusChip,
+                {
+                  backgroundColor:
+                    statusColor === C.primary ? C.primaryGhost : C.amberLight,
+                },
+              ]}
+            >
+              <View
+                style={[styles.statusDot, { backgroundColor: statusColor }]}
+              />
+              <Text style={[styles.statusText, { color: statusColor }]}>
+                {statusLabel}
+              </Text>
+            </View>
           </View>
-          <View style={styles.heroPill}>
-            <MaterialIcons
-              name="event"
-              size={11}
-              color="rgba(255,255,255,0.5)"
-            />
-            <Text style={styles.heroPillText}>{admDate}</Text>
+
+          <Text style={styles.heroComplaint}>
+            {visit.chiefComplaint || "No complaint recorded"}
+          </Text>
+
+          <View style={styles.heroMetaRow}>
+            <View style={styles.heroMetaItem}>
+              <MaterialIcons name="event" size={14} color={C.inkMuted} />
+              <Text style={styles.heroMetaText}>{admDate}</Text>
+            </View>
+            <View style={styles.heroMetaDot} />
+            <View style={styles.heroMetaItem}>
+              <MaterialIcons
+                name="local-hospital"
+                size={14}
+                color={C.inkMuted}
+              />
+              <Text style={styles.heroMetaText}>
+                {visit.visitType?.replace(/-/g, " ")}
+              </Text>
+            </View>
           </View>
         </View>
-      </LinearGradient>
 
-      {/* ── Vital Signs ── */}
-      {vitalSigns.length > 0 && (
-        <SectionCard
-          icon="monitor-heart"
-          title="Vital Signs"
-          iconColor={C.rose}
-          iconBg={C.roseGhost}
-        >
-          {vitalSigns.slice(0, 1).map((v) => (
-            <View key={v.id}>
-              <View style={styles.vitalsGrid}>
-                {v.temperature != null && (
-                  <VitalTile
-                    icon="thermostat"
-                    label="Temp"
-                    value={`${v.temperature} °C`}
-                    color={C.coral}
-                  />
-                )}
-                {v.pulseRate != null && (
-                  <VitalTile
-                    icon="favorite"
-                    label="Pulse"
-                    value={`${v.pulseRate} bpm`}
-                    color={C.rose}
-                  />
-                )}
-                {v.oxygenSaturation != null && (
-                  <VitalTile
-                    icon="air"
-                    label="SpO₂"
-                    value={`${v.oxygenSaturation}%`}
-                    color={C.blue}
-                  />
-                )}
-                {v.bloodPressureSystolic != null && (
-                  <VitalTile
-                    icon="speed"
-                    label="BP"
-                    value={`${v.bloodPressureSystolic}/${v.bloodPressureDiastolic}`}
-                    color={C.violet}
-                  />
-                )}
-                {v.weight != null && (
-                  <VitalTile
-                    icon="monitor-weight"
-                    label="Weight"
-                    value={`${v.weight} kg`}
-                    color={C.amber}
-                  />
-                )}
-                {v.height != null && (
-                  <VitalTile
-                    icon="height"
-                    label="Height"
-                    value={`${v.height} cm`}
-                    color={C.teal}
-                  />
+        {/* ── Vital Signs ── */}
+        {vitalSigns.length > 0 && (
+          <Section
+            icon="favorite"
+            title="Vital Signs"
+            iconColor={C.coral}
+            iconBg={C.coralLight}
+          >
+            {vitalSigns.slice(0, 1).map((v) => (
+              <View key={v.id}>
+                <View style={styles.vitalsGrid}>
+                  {v.temperature != null && (
+                    <VitalTile
+                      icon="thermostat"
+                      label="Temperature"
+                      value={`${v.temperature}°C`}
+                      color={C.coral}
+                    />
+                  )}
+                  {v.pulseRate != null && (
+                    <VitalTile
+                      icon="favorite"
+                      label="Pulse"
+                      value={`${v.pulseRate} bpm`}
+                      color={C.coral}
+                    />
+                  )}
+                  {v.oxygenSaturation != null && (
+                    <VitalTile
+                      icon="air"
+                      label="SpO₂"
+                      value={`${v.oxygenSaturation}%`}
+                      color={C.blue}
+                    />
+                  )}
+                  {v.bloodPressureSystolic != null && (
+                    <VitalTile
+                      icon="speed"
+                      label="Blood Pressure"
+                      value={`${v.bloodPressureSystolic}/${v.bloodPressureDiastolic}`}
+                      color={C.violet}
+                    />
+                  )}
+                  {v.weight != null && (
+                    <VitalTile
+                      icon="monitor-weight"
+                      label="Weight"
+                      value={`${v.weight} kg`}
+                      color={C.amber}
+                    />
+                  )}
+                  {v.height != null && (
+                    <VitalTile
+                      icon="height"
+                      label="Height"
+                      value={`${v.height} cm`}
+                      color={C.primary}
+                    />
+                  )}
+                </View>
+                {v.nurseNotes && (
+                  <View style={styles.noteWrap}>
+                    <View style={styles.noteAccent} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.noteLabel}>Nurse note</Text>
+                      <Text style={styles.noteText}>{v.nurseNotes}</Text>
+                    </View>
+                  </View>
                 )}
               </View>
-              {v.nurseNotes && (
-                <View style={styles.nurseNoteWrap}>
-                  <View style={styles.nurseNoteLine} />
-                  <Text style={styles.nurseNote}>{v.nurseNotes}</Text>
-                </View>
-              )}
-            </View>
-          ))}
-        </SectionCard>
-      )}
+            ))}
+          </Section>
+        )}
 
-      {/* ── Diagnoses ── */}
-      {diagnoses.length > 0 && (
-        <SectionCard
-          icon="assignment"
-          title="Diagnoses"
-          iconColor={C.violet}
-          iconBg="#EDE9FE"
-          count={diagnoses.length}
-        >
-          {diagnoses.map((d) => (
-            <View key={d.id} style={styles.diagCard}>
-              <View style={styles.diagTop}>
-                <View style={styles.icdBadge}>
-                  <Text style={styles.icdText}>{d.icdCode}</Text>
-                </View>
-                <View
-                  style={[
-                    styles.badge,
-                    {
-                      backgroundColor:
-                        d.diagnosisType === "confirmed"
-                          ? C.tealGhost
-                          : C.amberLight,
-                    },
-                  ]}
-                >
-                  <Text
+        {/* ── Diagnoses ── */}
+        {diagnoses.length > 0 && (
+          <Section
+            icon="assignment"
+            title="Diagnoses"
+            iconColor={C.violet}
+            iconBg={C.violetLight}
+            count={diagnoses.length}
+          >
+            {diagnoses.map((d) => (
+              <View key={d.id} style={styles.diagCard}>
+                <View style={styles.diagTop}>
+                  <View style={styles.icdBadge}>
+                    <Text style={styles.icdText}>{d.icdCode}</Text>
+                  </View>
+                  <View
                     style={[
-                      styles.badgeText,
+                      styles.badge,
                       {
-                        color:
-                          d.diagnosisType === "confirmed" ? C.teal : C.amber,
+                        backgroundColor:
+                          d.diagnosisType === "confirmed"
+                            ? C.primaryGhost
+                            : C.amberLight,
                       },
                     ]}
                   >
-                    {d.diagnosisType?.toUpperCase()}
-                  </Text>
+                    <Text
+                      style={[
+                        styles.badgeText,
+                        {
+                          color:
+                            d.diagnosisType === "confirmed"
+                              ? C.primary
+                              : C.amber,
+                        },
+                      ]}
+                    >
+                      {d.diagnosisType?.toUpperCase()}
+                    </Text>
+                  </View>
                 </View>
+                <Text style={styles.diagName}>{d.diagnosisName}</Text>
+                {d.severity && (
+                  <Text style={styles.diagSeverity}>
+                    Severity: {d.severity}
+                  </Text>
+                )}
               </View>
-              <Text style={styles.diagName}>{d.diagnosisName}</Text>
-              {d.severity && (
-                <Text style={styles.diagSeverity}>Severity: {d.severity}</Text>
-              )}
-            </View>
-          ))}
-        </SectionCard>
-      )}
+            ))}
+          </Section>
+        )}
 
-      {/* ── Consultations ── */}
-      {consultations.length > 0 && (
-        <SectionCard
-          icon="medical-services"
-          title="Doctor's Notes"
-          iconColor={C.blue}
-          iconBg={C.blueGhost}
-          count={consultations.length}
-        >
-          {consultations.map((c) => (
-            <View key={c.id} style={styles.infoCard}>
-              <InfoRow label="Assessment" value={c.assessment} />
-              <InfoRow label="Plan" value={c.plan} />
-              <InfoRow label="Clinical Findings" value={c.clinicalFindings} />
-              <InfoRow label="Follow-up" value={c.followUpInstructions} />
-              {c.nextAppointmentDate && (
+        {/* ── Consultations ── */}
+        {consultations.length > 0 && (
+          <Section
+            icon="medical-services"
+            title="Doctor's Notes"
+            iconColor={C.blue}
+            iconBg={C.blueLight}
+            count={consultations.length}
+          >
+            {consultations.map((c) => (
+              <View key={c.id} style={styles.infoCard}>
+                <InfoRow label="Assessment" value={c.assessment} />
+                <InfoRow label="Plan" value={c.plan} />
+                <InfoRow label="Clinical Findings" value={c.clinicalFindings} />
+                <InfoRow label="Follow-up" value={c.followUpInstructions} />
+                {c.nextAppointmentDate && (
+                  <InfoRow
+                    label="Next Appointment"
+                    value={new Date(c.nextAppointmentDate).toLocaleDateString(
+                      "en-GB",
+                    )}
+                  />
+                )}
+              </View>
+            ))}
+          </Section>
+        )}
+
+        {/* ── Lab Orders ── */}
+        {labOrders.length > 0 && (
+          <Section
+            icon="biotech"
+            title="Lab Tests"
+            iconColor={C.amber}
+            iconBg={C.amberLight}
+            count={labOrders.length}
+          >
+            {labOrders.map((o) => (
+              <ListItem
+                key={o.id}
+                title={o.testName ?? "Unknown Test"}
+                subtitle={`${o.testCode ?? ""} · ${o.specimenType ?? ""}`}
+                status={o.status}
+              />
+            ))}
+          </Section>
+        )}
+
+        {/* ── Imaging ── */}
+        {imagingOrders.length > 0 && (
+          <Section
+            icon="image-search"
+            title="Imaging"
+            iconColor={C.primary}
+            iconBg={C.primaryGhost}
+            count={imagingOrders.length}
+          >
+            {imagingOrders.map((o) => (
+              <ListItem
+                key={o.id}
+                title={`${o.modality?.toUpperCase()} — ${o.bodyPart}`}
+                subtitle={o.indication}
+                status={o.status}
+              />
+            ))}
+          </Section>
+        )}
+
+        {/* ── Prescriptions ── */}
+        {prescriptions.length > 0 && (
+          <Section
+            icon="medication"
+            title="Prescriptions"
+            iconColor={C.primaryDark}
+            iconBg={C.primaryGhost}
+            count={prescriptions.length}
+          >
+            {prescriptions.map((p) => (
+              <ListItem
+                key={p.id}
+                title={p.prescriptionNumber ?? "Rx"}
+                status={p.status}
+              />
+            ))}
+          </Section>
+        )}
+
+        {/* ── Discharge ── */}
+        {visit.dischargeDiagnosis && (
+          <Section
+            icon="exit-to-app"
+            title="Discharge Summary"
+            iconColor={C.inkSoft}
+            iconBg={C.bgAlt}
+          >
+            <View style={styles.infoCard}>
+              <InfoRow label="Diagnosis" value={visit.dischargeDiagnosis} />
+              <InfoRow label="Summary" value={visit.dischargeSummary} />
+              <InfoRow
+                label="Instructions"
+                value={visit.dischargeInstructions}
+              />
+              {visit.followUpDate && (
                 <InfoRow
-                  label="Next Appointment"
-                  value={new Date(c.nextAppointmentDate).toLocaleDateString(
+                  label="Follow-up"
+                  value={new Date(visit.followUpDate).toLocaleDateString(
                     "en-GB",
                   )}
                 />
               )}
             </View>
-          ))}
-        </SectionCard>
-      )}
+          </Section>
+        )}
 
-      {/* ── Lab Orders ── */}
-      {labOrders.length > 0 && (
-        <SectionCard
-          icon="biotech"
-          title="Lab Tests"
-          iconColor={C.amber}
-          iconBg={C.amberLight}
-          count={labOrders.length}
-        >
-          {labOrders.map((o) => (
-            <ListItem
-              key={o.id}
-              title={o.testName ?? "Unknown Test"}
-              subtitle={`${o.testCode ?? ""} · ${o.specimenType ?? ""}`}
-              status={o.status}
-            />
-          ))}
-        </SectionCard>
-      )}
-
-      {/* ── Imaging ── */}
-      {imagingOrders.length > 0 && (
-        <SectionCard
-          icon="image-search"
-          title="Imaging"
-          iconColor={C.teal}
-          iconBg={C.tealGhost}
-          count={imagingOrders.length}
-        >
-          {imagingOrders.map((o) => (
-            <ListItem
-              key={o.id}
-              title={`${o.modality?.toUpperCase()} — ${o.bodyPart}`}
-              subtitle={o.indication}
-              status={o.status}
-            />
-          ))}
-        </SectionCard>
-      )}
-
-      {/* ── Prescriptions ── */}
-      {prescriptions.length > 0 && (
-        <SectionCard
-          icon="medication"
-          title="Prescriptions"
-          iconColor={C.tealDark}
-          iconBg={C.tealGhost}
-          count={prescriptions.length}
-        >
-          {prescriptions.map((p) => (
-            <ListItem
-              key={p.id}
-              title={p.prescriptionNumber ?? "Rx"}
-              status={p.status}
-            />
-          ))}
-        </SectionCard>
-      )}
-
-      {/* ── Discharge ── */}
-      {visit.dischargeDiagnosis && (
-        <SectionCard
-          icon="exit-to-app"
-          title="Discharge Summary"
-          iconColor={C.inkSoft}
-          iconBg="#F3F4F6"
-        >
-          <View style={styles.infoCard}>
-            <InfoRow label="Diagnosis" value={visit.dischargeDiagnosis} />
-            <InfoRow label="Summary" value={visit.dischargeSummary} />
-            <InfoRow label="Instructions" value={visit.dischargeInstructions} />
-            {visit.followUpDate && (
-              <InfoRow
-                label="Follow-up"
-                value={new Date(visit.followUpDate).toLocaleDateString("en-GB")}
-              />
-            )}
-          </View>
-        </SectionCard>
-      )}
-
-      <View style={{ height: 48 }} />
-    </ScrollView>
+        <View style={{ height: 32 }} />
+      </ScrollView>
+    </View>
   );
 }
 
 // ── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
   content: { paddingBottom: 24 },
@@ -569,96 +601,133 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     gap: 10,
+    backgroundColor: C.bg,
   },
   errIconWrap: {
-    width: 56,
-    height: 56,
-    borderRadius: 18,
+    width: 64,
+    height: 64,
+    borderRadius: 20,
     backgroundColor: C.coralLight,
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 8,
   },
-  errTitle: { fontSize: 16, fontWeight: "700", color: C.ink },
-  errBody: { fontSize: 13, color: C.inkMuted },
-
-  // Hero
-  hero: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    overflow: "hidden",
-  },
-  deco: {
-    position: "absolute",
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.08)",
-  },
-  heroTag: {
-    fontSize: 9,
-    fontWeight: "800",
-    color: "rgba(255,255,255,0.45)",
-    letterSpacing: 1.4,
-    marginBottom: 4,
-  },
-  heroNum: {
-    fontSize: 12,
+  errTitle: {
+    fontSize: 17,
     fontWeight: "700",
-    color: "#6FCF97",
-    letterSpacing: 0.3,
-    marginBottom: 8,
-  },
-  heroComplaint: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#fff",
-    lineHeight: 24,
+    color: C.ink,
     letterSpacing: -0.3,
-    marginBottom: 14,
   },
-  heroPills: { flexDirection: "row", gap: 8, flexWrap: "wrap" },
-  heroPill: {
+  errBody: { fontSize: 14, color: C.inkMuted },
+
+  // Header bar
+  headerBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    backgroundColor: C.bg,
+    borderBottomWidth: 1,
+    borderBottomColor: C.divider,
+  },
+  backBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: C.card,
+    borderWidth: 1,
+    borderColor: C.cardBorder,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  headerTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: C.ink,
+    letterSpacing: -0.3,
+  },
+
+  // ── Hero ──
+  hero: {
+    backgroundColor: C.card,
+    marginHorizontal: 16,
+    marginTop: 16,
+    padding: 20,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: C.cardBorder,
+  },
+  heroTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  heroVisitNum: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: C.inkMuted,
+    letterSpacing: 0.5,
+    fontVariant: ["tabular-nums"],
+  },
+  statusChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: 5,
-    backgroundColor: "rgba(255,255,255,0.12)",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
   },
-  heroDot: { width: 6, height: 6, borderRadius: 3 },
-  heroPillText: {
+  statusDot: { width: 6, height: 6, borderRadius: 3 },
+  statusText: {
     fontSize: 11,
-    color: "rgba(255,255,255,0.75)",
-    fontWeight: "600",
+    fontWeight: "700",
+    letterSpacing: 0.2,
+    textTransform: "capitalize",
+  },
+  heroComplaint: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: C.ink,
+    lineHeight: 28,
+    letterSpacing: -0.8,
+    marginBottom: 14,
+  },
+  heroMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  heroMetaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  heroMetaText: {
+    fontSize: 13,
+    color: C.inkSoft,
+    fontWeight: "500",
+    textTransform: "capitalize",
+  },
+  heroMetaDot: {
+    width: 3,
+    height: 3,
+    borderRadius: 2,
+    backgroundColor: C.inkSubtle,
   },
 
-  // Section card
-  sectionCard: {
-    backgroundColor: C.card,
+  // ── Section ──
+  section: {
     marginHorizontal: 16,
-    marginTop: 14,
-    borderRadius: 18,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: C.cardBorder,
-    ...Platform.select({
-      ios: {
-        shadowColor: "#1A1D2E",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.04,
-        shadowRadius: 8,
-      },
-      android: { elevation: 1 },
-    }),
+    marginTop: 12,
   },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    marginBottom: 14,
+    marginBottom: 10,
+    paddingHorizontal: 4,
   },
   sectionIconWrap: {
     width: 28,
@@ -667,66 +736,111 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
-  sectionTitle: { fontSize: 14, fontWeight: "700", color: C.ink, flex: 1 },
-  countBadge: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 6 },
-  countText: { fontSize: 10, fontWeight: "800" },
+  sectionTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: C.ink,
+    flex: 1,
+    letterSpacing: -0.2,
+  },
+  sectionCount: {
+    backgroundColor: C.ink,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    minWidth: 22,
+    alignItems: "center",
+  },
+  sectionCountText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#fff",
+  },
+  sectionBody: {
+    backgroundColor: C.card,
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: C.cardBorder,
+  },
 
-  // Vitals
-  vitalsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  // ── Vitals ──
+  vitalsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+  },
   vitalTile: {
-    width: "30%",
+    width: "31%",
     flexGrow: 1,
     backgroundColor: C.bg,
-    borderRadius: 14,
+    borderRadius: 12,
     padding: 12,
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: C.divider,
   },
   vitalIconWrap: {
-    width: 28,
-    height: 28,
-    borderRadius: 9,
+    width: 30,
+    height: 30,
+    borderRadius: 10,
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 6,
+    marginBottom: 8,
   },
-  vitalValue: { fontSize: 14, fontWeight: "800", color: C.ink },
+  vitalValue: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: C.ink,
+    letterSpacing: -0.3,
+  },
   vitalLabel: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: "600",
     color: C.inkMuted,
     marginTop: 2,
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
+    textAlign: "center",
   },
 
-  nurseNoteWrap: {
+  noteWrap: {
     flexDirection: "row",
     marginTop: 12,
-    backgroundColor: C.tealGhost,
-    borderRadius: 10,
+    backgroundColor: C.primaryGhost,
+    borderRadius: 12,
     overflow: "hidden",
   },
-  nurseNoteLine: { width: 3, backgroundColor: C.teal },
-  nurseNote: {
-    flex: 1,
-    fontSize: 12,
-    color: C.inkSoft,
+  noteAccent: { width: 3, backgroundColor: C.primary },
+  noteLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: C.primaryDark,
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    marginBottom: 3,
+  },
+  noteText: {
+    fontSize: 13,
+    color: C.ink,
     fontStyle: "italic",
-    padding: 10,
-    lineHeight: 17,
+    lineHeight: 19,
+    fontWeight: "500",
   },
 
-  // Diagnosis
+  // ── Diagnosis ──
   diagCard: {
     backgroundColor: C.bg,
     borderRadius: 12,
     padding: 12,
     marginBottom: 8,
+    borderWidth: 1,
+    borderColor: C.divider,
   },
   diagTop: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 6,
+    marginBottom: 8,
   },
   icdBadge: {
     backgroundColor: C.card,
@@ -738,40 +852,58 @@ const styles = StyleSheet.create({
   },
   icdText: {
     fontSize: 10,
-    fontWeight: "700",
+    fontWeight: "800",
     color: C.violet,
     letterSpacing: 0.3,
   },
-  diagName: { fontSize: 14, fontWeight: "600", color: C.ink },
-  diagSeverity: { fontSize: 11, color: C.inkMuted, marginTop: 3 },
+  diagName: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: C.ink,
+    letterSpacing: -0.2,
+  },
+  diagSeverity: {
+    fontSize: 12,
+    color: C.inkMuted,
+    marginTop: 3,
+    fontWeight: "500",
+  },
 
-  // Info card
+  // ── Info card ──
   infoCard: {
     backgroundColor: C.bg,
     borderRadius: 12,
     overflow: "hidden",
     marginBottom: 8,
+    borderWidth: 1,
+    borderColor: C.divider,
   },
   infoRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 11,
     borderBottomWidth: 1,
     borderBottomColor: C.divider,
   },
-  infoLabel: { fontSize: 12, color: C.inkMuted, fontWeight: "500", flex: 1 },
-  infoValue: {
+  infoLabel: {
     fontSize: 12,
+    color: C.inkMuted,
+    fontWeight: "600",
+    flex: 1,
+    letterSpacing: 0.1,
+  },
+  infoValue: {
+    fontSize: 13,
     color: C.ink,
     fontWeight: "600",
     flex: 2,
     textAlign: "right",
-    lineHeight: 17,
+    lineHeight: 18,
   },
 
-  // List item
+  // ── List item ──
   listItem: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -779,12 +911,32 @@ const styles = StyleSheet.create({
     backgroundColor: C.bg,
     borderRadius: 12,
     padding: 12,
-    marginBottom: 8,
+    marginBottom: 6,
+    borderWidth: 1,
+    borderColor: C.divider,
   },
-  listItemTitle: { fontSize: 13, fontWeight: "600", color: C.ink },
-  listItemSub: { fontSize: 11, color: C.inkMuted, marginTop: 2 },
+  listItemTitle: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: C.ink,
+    letterSpacing: -0.2,
+  },
+  listItemSub: {
+    fontSize: 12,
+    color: C.inkMuted,
+    marginTop: 2,
+    fontWeight: "500",
+  },
 
-  // Badge
-  badge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  badgeText: { fontSize: 9, fontWeight: "700", letterSpacing: 0.5 },
+  // ── Badge ──
+  badge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  badgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.4,
+  },
 });

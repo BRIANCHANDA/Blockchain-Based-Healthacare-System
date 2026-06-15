@@ -39,20 +39,60 @@ export const authApi = {
         api.post('/api/auth/login/staff', data),
     logout: () => api.post('/api/auth/logout'),
 };
+// ── Patient types ─────────────────────────────────────────
+export interface PatientSummary {
+    id: string;
+    firstName: string;
+    lastName: string;
+    gender?: string;
+    dateOfBirth?: string;
+    nationalId?: string;
+    phoneNumber?: string;
+    bloodType?: string;
+    blockchainAddress?: string;
+}
+
+export interface PatientDetail extends PatientSummary {
+    middleName?: string | null;
+    email?: string | null;
+    maritalStatus?: string | null;
+    occupation?: string | null;
+    address?: string | null;
+    nextOfKinName?: string | null;
+    nextOfKinPhone?: string | null;
+    allergies?: string | null;
+    medicalHistory?: string | null;
+}
+
+interface ApiResponse<T> {
+    success: boolean;
+    data: T;
+}
+
+interface SearchResponse {
+    patients: PatientSummary[];
+    total?: number;
+}
 
 // ── Patients ─────────────────────────────────────────────
 export const patientApi = {
     register: (data: any, institutionId?: string) =>
         api.post('/api/auth/register/patient', institutionId ? { ...data, institutionId } : data),
-    search: (query: string) => api.get(`/api/patients/search?q=${encodeURIComponent(query)}`),
+
+    search: (query: string) =>
+        api.get<ApiResponse<SearchResponse>>(`/api/patients/search?q=${encodeURIComponent(query)}`),
+
     searchPaginated: (params: { q?: string; limit?: number; offset?: number }) => {
         const p = new URLSearchParams();
         if (params.q) p.set('q', params.q);
         if (params.limit) p.set('limit', String(params.limit));
         if (params.offset) p.set('offset', String(params.offset));
-        return api.get(`/api/patients/search?${p}`);
+        return api.get<ApiResponse<SearchResponse>>(`/api/patients/search?${p}`);
     },
-    getById: (id: string) => api.get(`/api/patients/${id}`),
+
+    getById: (id: string) =>
+        api.get<ApiResponse<PatientDetail>>(`/api/patients/${id}`),
+
     getRegistration: (id: string) => api.get(`/api/patients/${id}/registration`),
     getVisits: (id: string) => api.get(`/api/records/visits/${id}`),
     getHistory: (patientId: string) => api.get(`/api/patients/${patientId}/history`),
@@ -68,22 +108,33 @@ export const patientApi = {
         return api.get(url);
     },
 };
+// ── Add these methods to practitionersApi in web/src/lib/api.ts ──────────────
+// Replace the existing practitionersApi block with this full version.
 
-// ── Practitioners ────────────────────────────────────────
 export const practitionersApi = {
     getOnlineStaff: (role?: string) => {
         const url = role ? `/api/practitioners/online?role=${role}` : '/api/practitioners/online';
         return api.get(url);
     },
-    list: (params?: { limit?: number; offset?: number; role?: string }) => {
+    list: (params?: { limit?: number; offset?: number; role?: string; verified?: boolean; active?: boolean; search?: string; institutionId?: string }) => {
         const p = new URLSearchParams();
         if (params?.limit) p.set('limit', String(params.limit));
         if (params?.offset) p.set('offset', String(params.offset));
         if (params?.role) p.set('role', params.role);
+        if (params?.verified !== undefined) p.set('verified', String(params.verified));
+        if (params?.active !== undefined) p.set('active', String(params.active));
+        if (params?.search) p.set('search', params.search);
+        if (params?.institutionId) p.set('institutionId', params.institutionId);
         return api.get(`/api/practitioners?${p}`);
     },
     getById: (id: string) => api.get(`/api/practitioners/${id}`),
     updateProfile: (data: any) => api.patch('/api/practitioners/me', data),
+
+    // ── Admin actions ──────────────────────────────────────────────────────────
+    verify: (id: string) => api.patch(`/api/practitioners/${id}/verify`),
+    toggleActive: (id: string) => api.patch(`/api/practitioners/${id}/toggle-active`),
+    resetPassword: (id: string, newPassword: string) =>
+        api.patch(`/api/practitioners/${id}/reset-password`, { newPassword }),
 };
 
 // ── Visits ───────────────────────────────────────────────
@@ -192,6 +243,7 @@ export const permissionApi = {
         api.get(`/api/permissions/check/${patientBlockchainAddress}/${staffBlockchainAddress}`),
     getRequestStatus: (requestId: string) =>
         api.get(`/api/permissions/requests/${requestId}`),
+    emergencyOverride: (data: any) => api.post('/api/permissions/emergency-override', data),
 };
 
 // ── Audit ────────────────────────────────────────────────
@@ -254,4 +306,35 @@ export const pharmacyStatsApi = {
 
 export const adminStatsApi = {
     getOverview: () => api.get('/api/dashboard/admin'),
+};
+
+
+
+// ── Lab (extras: patient context, specimen rejection, my results) ────────
+export const labApi = {
+    getPatientContext: (patientId: string) =>
+        api.get(`/api/lab/patient-context/${patientId}`),
+    rejectSpecimen: (orderId: string, data: { reason: string; notes?: string }) =>
+        api.post(`/api/lab/reject-specimen/${orderId}`, data),
+    getMyResults: (params?: { limit?: number; offset?: number }) => {
+        const p = new URLSearchParams();
+        if (params?.limit) p.set('limit', String(params.limit));
+        if (params?.offset) p.set('offset', String(params.offset));
+        return api.get(`/api/lab/my-results?${p}`);
+    },
+};
+// Add this to web/lib/api.ts
+
+export const stockApi = {
+    list: (params?: { search?: string; lowOnly?: boolean }) => {
+        const p = new URLSearchParams();
+        if (params?.search) p.set('search', params.search);
+        if (params?.lowOnly) p.set('lowOnly', 'true');
+        return api.get(`/api/stock?${p}`);
+    },
+    add: (data: any) => api.post('/api/stock', data),
+    update: (id: string, data: any) => api.patch(`/api/stock/${id}`, data),
+    restock: (id: string, data: { quantity: number; batchNumber?: string; expiryDate?: string; notes?: string }) =>
+        api.post(`/api/stock/${id}/restock`, data),
+    remove: (id: string) => api.delete(`/api/stock/${id}`),
 };

@@ -15,6 +15,13 @@
       "when": 1779891271286,
       "tag": "0001_sharp_anita_blake",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780157597744,
+      "tag": "0002_organic_chimera",
+      "breakpoints": true
     }
   ]
 }

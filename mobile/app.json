@@ -1,16 +1,20 @@
 {
   "expo": {
-    "name": "MedChain",
-    "slug": "medchain",
+    "name": "MedLink",
+    "slug": "medlink",
     "version": "1.0.0",
     "orientation": "portrait",
     "scheme": "medchain",
-    "platforms": ["android", "web", "ios"],
+    "platforms": [
+      "android",
+      "web",
+      "ios"
+    ],
     "android": {
       "package": "com.medchain.patient",
       "softwareKeyboardLayoutMode": "pan",
       "adaptiveIcon": {
-        "backgroundColor": "#2563EB"
+        "backgroundColor": "#059669"
       }
     },
     "plugins": [
@@ -21,7 +25,18 @@
             "enableEdgeToEdge": false
           }
         }
-      ]
-    ]
+      ],
+      "@react-native-community/datetimepicker",
+      "expo-asset",
+      "expo-font"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "2341e684-7d16-4ceb-8196-7a6fcad9dc90"
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.medchain.patient"
+    }
   }
 }

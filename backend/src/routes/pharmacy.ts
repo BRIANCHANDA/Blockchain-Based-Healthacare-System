@@ -3,7 +3,8 @@ import { sql, eq, and, ne, count, desc } from 'drizzle-orm';
 import { db } from '../db';
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
-import { practitioners, visits, prescriptions, prescriptionItems } from '../db/schema';
+import { practitioners, visits, prescriptions, prescriptionItems, patients } from '../db/schema';
+import { decrypt } from '../services/crypto';
 
 async function getStaffInstitution(userId: string): Promise<string | null> {
     const staff = await db.select({ institutionId: practitioners.institutionId })
@@ -317,4 +318,220 @@ export const pharmacyStatsRouter = createRouter<AppContext>()
             console.error('Full error:', err);
             return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
         }
+    })
+
+    // ─── GET /pharmacy-stats/patients ──────────────────────────────────────────
+    .openapi(createRoute({
+        tags: ['Pharmacy Stats'],
+        summary: 'List patients with prescriptions at this institution',
+        method: 'get',
+        path: '/patients',
+        security: [{ bearerAuth: [] }],
+        middleware: [authMiddleware],
+        responses: {
+            200: { content: { 'application/json': { schema: successData } }, description: 'Patients' },
+            403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+            500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+        },
+    }), async (c) => {
+        try {
+            const userType = c.get('userType');
+            const userId = c.get('userId');
+            if (!['pharmacist', 'admin'].includes(userType))
+                return c.json({ success: false, error: { message: 'Pharmacists only' } }, 403);
+
+            const institutionId = await getStaffInstitution(userId);
+            if (!institutionId)
+                return c.json({ success: false, error: { message: 'No institution assigned' } }, 403);
+
+            const result = await db.execute(sql`
+                SELECT
+                  p.id,
+                  p.first_name_encrypted    AS "firstNameEncrypted",
+                  p.last_name_encrypted     AS "lastNameEncrypted",
+                  p.date_of_birth_encrypted AS "dobEncrypted",
+                  p.national_id_encrypted   AS "nidEncrypted",
+                  p.gender,
+                  p.blood_type              AS "bloodType",
+                  COUNT(DISTINCT rx.id) AS "totalRx",
+                  COUNT(DISTINCT CASE WHEN rx.status = 'dispensed' THEN rx.id END) AS "dispensedRx",
+                  COUNT(DISTINCT CASE WHEN rx.status IN ('prescribed', 'dispensing') THEN rx.id END) AS "pendingRx",
+                  MAX(rx.prescribed_at) AS "lastRxAt"
+                FROM patients p
+                JOIN prescriptions rx ON rx.patient_id = p.id
+                JOIN visits v ON v.id = rx.visit_id
+                WHERE v.institution_id = ${institutionId}
+                GROUP BY p.id
+                ORDER BY MAX(rx.prescribed_at) DESC
+            `);
+
+            const rows = (result as any).rows ?? result;
+
+            const enriched = rows.map((r: any) => {
+                const firstName = safeDec(() => decrypt(r.firstNameEncrypted));
+                const lastName = safeDec(() => decrypt(r.lastNameEncrypted));
+                const dob = safeDec(() => decrypt(r.dobEncrypted));
+                const nid = safeDec(() => decrypt(r.nidEncrypted));
+                return {
+                    id: r.id,
+                    firstName, lastName,
+                    fullName: `${firstName} ${lastName}`.trim() || 'Unknown',
+                    age: dob ? calcAge(dob) : null,
+                    nationalId: nid,
+                    gender: r.gender,
+                    bloodType: r.bloodType,
+                    totalRx: Number(r.totalRx ?? 0),
+                    dispensedRx: Number(r.dispensedRx ?? 0),
+                    pendingRx: Number(r.pendingRx ?? 0),
+                    lastRxAt: r.lastRxAt,
+                };
+            });
+
+            return c.json({ success: true, data: { patients: enriched, total: enriched.length } });
+        } catch (err: any) {
+            console.error('[PHAR_PATIENTS]', err);
+            return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+        }
+    })
+
+    // ─── GET /pharmacy-stats/patients/:patientId/prescriptions ─────────────────
+    .openapi(createRoute({
+        tags: ['Pharmacy Stats'],
+        summary: 'All prescriptions for a patient at this institution',
+        method: 'get',
+        path: '/patients/:patientId/prescriptions',
+        security: [{ bearerAuth: [] }],
+        middleware: [authMiddleware],
+        request: { params: z.object({ patientId: z.string().uuid() }) },
+        responses: {
+            200: { content: { 'application/json': { schema: successData } }, description: 'Prescriptions' },
+            403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+            404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' },
+            500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+        },
+    }), async (c) => {
+        try {
+            const userType = c.get('userType');
+            const userId = c.get('userId');
+            if (!['pharmacist', 'admin'].includes(userType))
+                return c.json({ success: false, error: { message: 'Pharmacists only' } }, 403);
+
+            const institutionId = await getStaffInstitution(userId);
+            if (!institutionId)
+                return c.json({ success: false, error: { message: 'No institution assigned' } }, 403);
+
+            const { patientId } = c.req.valid('param');
+
+            const [p] = await db.select({
+                id: patients.id,
+                firstNameEncrypted: patients.firstNameEncrypted,
+                lastNameEncrypted: patients.lastNameEncrypted,
+                dateOfBirthEncrypted: patients.dateOfBirthEncrypted,
+                nationalIdEncrypted: patients.nationalIdEncrypted,
+                phoneNumberEncrypted: patients.phoneNumberEncrypted,
+                gender: patients.gender,
+                bloodType: patients.bloodType,
+            }).from(patients).where(eq(patients.id, patientId)).limit(1);
+
+            if (!p) return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
+
+            const firstName = safeDec(() => decrypt(p.firstNameEncrypted));
+            const lastName = safeDec(() => decrypt(p.lastNameEncrypted));
+            const dob = safeDec(() => decrypt(p.dateOfBirthEncrypted));
+            const nid = safeDec(() => decrypt(p.nationalIdEncrypted));
+            const phone = safeDec(() => decrypt(p.phoneNumberEncrypted));
+
+            const rxResult = await db.execute(sql`
+                SELECT
+                  rx.id,
+                  rx.prescription_number   AS "prescriptionNumber",
+                  rx.status,
+                  rx.prescribed_at         AS "prescribedAt",
+                  rx.visit_id              AS "visitId",
+                  v.visit_number           AS "visitNumber",
+                  v.chief_complaint        AS "chiefComplaint",
+                  v.visit_type             AS "visitType",
+                  doc.first_name_encrypted AS "docFirst",
+                  doc.last_name_encrypted  AS "docLast",
+                  doc.specialization       AS "docSpecialization",
+                  COUNT(pi.id) AS "totalItems",
+                  COUNT(CASE WHEN pi.is_dispensed = true THEN 1 END) AS "dispensedItems"
+                FROM prescriptions rx
+                JOIN visits v        ON v.id = rx.visit_id
+                LEFT JOIN practitioners doc ON doc.id = rx.prescribed_by_practitioner_id
+                LEFT JOIN prescription_items pi ON pi.prescription_id = rx.id
+                WHERE rx.patient_id    = ${patientId}
+                  AND v.institution_id = ${institutionId}
+                GROUP BY rx.id, v.visit_number, v.chief_complaint, v.visit_type,
+                         doc.first_name_encrypted, doc.last_name_encrypted, doc.specialization
+                ORDER BY rx.prescribed_at DESC
+            `);
+
+            const rxRows = (rxResult as any).rows ?? rxResult;
+
+            const prescriptionsList = rxRows.map((r: any) => {
+                const docName = r.docFirst
+                    ? `${safeDec(() => decrypt(r.docFirst))} ${safeDec(() => decrypt(r.docLast))}`.trim()
+                    : 'Unknown';
+                return {
+                    id: r.id,
+                    prescriptionNumber: r.prescriptionNumber,
+                    status: r.status,
+                    prescribedAt: r.prescribedAt,
+                    visitId: r.visitId,
+                    visitNumber: r.visitNumber,
+                    chiefComplaint: r.chiefComplaint,
+                    visitType: r.visitType,
+                    prescribedBy: docName,
+                    prescribedBySpecialization: r.docSpecialization ?? null,
+                    totalItems: Number(r.totalItems ?? 0),
+                    dispensedItems: Number(r.dispensedItems ?? 0),
+                };
+            });
+
+            return c.json({
+                success: true,
+                data: {
+                    patient: {
+                        id: p.id,
+                        fullName: `${firstName} ${lastName}`.trim(),
+                        firstName, lastName,
+                        age: dob ? calcAge(dob) : null,
+                        nationalId: nid,
+                        phone,
+                        gender: p.gender,
+                        bloodType: p.bloodType,
+                    },
+                    prescriptions: prescriptionsList,
+                    summary: {
+                        total: prescriptionsList.length,
+                        dispensed: prescriptionsList.filter((r: any) => r.status === 'dispensed').length,
+                        pending: prescriptionsList.filter((r: any) => ['prescribed', 'dispensing'].includes(r.status)).length,
+                    },
+                },
+            });
+        } catch (err: any) {
+            console.error('[PHAR_PATIENT_RX]', err);
+            return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+        }
     });
+
+
+
+
+
+
+
+
+
+function safeDec(fn: () => string): string {
+    try { return fn(); } catch { return ''; }
+}
+
+function calcAge(dobStr: string): number | null {
+    try {
+        const d = new Date(dobStr);
+        if (isNaN(d.getTime())) return null;
+        return Math.floor((Date.now() - d.getTime()) / (365.25 * 86400000));
+    } catch { return null; }
+}

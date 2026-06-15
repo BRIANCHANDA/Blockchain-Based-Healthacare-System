@@ -1,12 +1,14 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { patientApi, permissionApi } from "@/lib/api";
+import EmergencyOverrideModal from "@/components/EmergencyOverrideModal";
 import {
   AlertCircle,
   Loader2,
   Clock,
   ShieldCheck,
   ShieldX,
+  ShieldAlert,
   RefreshCw,
   Send,
   XCircle,
@@ -778,6 +780,7 @@ function AwayInstitutionSection({
   ]);
   const [formError, setFormError] = useState("");
   const [open, setOpen] = useState(false);
+  const [showOverride, setShowOverride] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollCountRef = useRef(0);
 
@@ -943,13 +946,23 @@ function AwayInstitutionSection({
                 {institution.institutionName}.
               </p>
             </div>
-            <button
-              onClick={() => setPermState({ phase: "form" })}
-              className="flex-shrink-0 flex items-center gap-2 px-4 py-2 rounded-xl text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all"
-              style={{ background: "linear-gradient(135deg,#166534,#15803d)" }}
-            >
-              <Send className="w-3.5 h-3.5" /> Request Access
-            </button>
+            <div className="flex-shrink-0 flex items-center gap-2">
+              <button
+                onClick={() => setShowOverride(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 transition-all"
+              >
+                <ShieldAlert className="w-3.5 h-3.5" /> Emergency
+              </button>
+              <button
+                onClick={() => setPermState({ phase: "form" })}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all"
+                style={{
+                  background: "linear-gradient(135deg,#166534,#15803d)",
+                }}
+              >
+                <Send className="w-3.5 h-3.5" /> Request Access
+              </button>
+            </div>
           </div>
         )}
 
@@ -1141,6 +1154,17 @@ function AwayInstitutionSection({
           </div>
         )}
       </div>
+
+      {/* Emergency override — 24h access without patient approval, heavily logged */}
+      <EmergencyOverrideModal
+        open={showOverride}
+        patientId={patientId}
+        onClose={() => setShowOverride(false)}
+        onGranted={() => {
+          setShowOverride(false);
+          onPermissionGranted();
+        }}
+      />
     </div>
   );
 }
@@ -1396,7 +1420,10 @@ export default function PatientHistoryTab({
             <p className="text-xs text-amber-700">
               Records from other institutions are protected by blockchain
               consent. Click <strong>Request Access</strong> on each institution
-              — the patient will approve or deny from their mobile app.
+              — the patient will approve or deny from their mobile app. In a
+              genuine emergency, <strong>Emergency</strong> grants immediate
+              24-hour access that is permanently logged and visible to the
+              patient.
             </p>
           </div>
 

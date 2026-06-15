@@ -5,6 +5,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { patientApi } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
+import { PhoneInput } from "@/components/ui/PhoneInput";
 import {
   CheckCircle,
   AlertCircle,
@@ -13,6 +14,13 @@ import {
   User,
   Phone,
 } from "lucide-react";
+
+function formatNRC(raw: string): string {
+  const digits = raw.replace(/\D/g, "").slice(0, 9);
+  if (digits.length <= 6) return digits;
+  if (digits.length <= 8) return `${digits.slice(0, 6)}/${digits.slice(6)}`;
+  return `${digits.slice(0, 6)}/${digits.slice(6, 8)}/${digits.slice(8)}`;
+}
 
 // ── Schema ────────────────────────────────────────────────────────────────────
 const schema = z.object({
@@ -24,7 +32,9 @@ const schema = z.object({
   bloodType: z
     .enum(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "unknown"])
     .optional(),
-  phoneNumber: z.string().min(10, "Valid phone required"),
+  phoneNumber: z
+    .string()
+    .regex(/^\+\d{10,13}$/, "Enter a valid phone number (e.g. +260977123456)"),
   email: z.string().email("Invalid email").optional().or(z.literal("")),
   address: z.string().min(5, "Full address required"),
   nationalId: z.string().min(1, "Required"),
@@ -56,7 +66,11 @@ export default function RegisterPatientPage() {
     formState: { errors },
     trigger,
     reset,
+    setValue,
+    watch,
   } = useForm<FormData>({ resolver: zodResolver(schema), mode: "onBlur" });
+
+  const phoneValue = watch("phoneNumber") ?? "+260";
 
   const stepFields: (keyof FormData)[][] = [
     [
@@ -314,10 +328,12 @@ export default function RegisterPatientPage() {
                   label="Phone Number *"
                   error={errors.phoneNumber?.message}
                 >
-                  <input
-                    {...register("phoneNumber")}
-                    placeholder="+260 977 123 456"
-                    className={cls}
+                  <PhoneInput
+                    value={phoneValue}
+                    onChange={(v) =>
+                      setValue("phoneNumber", v, { shouldValidate: true })
+                    }
+                    error={!!errors.phoneNumber}
                   />
                 </Field>
 
@@ -373,11 +389,21 @@ export default function RegisterPatientPage() {
                 </div>
 
                 <Field label="National ID *" error={errors.nationalId?.message}>
-                  <input
-                    {...register("nationalId")}
-                    placeholder="123456/78/1"
-                    className={cls}
-                  />
+                  {(() => {
+                    const { ref, onChange, ...rest } = register("nationalId");
+                    return (
+                      <input
+                        ref={ref}
+                        {...rest}
+                        onChange={(e) => {
+                          e.target.value = formatNRC(e.target.value);
+                          onChange(e);
+                        }}
+                        placeholder="123456/78/1"
+                        className={cls}
+                      />
+                    );
+                  })()}
                 </Field>
 
                 {error && (

@@ -4,19 +4,25 @@ import {
   Text,
   ActivityIndicator,
   StyleSheet,
+  Platform,
   ViewStyle,
   TextStyle,
 } from "react-native";
+
+type Variant = "primary" | "outline" | "danger" | "ghost";
 
 type Props = {
   label: string;
   onPress: () => void;
   loading?: boolean;
   disabled?: boolean;
-  variant?: "primary" | "outline" | "danger" | "ghost";
+  variant?: Variant;
   style?: ViewStyle;
   textStyle?: TextStyle;
 };
+
+const BRAND = "#059669";
+const BRAND_DEEP = "#047857";
 
 export default function Button({
   label,
@@ -38,12 +44,14 @@ export default function Button({
         isDisabled && styles.disabled,
         style,
       ]}
-      activeOpacity={0.75}
+      activeOpacity={0.82}
     >
       {loading ? (
-        <ActivityIndicator color={variant === "outline" ? "#16A34A" : "#fff"} />
+        <ActivityIndicator
+          color={variant === "primary" || variant === "danger" ? "#fff" : BRAND}
+        />
       ) : (
-        <Text style={[styles.text, styles[`${variant}Text`], textStyle]}>
+        <Text style={[styles.text, styles[`${variant}Text` as const], textStyle]}>
           {label}
         </Text>
       )}
@@ -54,24 +62,38 @@ export default function Button({
 const styles = StyleSheet.create({
   base: {
     height: 50,
-    borderRadius: 12,
+    borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",
     paddingHorizontal: 20,
   },
-  primary: { backgroundColor: "rgb(2, 77, 36)" },
+
+  // DS brand green CTA
+  primary: {
+    backgroundColor: BRAND,
+    ...Platform.select({
+      ios: {
+        shadowColor: BRAND,
+        shadowOffset: { width: 0, height: 6 },
+        shadowOpacity: 0.22,
+        shadowRadius: 20,
+      },
+      android: { elevation: 6 },
+    }),
+  },
   outline: {
     backgroundColor: "transparent",
     borderWidth: 1.5,
-    borderColor: "rgb(2, 77, 36)",
+    borderColor: BRAND,
   },
-  danger: { backgroundColor: "#DC2626" },
+  danger: { backgroundColor: "#FF5757" },
   ghost: { backgroundColor: "transparent" },
+
   disabled: { opacity: 0.5 },
 
   text: { fontSize: 15, fontWeight: "600" },
   primaryText: { color: "#fff" },
-  outlineText: { color: "#16A34A" },
+  outlineText: { color: BRAND_DEEP },
   dangerText: { color: "#fff" },
-  ghostText: { color: "#16A34A" },
+  ghostText: { color: BRAND },
 });

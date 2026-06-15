@@ -82,7 +82,7 @@ export default function LoginScreen({ navigation }: Props) {
           <View style={styles.iconCircle}>
             <Text style={styles.iconText}>🏥</Text>
           </View>
-          <Text style={styles.title}>HealthChain</Text>
+          <Text style={styles.title}>MedLink</Text>
           <Text style={styles.subtitle}>Zambia's Secure Patient Portal</Text>
         </View>
 

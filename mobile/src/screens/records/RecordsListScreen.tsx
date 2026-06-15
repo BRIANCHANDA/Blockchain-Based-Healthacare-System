@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -8,12 +8,11 @@ import {
   RefreshControl,
   StatusBar,
   Platform,
-  Dimensions,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { MaterialIcons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { getMyVisits } from "../../api/records";
 import { useAuthStore } from "../../store/authStore";
@@ -22,43 +21,49 @@ import LoadingSpinner from "../../components/common/LoadingSpinner";
 
 type Props = NativeStackScreenProps<RecordsStackParamList, "RecordsList">;
 
-const { width } = Dimensions.get("window");
-
-// ── Design tokens ────────────────────────────────────────────────────────────
+// ── DS tokens ────────────────────────────────────────────────────────────────
 const C = {
-  ink: "#1A1D2E",
-  inkSoft: "#5A5F7A",
-  inkMuted: "#9498B3",
-  teal: "#0D9488",
-  tealDark: "#0F766E",
-  tealDeep: "#115E59",
-  tealLight: "#CCFBF1",
-  tealGhost: "#F0FDFA",
-  amber: "#F59E0B",
-  amberLight: "#FEF3C7",
-  coral: "#EF4444",
-  coralLight: "#FEE2E2",
-  violet: "#7C3AED",
-  violetLight: "#EDE9FE",
-  blue: "#3B82F6",
-  blueLight: "#EFF6FF",
-  bg: "#F8F9FC",
-  card: "#FFFFFF",
-  cardBorder: "#ECEEF4",
-  divider: "#F1F2F6",
+  brand:       "#059669",
+  brandDeep:   "#047857",
+  brandTint:   "#ECFDF5",
+  brandFill:   "#D1FAE5",
+  coral:       "#FF5757",
+  coralTint:   "#FFE5E5",
+  coralInk:    "#E13D3D",
+  amber:       "#F59E0B",
+  amberTint:   "#FEF3C7",
+  amberInk:    "#B45309",
+  violet:      "#8B5CF6",
+  violetTint:  "#EDE9FE",
+  ink:         "#0A0E1A",
+  inkSoft:     "#4B5563",
+  inkMuted:    "#9CA3AF",
+  inkSubtle:   "#D1D5DB",
+  bg:          "#FAFAFB",
+  bgAlt:       "#F4F4F6",
+  card:        "#FFFFFF",
+  cardBorder:  "#E5E7EB",
+  divider:     "#F0F1F3",
 };
 
 const PRIORITY: Record<string, { color: string; bg: string; label: string }> = {
-  routine: { color: C.teal, bg: C.tealGhost, label: "Routine" },
-  urgent: { color: C.amber, bg: C.amberLight, label: "Urgent" },
-  emergency: { color: C.coral, bg: C.coralLight, label: "Emergency" },
-  critical: { color: C.violet, bg: C.violetLight, label: "Critical" },
+  routine:   { color: C.brand,   bg: C.brandTint,  label: "Routine" },
+  urgent:    { color: C.amber,   bg: C.amberTint,  label: "Urgent" },
+  emergency: { color: C.coral,   bg: C.coralTint,  label: "Emergency" },
+  critical:  { color: C.violet,  bg: C.violetTint, label: "Critical" },
 };
 
 const STATUS: Record<string, { color: string; bg: string; label: string }> = {
-  "in-progress": { color: C.amber, bg: C.amberLight, label: "In Progress" },
-  completed: { color: C.teal, bg: C.tealGhost, label: "Completed" },
-  cancelled: { color: C.inkMuted, bg: "#F3F4F6", label: "Cancelled" },
+  "in-progress": { color: C.amber,    bg: C.amberTint,  label: "Active" },
+  completed:     { color: C.brand,    bg: C.brandTint,  label: "Completed" },
+  cancelled:     { color: C.inkMuted, bg: C.bgAlt,      label: "Cancelled" },
+};
+
+const TYPE_LABEL: Record<string, string> = {
+  outpatient:   "Outpatient",
+  inpatient:    "Inpatient",
+  emergency:    "Emergency",
+  consultation: "Consultation",
 };
 
 function formatDate(iso: string) {
@@ -69,96 +74,79 @@ function formatDate(iso: string) {
   });
 }
 
-// ── Stat Card ────────────────────────────────────────────────────────────────
-function StatCard({
-  value,
-  label,
+// ── Quick action card ────────────────────────────────────────────────────────
+function QuickAction({
   icon,
-  color,
+  title,
+  sub,
+  bg,
+  fg,
+  onPress,
 }: {
-  value: number;
-  label: string;
   icon: keyof typeof MaterialIcons.glyphMap;
-  color: string;
+  title: string;
+  sub: string;
+  bg: string;
+  fg: string;
+  onPress: () => void;
 }) {
   return (
-    <View style={styles.statCard}>
-      <View style={[styles.statIconWrap, { backgroundColor: `${color}15` }]}>
-        <MaterialIcons name={icon} size={16} color={color} />
+    <TouchableOpacity
+      style={styles.quickCard}
+      onPress={onPress}
+      activeOpacity={0.75}
+    >
+      <View style={[styles.quickIcon, { backgroundColor: bg }]}>
+        <MaterialIcons name={icon} size={21} color={fg} />
       </View>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
+      <Text style={styles.quickTitle}>{title}</Text>
+      <Text style={styles.quickSub}>{sub}</Text>
+    </TouchableOpacity>
   );
 }
 
-// ── Visit Card ───────────────────────────────────────────────────────────────
-function VisitCardItem({
-  item,
-  onPress,
-}: {
-  item: Visit;
-  onPress: () => void;
-}) {
+// ── Visit card ───────────────────────────────────────────────────────────────
+function VisitCard({ item, onPress }: { item: Visit; onPress: () => void }) {
   const priority = PRIORITY[item.priority] ?? PRIORITY.routine;
-  const status = STATUS[item.status] ?? STATUS.completed;
+  const status   = STATUS[item.status]    ?? STATUS.completed;
+  const typeLabel = TYPE_LABEL[item.visitType] ?? item.visitType;
 
   return (
-    <TouchableOpacity
-      onPress={onPress}
-      activeOpacity={0.7}
-      style={styles.card}
-      accessibilityRole="button"
-    >
-      {/* Left accent */}
-      <View style={[styles.cardAccent, { backgroundColor: priority.color }]} />
-
-      <View style={styles.cardBody}>
-        {/* Header row */}
-        <View style={styles.cardHeader}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.cardVisitNum}>{item.visitNumber}</Text>
-            <Text style={styles.cardType}>
-              {item.visitType.replace(/-/g, " ").toUpperCase()}
-            </Text>
-          </View>
-          <View style={[styles.priorityPill, { backgroundColor: priority.bg }]}>
-            <Text style={[styles.priorityText, { color: priority.color }]}>
-              {priority.label}
-            </Text>
-          </View>
-        </View>
-
-        {/* Complaint */}
-        <Text style={styles.cardComplaint} numberOfLines={2}>
-          {item.chiefComplaint || "No complaint recorded"}
-        </Text>
-
-        {/* Footer */}
-        <View style={styles.cardFooter}>
-          <View style={styles.datePill}>
-            <MaterialIcons name="schedule" size={11} color={C.inkMuted} />
-            <Text style={styles.dateText}>
-              {formatDate(item.admissionDate)}
-            </Text>
-          </View>
-          <View style={[styles.statusPill, { backgroundColor: status.bg }]}>
-            <View
-              style={[styles.statusDot, { backgroundColor: status.color }]}
-            />
-            <Text style={[styles.statusText, { color: status.color }]}>
-              {status.label}
-            </Text>
-          </View>
+    <TouchableOpacity onPress={onPress} activeOpacity={0.7} style={styles.card}>
+      {/* Top: visit number + status */}
+      <View style={styles.cardTopRow}>
+        <Text style={styles.visitNum}>{item.visitNumber}</Text>
+        <View style={[styles.statusChip, { backgroundColor: status.bg }]}>
+          <Text style={[styles.statusText, { color: status.color }]}>
+            {status.label}
+          </Text>
         </View>
       </View>
 
-      <MaterialIcons
-        name="chevron-right"
-        size={18}
-        color="#D0D5E0"
-        style={styles.chevron}
-      />
+      {/* Chief complaint */}
+      <Text style={styles.complaint} numberOfLines={2}>
+        {item.chiefComplaint || "No complaint recorded"}
+      </Text>
+
+      <View style={styles.divider} />
+
+      {/* Footer: type chip + priority pill + date */}
+      <View style={styles.cardFooter}>
+        <View style={styles.typeChip}>
+          <Text style={styles.typeText}>{typeLabel}</Text>
+        </View>
+        <View style={[styles.priorityPill, { backgroundColor: priority.bg }]}>
+          <View style={[styles.priorityDot, { backgroundColor: priority.color }]} />
+          <Text style={[styles.priorityText, { color: priority.color }]}>
+            {priority.label}
+          </Text>
+        </View>
+        <View style={{ flex: 1 }} />
+        <View style={styles.metaItem}>
+          <MaterialIcons name="event" size={13} color={C.inkMuted} />
+          <Text style={styles.metaText}>{formatDate(item.admissionDate)}</Text>
+        </View>
+      </View>
     </TouchableOpacity>
   );
 }
@@ -172,6 +160,20 @@ export default function RecordsListScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
+
+  // null = still loading from storage (don't render either way yet)
+  const [bannerDismissed, setBannerDismissed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    AsyncStorage.getItem("health_banner_viewed")
+      .then((v) => setBannerDismissed(v === "true"))
+      .catch(() => setBannerDismissed(false));
+  }, []);
+
+  const dismissBanner = async () => {
+    await AsyncStorage.setItem("health_banner_viewed", "true");
+    setBannerDismissed(true);
+  };
 
   const fetchVisits = useCallback(async () => {
     if (!user) return;
@@ -194,133 +196,120 @@ export default function RecordsListScreen({ navigation }: Props) {
     setRefreshing(false);
   };
 
-  const completed = visits.filter((v) => v.status === "completed").length;
-  const active = visits.filter((v) => v.status === "in-progress").length;
-
   if (loading) return <LoadingSpinner message="Loading your records…" />;
+
+  const firstName = user?.firstName ?? "";
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={C.tealDeep} />
+      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
-      {/* ── Header ── */}
-      <LinearGradient
-        colors={[C.tealDeep, C.tealDark, C.teal]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={[styles.header, { paddingTop: insets.top + 8 }]}
-      >
-        {/* Decorative elements */}
-        <View
-          style={[
-            styles.deco,
-            {
-              width: 160,
-              height: 160,
-              top: -40,
-              right: -30,
-              borderColor: "rgba(255,255,255,0.08)",
-            },
-          ]}
-        />
-        <View
-          style={[
-            styles.deco,
-            {
-              width: 100,
-              height: 100,
-              bottom: 10,
-              left: -20,
-              borderColor: "rgba(255,255,255,0.06)",
-            },
-          ]}
-        />
-
-        <View style={styles.headerRow}>
-          <View>
-            <Text style={styles.brandName}>HealthChain</Text>
-            <Text style={styles.brandSub}>ZAMBIA</Text>
-          </View>
-          <TouchableOpacity
-            style={styles.avatar}
-            activeOpacity={0.8}
-            onPress={() => navigation.navigate("Profile")} // ← add this
-          >
-            <Text style={styles.avatarText}>
-              {user?.firstName?.[0]}
-              {user?.lastName?.[0]}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.greeting}>Good day, {user?.firstName} 👋</Text>
-        <Text style={styles.subheading}>Your medical visit history</Text>
-      </LinearGradient>
-
-      {/* ── Stats row (overlapping header) ── */}
-      <View style={styles.statsRow}>
-        <StatCard
-          value={visits.length}
-          label="Total"
-          icon="description"
-          color={C.blue}
-        />
-        <StatCard
-          value={completed}
-          label="Completed"
-          icon="check-circle"
-          color={C.teal}
-        />
-        <StatCard
-          value={active}
-          label="Active"
-          icon="pending"
-          color={C.amber}
-        />
-      </View>
-
-      {/* ── Error ── */}
-      {error ? (
-        <View style={styles.errorBanner}>
-          <MaterialIcons name="error-outline" size={15} color={C.coral} />
-          <Text style={styles.errorText}>{error}</Text>
-        </View>
-      ) : null}
-
-      {/* ── List ── */}
       <FlatList
         data={visits}
         keyExtractor={(v) => v.id}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[
+          styles.listContent,
+          { paddingTop: insets.top + 8 },
+        ]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            colors={[C.teal]}
-            tintColor={C.teal}
+            colors={[C.brand]}
+            tintColor={C.brand}
           />
         }
         ListHeaderComponent={
-          <View style={styles.listHeaderRow}>
-            <Text style={styles.listHeaderText}>Recent visits</Text>
-            <Text style={styles.listHeaderCount}>{visits.length}</Text>
-          </View>
+          <>
+            {/* ── Header bar ── */}
+            <View style={styles.headerInner}>
+              <View>
+                <Text style={styles.greeting}>Hi, {firstName}</Text>
+                <Text style={styles.subgreeting}>Your medical records</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.avatarBtn}
+                activeOpacity={0.7}
+                onPress={() => navigation.navigate("Profile")}
+              >
+                <Text style={styles.avatarText}>
+                  {user?.firstName?.[0]}{user?.lastName?.[0]}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* ── Allergy safety banner — hidden once the user has viewed ── */}
+            {bannerDismissed === false && (
+              <View style={styles.allergyBanner}>
+                <MaterialIcons name="warning" size={18} color={C.coralInk} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.allergyText}>
+                    Blood type & allergies in your health summary
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    dismissBanner();
+                    navigation.navigate("Profile");
+                  }}
+                >
+                  <Text style={styles.allergyLink}>View</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* ── Quick actions ── */}
+            <View style={styles.quickRow}>
+              <QuickAction
+                icon="qr-code"
+                title="My Hospital ID"
+                sub="Show at reception"
+                bg={C.brandTint}
+                fg={C.brandDeep}
+                onPress={() => navigation.navigate("PatientQR")}
+              />
+              <QuickAction
+                icon="trending-up"
+                title="Health Trends"
+                sub="Vitals over time"
+                bg={C.violetTint}
+                fg="#7C3AED"
+                onPress={() => navigation.navigate("VitalsTrends")}
+              />
+            </View>
+
+            {/* ── Section label ── */}
+            <View style={styles.sectionRow}>
+              <MaterialIcons name="folder" size={16} color={C.inkMuted} />
+              <Text style={styles.sectionTitle}>Medical visits</Text>
+              <View style={styles.countBadge}>
+                <Text style={styles.countText}>{visits.length}</Text>
+              </View>
+            </View>
+
+            {/* ── Error banner ── */}
+            {error ? (
+              <View style={styles.errorBanner}>
+                <MaterialIcons name="error-outline" size={15} color={C.coral} />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            ) : null}
+          </>
         }
         ListEmptyComponent={
           <View style={styles.empty}>
             <View style={styles.emptyIcon}>
-              <MaterialIcons name="folder-open" size={28} color={C.teal} />
+              <MaterialIcons name="folder-open" size={32} color={C.brand} />
             </View>
             <Text style={styles.emptyTitle}>No visits yet</Text>
             <Text style={styles.emptyBody}>
-              Your medical records will appear here once created by your
-              healthcare provider.
+              Your medical records will appear here once your healthcare provider creates them.
             </Text>
           </View>
         }
         renderItem={({ item }) => (
-          <VisitCardItem
+          <VisitCard
             item={item}
             onPress={() =>
               navigation.navigate("RecordDetail", {
@@ -339,99 +328,140 @@ export default function RecordsListScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
 
-  // ── Header ──
-  header: {
+  listContent: {
     paddingHorizontal: 20,
-    paddingBottom: 40,
-    overflow: "hidden",
+    paddingBottom: 100,
   },
-  deco: {
-    position: "absolute",
-    borderRadius: 999,
-    borderWidth: 1,
-  },
-  headerRow: {
+
+  // ── Header ──
+  headerInner: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 18,
+    alignItems: "center",
+    marginBottom: 16,
+    paddingBottom: 4,
   },
-  brandName: {
-    fontSize: 19,
+  greeting: {
+    fontSize: 28,
     fontWeight: "800",
-    color: "#fff",
-    letterSpacing: -0.4,
+    color: C.ink,
+    letterSpacing: -0.8,
   },
-  brandSub: {
-    fontSize: 8,
-    fontWeight: "800",
-    color: "#6FCF97",
-    letterSpacing: 2.5,
+  subgreeting: {
+    fontSize: 14,
+    color: C.inkMuted,
+    fontWeight: "500",
     marginTop: 2,
   },
-  avatar: {
+  avatarBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: C.brand,
+    justifyContent: "center",
+    alignItems: "center",
+    ...Platform.select({
+      ios: { shadowColor: C.brand, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.22, shadowRadius: 12 },
+      android: { elevation: 4 },
+    }),
+  },
+  avatarText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
+    letterSpacing: 0.3,
+  },
+
+  // ── Allergy banner ──
+  allergyBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: C.coralTint,
+    borderWidth: 1,
+    borderColor: "rgba(225,61,61,0.2)",
+    marginBottom: 14,
+  },
+  allergyText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: C.coralInk,
+    flex: 1,
+  },
+  allergyLink: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: C.coralInk,
+    textDecorationLine: "underline",
+  },
+
+  // ── Quick actions ──
+  quickRow: {
+    flexDirection: "row",
+    gap: 12,
+    marginBottom: 20,
+  },
+  quickCard: {
+    flex: 1,
+    backgroundColor: C.card,
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: C.cardBorder,
+    gap: 10,
+    ...Platform.select({
+      ios: { shadowColor: "#0A0E1A", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 3 },
+      android: { elevation: 2 },
+    }),
+  },
+  quickIcon: {
     width: 40,
     height: 40,
     borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.3)",
-    justifyContent: "center",
     alignItems: "center",
+    justifyContent: "center",
   },
-  avatarText: { fontSize: 13, fontWeight: "700", color: "#fff" },
-  greeting: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: "#fff",
-    letterSpacing: -0.5,
+  quickTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: C.ink,
+    letterSpacing: -0.2,
   },
-  subheading: {
+  quickSub: {
     fontSize: 13,
-    color: "rgba(255,255,255,0.55)",
-    marginTop: 3,
     fontWeight: "500",
+    color: C.inkMuted,
+    marginTop: -4,
   },
 
-  // ── Stats ──
-  statsRow: {
+  // ── Section header ──
+  sectionRow: {
     flexDirection: "row",
-    gap: 10,
-    marginHorizontal: 16,
-    marginTop: -22,
-    marginBottom: 8,
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 10,
   },
-  statCard: {
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: C.inkSoft,
     flex: 1,
-    backgroundColor: C.card,
-    borderRadius: 16,
-    padding: 14,
-    alignItems: "center",
-    ...Platform.select({
-      ios: {
-        shadowColor: "#1A1D2E",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.06,
-        shadowRadius: 12,
-      },
-      android: { elevation: 3 },
-    }),
+    letterSpacing: -0.1,
   },
-  statIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    justifyContent: "center",
+  countBadge: {
+    backgroundColor: C.brand,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    minWidth: 24,
     alignItems: "center",
-    marginBottom: 6,
   },
-  statValue: { fontSize: 20, fontWeight: "800", color: C.ink },
-  statLabel: {
-    fontSize: 10,
-    fontWeight: "600",
-    color: C.inkMuted,
-    marginTop: 1,
-    letterSpacing: 0.3,
+  countText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#fff",
   },
 
   // ── Error ──
@@ -439,132 +469,128 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: C.coralLight,
-    marginHorizontal: 16,
-    marginTop: 8,
-    padding: 11,
+    backgroundColor: C.coralTint,
+    padding: 12,
     borderRadius: 12,
+    marginBottom: 12,
   },
-  errorText: { color: C.coral, fontSize: 12, flex: 1, fontWeight: "500" },
+  errorText: { color: C.coral, fontSize: 12.5, flex: 1, fontWeight: "600" },
 
-  // ── List ──
-  listContent: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 100 },
-  listHeaderRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 10,
-  },
-  listHeaderText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: C.inkMuted,
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-  },
-  listHeaderCount: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: C.teal,
-    backgroundColor: C.tealGhost,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-
-  // ── Card ──
+  // ── Visit card ──
   card: {
-    flexDirection: "row",
-    alignItems: "stretch",
     backgroundColor: C.card,
-    borderRadius: 16,
+    borderRadius: 18,
+    padding: 16,
     marginBottom: 10,
-    overflow: "hidden",
     borderWidth: 1,
     borderColor: C.cardBorder,
     ...Platform.select({
-      ios: {
-        shadowColor: "#1A1D2E",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.04,
-        shadowRadius: 8,
-      },
+      ios: { shadowColor: "#0A0E1A", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.05, shadowRadius: 3 },
       android: { elevation: 1 },
     }),
   },
-  cardAccent: { width: 3.5 },
-  cardBody: { flex: 1, padding: 14 },
-  chevron: { alignSelf: "center", marginRight: 12 },
-
-  cardHeader: {
+  cardTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: 6,
+    alignItems: "center",
+    marginBottom: 10,
   },
-  cardVisitNum: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: C.ink,
-    letterSpacing: 0.2,
-  },
-  cardType: {
-    fontSize: 9,
+  visitNum: {
+    fontSize: 11,
     fontWeight: "700",
     color: C.inkMuted,
-    letterSpacing: 1,
-    marginTop: 2,
+    letterSpacing: 0.3,
+    fontVariant: ["tabular-nums"],
   },
-  priorityPill: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
-  priorityText: { fontSize: 9, fontWeight: "700", letterSpacing: 0.4 },
-
-  cardComplaint: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: C.ink,
-    lineHeight: 19,
-    marginBottom: 12,
-  },
-
-  cardFooter: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  datePill: { flexDirection: "row", alignItems: "center", gap: 4 },
-  dateText: { fontSize: 11, color: C.inkMuted, fontWeight: "500" },
-  statusPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
+  statusChip: {
+    paddingHorizontal: 9,
     paddingVertical: 3,
-    borderRadius: 20,
+    borderRadius: 999,
   },
-  statusDot: { width: 5, height: 5, borderRadius: 3 },
-  statusText: { fontSize: 10, fontWeight: "700" },
-
-  // ── Empty ──
-  empty: { alignItems: "center", marginTop: 60, paddingHorizontal: 40 },
-  emptyIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 20,
-    backgroundColor: C.tealGhost,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
+  statusText: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.2,
   },
-  emptyTitle: {
+  complaint: {
     fontSize: 16,
     fontWeight: "700",
     color: C.ink,
+    lineHeight: 22,
+    letterSpacing: -0.3,
+    marginBottom: 12,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: C.divider,
+    marginBottom: 10,
+  },
+  cardFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    flexWrap: "wrap",
+  },
+  typeChip: {
+    height: 24,
+    paddingHorizontal: 9,
+    borderRadius: 999,
+    backgroundColor: C.bgAlt,
+    justifyContent: "center",
+  },
+  typeText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: C.inkSoft,
+  },
+  priorityPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  priorityDot: { width: 6, height: 6, borderRadius: 3 },
+  priorityText: { fontSize: 10, fontWeight: "700", letterSpacing: 0.2 },
+  metaItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  metaText: {
+    fontSize: 12,
+    color: C.inkMuted,
+    fontWeight: "500",
+  },
+
+  // ── Empty ──
+  empty: {
+    alignItems: "center",
+    marginTop: 60,
+    paddingHorizontal: 40,
+  },
+  emptyIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 24,
+    backgroundColor: C.brandTint,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: C.ink,
     marginBottom: 6,
+    letterSpacing: -0.3,
   },
   emptyBody: {
-    fontSize: 13,
-    color: C.inkMuted,
+    fontSize: 14,
+    color: C.inkSoft,
     textAlign: "center",
-    lineHeight: 19,
+    lineHeight: 21,
+    fontWeight: "500",
   },
 });

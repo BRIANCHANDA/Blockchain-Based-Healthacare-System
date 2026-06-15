@@ -8,14 +8,18 @@ const JWT_SECRET = process.env.JWT_SECRET || 'healthcare_jwt_secret';
 
 export async function authMiddleware(c: Context, next: Next) {
   const authHeader = c.req.header('Authorization');
+  const queryToken = c.req.query('token'); // SSE fallback — EventSource can't send headers
 
-  if (!authHeader?.startsWith('Bearer ')) {
+  const token = authHeader?.startsWith('Bearer ')
+    ? authHeader.split(' ')[1]
+    : queryToken ?? null;
+
+  if (!token) {
     console.log('Missing or malformed Authorization header');
     return c.json({ success: false, error: { message: 'Unauthorized' } }, 401);
   }
 
   try {
-    const token = authHeader.split(' ')[1];
     const payload = verify(token, JWT_SECRET) as any;
 
     // Check session
@@ -44,6 +48,7 @@ export async function authMiddleware(c: Context, next: Next) {
     c.set('userId', payload.userId);
     c.set('userType', payload.userType);
     c.set('blockchainAddress', payload.blockchainAddress);
+    c.set('institutionId', payload.institutionId ?? null);
     c.set('sessionId', session[0].id);
 
     await next();

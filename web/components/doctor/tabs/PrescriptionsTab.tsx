@@ -3,7 +3,7 @@ import { FieldGroup } from "../shared/FieldGroup";
 import { InputField } from "../shared/InputField";
 import { SelectField } from "../shared/SelectField";
 import { SubmitBtn } from "../shared/SubmitBtn";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { visitApi } from "@/lib/api";
 import { safeFormatDate } from "../utils/dateHelpers";
 import {
@@ -19,6 +19,12 @@ import {
   Repeat,
   AlertCircle,
   Loader2,
+  Search,
+  ShieldAlert,
+  ShieldCheck,
+  TriangleAlert,
+  RefreshCw,
+  X,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -36,6 +42,12 @@ type Medication = {
   refillsAllowed: string;
 };
 
+type Interaction = {
+  drugs: string[];
+  description: string;
+  severity: "major" | "moderate" | "minor" | "unknown";
+};
+
 const BLANK_MED: Medication = {
   medicationName: "",
   genericName: "",
@@ -50,6 +62,337 @@ const BLANK_MED: Medication = {
   refillsAllowed: "0",
 };
 
+// ── Zambian / common formulary ────────────────────────────────────────────────
+// Covers the most commonly prescribed drugs in Zambian hospitals.
+// Doctor can still type any drug not in this list.
+const DRUG_FORMULARY = [
+  // Antibiotics
+  {
+    name: "Amoxicillin",
+    generic: "Amoxicillin",
+    strength: "500mg",
+    form: "capsule",
+  },
+  {
+    name: "Amoxicillin/Clavulanate",
+    generic: "Co-amoxiclav",
+    strength: "625mg",
+    form: "tablet",
+  },
+  {
+    name: "Ampicillin",
+    generic: "Ampicillin",
+    strength: "250mg",
+    form: "capsule",
+  },
+  {
+    name: "Azithromycin",
+    generic: "Azithromycin",
+    strength: "500mg",
+    form: "tablet",
+  },
+  {
+    name: "Ciprofloxacin",
+    generic: "Ciprofloxacin",
+    strength: "500mg",
+    form: "tablet",
+  },
+  {
+    name: "Cloxacillin",
+    generic: "Cloxacillin",
+    strength: "500mg",
+    form: "capsule",
+  },
+  {
+    name: "Doxycycline",
+    generic: "Doxycycline",
+    strength: "100mg",
+    form: "tablet",
+  },
+  {
+    name: "Erythromycin",
+    generic: "Erythromycin",
+    strength: "500mg",
+    form: "tablet",
+  },
+  {
+    name: "Metronidazole",
+    generic: "Metronidazole",
+    strength: "400mg",
+    form: "tablet",
+  },
+  {
+    name: "Trimethoprim/Sulfamethoxazole",
+    generic: "Co-trimoxazole",
+    strength: "480mg",
+    form: "tablet",
+  },
+  {
+    name: "Gentamicin",
+    generic: "Gentamicin",
+    strength: "80mg/2ml",
+    form: "injection",
+  },
+  {
+    name: "Ceftriaxone",
+    generic: "Ceftriaxone",
+    strength: "1g",
+    form: "injection",
+  },
+  {
+    name: "Benzylpenicillin",
+    generic: "Penicillin G",
+    strength: "1MU",
+    form: "injection",
+  },
+  // Antimalarials
+  {
+    name: "Artemether/Lumefantrine",
+    generic: "AL",
+    strength: "20/120mg",
+    form: "tablet",
+  },
+  {
+    name: "Artesunate",
+    generic: "Artesunate",
+    strength: "60mg",
+    form: "injection",
+  },
+  {
+    name: "Quinine",
+    generic: "Quinine sulfate",
+    strength: "300mg",
+    form: "tablet",
+  },
+  {
+    name: "Chloroquine",
+    generic: "Chloroquine",
+    strength: "250mg",
+    form: "tablet",
+  },
+  // Antiretrovirals
+  {
+    name: "Tenofovir/Lamivudine/Efavirenz",
+    generic: "TLE",
+    strength: "300/300/600mg",
+    form: "tablet",
+  },
+  {
+    name: "Tenofovir/Lamivudine/Dolutegravir",
+    generic: "TLD",
+    strength: "300/300/50mg",
+    form: "tablet",
+  },
+  {
+    name: "Nevirapine",
+    generic: "Nevirapine",
+    strength: "200mg",
+    form: "tablet",
+  },
+  // Analgesics
+  {
+    name: "Paracetamol",
+    generic: "Acetaminophen",
+    strength: "500mg",
+    form: "tablet",
+  },
+  {
+    name: "Ibuprofen",
+    generic: "Ibuprofen",
+    strength: "400mg",
+    form: "tablet",
+  },
+  {
+    name: "Diclofenac",
+    generic: "Diclofenac sodium",
+    strength: "50mg",
+    form: "tablet",
+  },
+  {
+    name: "Morphine",
+    generic: "Morphine sulfate",
+    strength: "10mg",
+    form: "tablet",
+  },
+  { name: "Tramadol", generic: "Tramadol", strength: "50mg", form: "capsule" },
+  {
+    name: "Aspirin",
+    generic: "Acetylsalicylic acid",
+    strength: "75mg",
+    form: "tablet",
+  },
+  // Cardiovascular
+  {
+    name: "Amlodipine",
+    generic: "Amlodipine",
+    strength: "5mg",
+    form: "tablet",
+  },
+  { name: "Atenolol", generic: "Atenolol", strength: "50mg", form: "tablet" },
+  { name: "Enalapril", generic: "Enalapril", strength: "5mg", form: "tablet" },
+  {
+    name: "Furosemide",
+    generic: "Frusemide",
+    strength: "40mg",
+    form: "tablet",
+  },
+  {
+    name: "Hydrochlorothiazide",
+    generic: "HCTZ",
+    strength: "25mg",
+    form: "tablet",
+  },
+  { name: "Digoxin", generic: "Digoxin", strength: "0.25mg", form: "tablet" },
+  { name: "Warfarin", generic: "Warfarin", strength: "5mg", form: "tablet" },
+  {
+    name: "Spironolactone",
+    generic: "Spironolactone",
+    strength: "25mg",
+    form: "tablet",
+  },
+  {
+    name: "Nifedipine",
+    generic: "Nifedipine",
+    strength: "10mg",
+    form: "tablet",
+  },
+  // Diabetes
+  {
+    name: "Metformin",
+    generic: "Metformin",
+    strength: "500mg",
+    form: "tablet",
+  },
+  {
+    name: "Glibenclamide",
+    generic: "Glyburide",
+    strength: "5mg",
+    form: "tablet",
+  },
+  {
+    name: "Insulin (Regular)",
+    generic: "Insulin",
+    strength: "100IU/ml",
+    form: "injection",
+  },
+  // Respiratory
+  {
+    name: "Salbutamol",
+    generic: "Albuterol",
+    strength: "100mcg",
+    form: "inhaler",
+  },
+  {
+    name: "Prednisolone",
+    generic: "Prednisolone",
+    strength: "5mg",
+    form: "tablet",
+  },
+  {
+    name: "Hydrocortisone",
+    generic: "Hydrocortisone",
+    strength: "100mg",
+    form: "injection",
+  },
+  {
+    name: "Theophylline",
+    generic: "Theophylline",
+    strength: "200mg",
+    form: "tablet",
+  },
+  // GI
+  {
+    name: "Omeprazole",
+    generic: "Omeprazole",
+    strength: "20mg",
+    form: "capsule",
+  },
+  {
+    name: "Ranitidine",
+    generic: "Ranitidine",
+    strength: "150mg",
+    form: "tablet",
+  },
+  {
+    name: "Oral Rehydration Salts",
+    generic: "ORS",
+    strength: "1 sachet",
+    form: "syrup",
+  },
+  { name: "Zinc Sulfate", generic: "Zinc", strength: "20mg", form: "tablet" },
+  {
+    name: "Mebendazole",
+    generic: "Mebendazole",
+    strength: "100mg",
+    form: "tablet",
+  },
+  // Vitamins / Supplements
+  {
+    name: "Ferrous Sulfate",
+    generic: "Iron",
+    strength: "200mg",
+    form: "tablet",
+  },
+  {
+    name: "Folic Acid",
+    generic: "Folic acid",
+    strength: "5mg",
+    form: "tablet",
+  },
+  {
+    name: "Vitamin A",
+    generic: "Retinol",
+    strength: "200,000IU",
+    form: "capsule",
+  },
+  // Antifungals
+  {
+    name: "Fluconazole",
+    generic: "Fluconazole",
+    strength: "150mg",
+    form: "capsule",
+  },
+  {
+    name: "Cotrimoxazole",
+    generic: "Co-trimoxazole",
+    strength: "960mg",
+    form: "tablet",
+  },
+  // Anticonvulsants
+  {
+    name: "Phenobarbital",
+    generic: "Phenobarbitone",
+    strength: "30mg",
+    form: "tablet",
+  },
+  {
+    name: "Phenytoin",
+    generic: "Phenytoin",
+    strength: "100mg",
+    form: "capsule",
+  },
+  { name: "Diazepam", generic: "Diazepam", strength: "5mg", form: "tablet" },
+  {
+    name: "Carbamazepine",
+    generic: "Carbamazepine",
+    strength: "200mg",
+    form: "tablet",
+  },
+  // TB
+  {
+    name: "Rifampicin/Isoniazid/Pyrazinamide/Ethambutol",
+    generic: "RHZE",
+    strength: "150/75/400/275mg",
+    form: "tablet",
+  },
+  {
+    name: "Rifampicin/Isoniazid",
+    generic: "RH",
+    strength: "150/75mg",
+    form: "tablet",
+  },
+];
+
 // ── Option lists ──────────────────────────────────────────────────────────────
 const DOSAGE_FORMS = [
   "tablet",
@@ -62,7 +405,6 @@ const DOSAGE_FORMS = [
   "inhaler",
   "suppository",
 ] as const;
-
 const FREQUENCIES = [
   { value: "once_daily", label: "Once daily" },
   { value: "twice_daily", label: "Twice daily" },
@@ -74,7 +416,6 @@ const FREQUENCIES = [
   { value: "as_needed", label: "As needed (PRN)" },
   { value: "stat", label: "Stat (immediately)" },
 ];
-
 const ROUTES = [
   { value: "oral", label: "Oral" },
   { value: "intravenous", label: "Intravenous" },
@@ -86,7 +427,7 @@ const ROUTES = [
   { value: "sublingual", label: "Sublingual" },
 ];
 
-// ── Dosage form colour ────────────────────────────────────────────────────────
+// ── Style maps ────────────────────────────────────────────────────────────────
 const FORM_COLOR: Record<string, { color: string; bg: string }> = {
   tablet: { color: "#2563eb", bg: "#eff6ff" },
   capsule: { color: "#7c3aed", bg: "#fdf4ff" },
@@ -99,7 +440,37 @@ const FORM_COLOR: Record<string, { color: string; bg: string }> = {
   suppository: { color: "#6b7280", bg: "#f9fafb" },
 };
 
-// ── Prescription status style ─────────────────────────────────────────────────
+const SEVERITY_CONFIG = {
+  major: {
+    color: "#dc2626",
+    bg: "#fef2f2",
+    border: "#fecaca",
+    label: "Major",
+    icon: ShieldAlert,
+  },
+  moderate: {
+    color: "#d97706",
+    bg: "#fffbeb",
+    border: "#fde68a",
+    label: "Moderate",
+    icon: TriangleAlert,
+  },
+  minor: {
+    color: "#2563eb",
+    bg: "#eff6ff",
+    border: "#bfdbfe",
+    label: "Minor",
+    icon: AlertCircle,
+  },
+  unknown: {
+    color: "#6b7280",
+    bg: "#f9fafb",
+    border: "#e5e7eb",
+    label: "Unknown",
+    icon: AlertCircle,
+  },
+};
+
 const RX_STATUS: Record<
   string,
   { bg: string; text: string; icon: React.ElementType }
@@ -110,20 +481,336 @@ const RX_STATUS: Record<
   cancelled: { bg: "#f9fafb", text: "#6b7280", icon: AlertCircle },
 };
 
+// ── OpenFDA interaction checker ───────────────────────────────────────────────
+async function checkInteractionsOpenFDA(
+  drugNames: string[],
+): Promise<Interaction[]> {
+  if (drugNames.length < 2) return [];
+
+  const interactions: Interaction[] = [];
+
+  // Check each pair
+  for (let i = 0; i < drugNames.length; i++) {
+    for (let j = i + 1; j < drugNames.length; j++) {
+      const drugA = drugNames[i].toLowerCase().split("/")[0].trim(); // handle combo drugs
+      const drugB = drugNames[j].toLowerCase().split("/")[0].trim();
+
+      try {
+        // OpenFDA drug label search — look for interactions mentioning both drugs
+        const query = encodeURIComponent(`drug_interactions:"${drugB}"`);
+        const url = `https://api.fda.gov/drug/label.json?search=openfda.generic_name:"${encodeURIComponent(drugA)}"+(${query})&limit=1`;
+
+        const res = await fetch(url);
+        if (!res.ok) continue;
+
+        const data = await res.json();
+        const label = data.results?.[0];
+        if (!label) continue;
+
+        const interactionText: string = label.drug_interactions?.[0] ?? "";
+        if (!interactionText) continue;
+
+        // Look for the other drug mentioned in interaction text
+        if (interactionText.toLowerCase().includes(drugB)) {
+          // Extract a relevant snippet (first sentence mentioning the drug)
+          const sentences = interactionText
+            .split(/[.!?]/)
+            .filter((s) => s.toLowerCase().includes(drugB));
+          const snippet = sentences[0]?.trim() ?? interactionText.slice(0, 200);
+
+          // Infer severity from keywords
+          let severity: Interaction["severity"] = "unknown";
+          const lc = snippet.toLowerCase();
+          if (
+            lc.includes("contraindicated") ||
+            lc.includes("fatal") ||
+            lc.includes("serious") ||
+            lc.includes("avoid")
+          )
+            severity = "major";
+          else if (
+            lc.includes("caution") ||
+            lc.includes("monitor") ||
+            lc.includes("increase") ||
+            lc.includes("decrease")
+          )
+            severity = "moderate";
+          else if (
+            lc.includes("may") ||
+            lc.includes("slight") ||
+            lc.includes("minor")
+          )
+            severity = "minor";
+
+          interactions.push({
+            drugs: [drugNames[i], drugNames[j]],
+            description:
+              snippet.length > 300 ? snippet.slice(0, 300) + "…" : snippet,
+            severity,
+          });
+        }
+      } catch {
+        // silently skip failed pair — don't block prescribing
+      }
+    }
+  }
+
+  return interactions;
+}
+
+// ── Drug autocomplete input ───────────────────────────────────────────────────
+function DrugAutocomplete({
+  value,
+  onChange,
+  onSelect,
+  placeholder,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onSelect: (drug: (typeof DRUG_FORMULARY)[0]) => void;
+  placeholder?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const filtered =
+    value.length >= 2
+      ? DRUG_FORMULARY.filter(
+          (d) =>
+            d.name.toLowerCase().includes(value.toLowerCase()) ||
+            d.generic.toLowerCase().includes(value.toLowerCase()),
+        ).slice(0, 8)
+      : [];
+
+  const showDropdown = focused && filtered.length > 0;
+
+  // Close on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      )
+        setOpen(false);
+    }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+        <input
+          value={value}
+          onChange={(e) => {
+            onChange(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => {
+            setFocused(true);
+            setOpen(true);
+          }}
+          onBlur={() => setTimeout(() => setFocused(false), 150)}
+          placeholder={placeholder ?? "Search drug name…"}
+          className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-800 bg-gray-50 focus:outline-none focus:border-cyan-400 focus:bg-white transition-colors"
+        />
+        {value && (
+          <button
+            type="button"
+            onClick={() => onChange("")}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
+      {showDropdown && open && (
+        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden">
+          {filtered.map((drug, i) => (
+            <button
+              key={i}
+              type="button"
+              onMouseDown={() => {
+                onSelect(drug);
+                setOpen(false);
+              }}
+              className="w-full flex items-center justify-between px-3.5 py-2.5 text-left hover:bg-cyan-50 transition-colors border-b border-gray-50 last:border-0"
+            >
+              <div>
+                <p className="text-sm font-semibold text-gray-900">
+                  {drug.name}
+                </p>
+                <p className="text-xs text-gray-400">
+                  {drug.generic} · {drug.strength}
+                </p>
+              </div>
+              <span
+                className="text-[10px] font-bold px-2 py-0.5 rounded-full capitalize flex-shrink-0"
+                style={{
+                  background: FORM_COLOR[drug.form]?.bg ?? "#f3f4f6",
+                  color: FORM_COLOR[drug.form]?.color ?? "#6b7280",
+                }}
+              >
+                {drug.form}
+              </span>
+            </button>
+          ))}
+          {/* Allow free text entry */}
+          {value.length >= 2 && (
+            <button
+              type="button"
+              onMouseDown={() => {
+                onSelect({
+                  name: value,
+                  generic: "",
+                  strength: "",
+                  form: "tablet",
+                });
+                setOpen(false);
+              }}
+              className="w-full flex items-center gap-2 px-3.5 py-2.5 text-left hover:bg-gray-50 transition-colors border-t border-gray-100"
+            >
+              <PlusCircle className="w-3.5 h-3.5 text-gray-400" />
+              <p className="text-sm text-gray-500">
+                Use "
+                <span className="font-semibold text-gray-700">{value}</span>" as
+                entered
+              </p>
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Interaction warning panel ─────────────────────────────────────────────────
+function InteractionPanel({
+  interactions,
+  checking,
+  onDismiss,
+}: {
+  interactions: Interaction[];
+  checking: boolean;
+  onDismiss: () => void;
+}) {
+  if (checking) {
+    return (
+      <div className="flex items-center gap-3 p-3.5 rounded-xl bg-blue-50 border border-blue-100">
+        <RefreshCw className="w-4 h-4 text-blue-500 animate-spin flex-shrink-0" />
+        <p className="text-sm font-semibold text-blue-700">
+          Checking drug interactions via OpenFDA…
+        </p>
+      </div>
+    );
+  }
+
+  if (!interactions.length) {
+    return (
+      <div className="flex items-center gap-3 p-3.5 rounded-xl bg-green-50 border border-green-100">
+        <ShieldCheck className="w-4 h-4 text-green-500 flex-shrink-0" />
+        <p className="text-sm font-semibold text-green-700">
+          No known interactions found between these medications
+        </p>
+      </div>
+    );
+  }
+
+  const hasMajor = interactions.some((i) => i.severity === "major");
+
+  return (
+    <div
+      className={`rounded-2xl border overflow-hidden ${hasMajor ? "border-red-200" : "border-amber-200"}`}
+    >
+      {/* Header */}
+      <div
+        className="flex items-center justify-between px-4 py-3"
+        style={{ background: hasMajor ? "#fef2f2" : "#fffbeb" }}
+      >
+        <div className="flex items-center gap-2.5">
+          <ShieldAlert
+            className={`w-4 h-4 flex-shrink-0 ${hasMajor ? "text-red-500" : "text-amber-500"}`}
+          />
+          <p
+            className={`text-sm font-bold ${hasMajor ? "text-red-800" : "text-amber-800"}`}
+          >
+            {interactions.length} Interaction
+            {interactions.length !== 1 ? "s" : ""} Found
+          </p>
+          {hasMajor && (
+            <span className="text-[10px] font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-full border border-red-200">
+              MAJOR
+            </span>
+          )}
+        </div>
+        <button
+          onClick={onDismiss}
+          className="text-gray-400 hover:text-gray-600"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+
+      {/* Interaction list */}
+      <div className="divide-y divide-gray-50 bg-white">
+        {interactions.map((interaction, i) => {
+          const cfg = SEVERITY_CONFIG[interaction.severity];
+          const SeverityIcon = cfg.icon;
+          return (
+            <div key={i} className="px-4 py-3.5">
+              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                <span
+                  className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-full border"
+                  style={{
+                    color: cfg.color,
+                    background: cfg.bg,
+                    borderColor: cfg.border,
+                  }}
+                >
+                  <SeverityIcon className="w-3 h-3" />
+                  {cfg.label}
+                </span>
+                <span className="text-xs font-bold text-gray-700">
+                  {interaction.drugs[0]}
+                </span>
+                <span className="text-xs text-gray-400">+</span>
+                <span className="text-xs font-bold text-gray-700">
+                  {interaction.drugs[1]}
+                </span>
+              </div>
+              <p className="text-xs text-gray-600 leading-relaxed">
+                {interaction.description}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Footer disclaimer */}
+      <div className="px-4 py-2.5 bg-gray-50 border-t border-gray-100">
+        <p className="text-[10px] text-gray-400">
+          Source: OpenFDA drug labels. Clinical judgement takes precedence.
+          Always verify with current prescribing information.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── Medication item row (inside expanded prescription) ────────────────────────
 function MedicationItem({ item }: { item: any }) {
   const fc = FORM_COLOR[item.dosageForm] ?? { color: "#6b7280", bg: "#f9fafb" };
-
   return (
     <div className="flex items-start gap-3 px-4 py-3.5">
-      {/* Dosage form chip */}
       <div
         className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 text-[10px] font-bold uppercase"
         style={{ background: fc.bg, color: fc.color }}
       >
         {item.dosageForm?.slice(0, 3)}
       </div>
-
       <div className="flex-1 min-w-0">
         <div className="flex items-start justify-between gap-2">
           <div>
@@ -139,7 +826,6 @@ function MedicationItem({ item }: { item: any }) {
               </p>
             )}
           </div>
-          {/* Dispensed status */}
           {(item.isDispensed ?? item.is_dispensed) ? (
             <span className="flex items-center gap-1 text-xs font-semibold text-green-600 flex-shrink-0">
               <CheckCircle2 className="w-3 h-3" /> Dispensed
@@ -150,8 +836,6 @@ function MedicationItem({ item }: { item: any }) {
             </span>
           )}
         </div>
-
-        {/* Dosing chip chain */}
         <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
           {[
             item.dose,
@@ -171,12 +855,9 @@ function MedicationItem({ item }: { item: any }) {
               </span>
             ))}
         </div>
-
-        {/* Quantity + refills */}
         <div className="flex items-center gap-3 mt-1.5">
           <span className="flex items-center gap-1 text-xs text-gray-400">
-            <Package className="w-3 h-3" />
-            Qty: {item.quantity}
+            <Package className="w-3 h-3" /> Qty: {item.quantity}
           </span>
           {(item.refillsAllowed ?? item.refills_allowed) > 0 && (
             <span className="flex items-center gap-1 text-xs text-gray-400">
@@ -186,7 +867,6 @@ function MedicationItem({ item }: { item: any }) {
             </span>
           )}
         </div>
-
         {item.instructions && (
           <p className="text-xs text-gray-500 mt-1.5 italic">
             "{item.instructions}"
@@ -198,7 +878,6 @@ function MedicationItem({ item }: { item: any }) {
 }
 
 // ── Prescription record card ──────────────────────────────────────────────────
-// Items are lazy-loaded when the card is first expanded.
 function PrescriptionRecord({ rx, index }: { rx: any; index: number }) {
   const [open, setOpen] = useState(index === 0);
   const [items, setItems] = useState<any[] | null>(rx.items ?? null);
@@ -208,23 +887,16 @@ function PrescriptionRecord({ rx, index }: { rx: any; index: number }) {
   const sc = RX_STATUS[rx.status] ?? RX_STATUS.prescribed;
   const StatusIcon = sc.icon;
 
-  // ── Lazy-fetch items on first open ─────────────────────────────────────────
   const handleToggle = useCallback(async () => {
     const willOpen = !open;
     setOpen(willOpen);
-
-    // Only fetch if we don't have items yet and we're opening
     if (willOpen && items === null && !fetching) {
       setFetching(true);
       setFetchErr(null);
       try {
         const res = await visitApi.getPrescriptionDetail(rx.id);
-        // Response shape: { success, data: { prescription, items } }
         const data = res.data?.data ?? res.data;
-        const fetched =
-          data?.items ?? // { data: { items: [] } }
-          data?.prescription?.items ?? // nested
-          [];
+        const fetched = data?.items ?? data?.prescription?.items ?? [];
         setItems(Array.isArray(fetched) ? fetched : []);
       } catch (err: any) {
         setFetchErr(
@@ -244,7 +916,6 @@ function PrescriptionRecord({ rx, index }: { rx: any; index: number }) {
 
   return (
     <div className="rounded-2xl border border-gray-100 overflow-hidden">
-      {/* Header */}
       <button
         onClick={handleToggle}
         className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50/60 transition-colors"
@@ -252,7 +923,6 @@ function PrescriptionRecord({ rx, index }: { rx: any; index: number }) {
         <div className="w-9 h-9 rounded-xl bg-cyan-50 flex items-center justify-center flex-shrink-0">
           <Pill className="w-4 h-4 text-cyan-600" />
         </div>
-
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-sm font-bold text-gray-800 font-mono">
@@ -284,7 +954,6 @@ function PrescriptionRecord({ rx, index }: { rx: any; index: number }) {
             )}
           </div>
         </div>
-
         <div className="flex items-center gap-2 flex-shrink-0">
           {fetching && (
             <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />
@@ -296,14 +965,12 @@ function PrescriptionRecord({ rx, index }: { rx: any; index: number }) {
           )}
         </div>
       </button>
-
-      {/* Body */}
       {open && (
         <div className="border-t border-gray-100">
           {fetching ? (
             <div className="flex items-center gap-2 px-4 py-5 text-sm text-gray-400">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Loading prescription items…
+              <Loader2 className="w-4 h-4 animate-spin" /> Loading prescription
+              items…
             </div>
           ) : fetchErr ? (
             <div className="flex items-center gap-2 px-4 py-4 bg-red-50 text-sm text-red-600">
@@ -318,7 +985,7 @@ function PrescriptionRecord({ rx, index }: { rx: any; index: number }) {
             </div>
           ) : (
             <div className="px-4 py-5 text-sm text-gray-400 italic">
-              No medication items found for this prescription.
+              No medication items found.
             </div>
           )}
         </div>
@@ -345,7 +1012,7 @@ function MedRow({
 
   return (
     <div className="rounded-2xl border border-gray-100 overflow-hidden">
-      {/* Row header — live preview */}
+      {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3 bg-gray-50/60 border-b border-gray-100">
         <div
           className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 text-[10px] font-bold uppercase transition-all"
@@ -375,14 +1042,20 @@ function MedRow({
       </div>
 
       <div className="p-4 space-y-3 bg-white">
-        {/* Name + strength */}
+        {/* Drug name autocomplete + strength */}
         <div className="grid grid-cols-3 gap-3">
           <div className="col-span-2">
             <FieldGroup label="Drug Name *">
-              <InputField
+              <DrugAutocomplete
                 value={med.medicationName}
-                onChange={(v: string) => onChange("medicationName", v)}
-                placeholder="e.g. Amoxicillin"
+                onChange={(v) => onChange("medicationName", v)}
+                onSelect={(drug) => {
+                  onChange("medicationName", drug.name);
+                  if (drug.generic) onChange("genericName", drug.generic);
+                  if (drug.strength) onChange("strength", drug.strength);
+                  if (drug.form) onChange("dosageForm", drug.form);
+                }}
+                placeholder="Search or type drug name…"
               />
             </FieldGroup>
           </div>
@@ -415,7 +1088,7 @@ function MedRow({
           </FieldGroup>
         </div>
 
-        {/* Dosing group */}
+        {/* Dosing */}
         <div className="p-3 rounded-xl bg-gray-50 border border-gray-100">
           <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2.5">
             Dosing
@@ -497,12 +1170,55 @@ export function PrescriptionsTab({
     prescriptions.length === 0 && !isCompleted,
   );
   const [meds, setMeds] = useState<Medication[]>([{ ...BLANK_MED }]);
+  const [interactions, setInteractions] = useState<Interaction[] | null>(null);
+  const [checking, setChecking] = useState(false);
+  const [lastChecked, setLastChecked] = useState<string[]>([]);
 
   const addMed = () => setMeds((p) => [...p, { ...BLANK_MED }]);
-  const removeMed = (i: number) =>
+  const removeMed = (i: number) => {
     setMeds((p) => p.filter((_, idx) => idx !== i));
-  const updateMed = (i: number, field: keyof Medication, v: string) =>
+    setInteractions(null); // reset interactions when drug removed
+  };
+  const updateMed = (i: number, field: keyof Medication, v: string) => {
     setMeds((p) => p.map((m, idx) => (idx === i ? { ...m, [field]: v } : m)));
+    // Auto-check on drug name change if we have 2+ filled drugs
+    if (field === "medicationName") setInteractions(null);
+  };
+
+  // ── Run interaction check ──────────────────────────────────────────────────
+  const runInteractionCheck = useCallback(
+    async (drugNames: string[]) => {
+      const names = drugNames.filter(Boolean);
+      if (names.length < 2) return;
+      // Skip if same list already checked
+      const key = names.sort().join("|");
+      if (key === lastChecked.sort().join("|") && interactions !== null) return;
+
+      setChecking(true);
+      setInteractions(null);
+      try {
+        const found = await checkInteractionsOpenFDA(names);
+        setInteractions(found);
+        setLastChecked(names);
+      } catch {
+        setInteractions([]);
+      } finally {
+        setChecking(false);
+      }
+    },
+    [lastChecked, interactions],
+  );
+
+  // Auto-check when a new drug name is fully entered (blur-like effect via deps)
+  const filledDrugNames = meds
+    .map((m) => m.medicationName.trim())
+    .filter(Boolean);
+  useEffect(() => {
+    if (filledDrugNames.length >= 2) {
+      const timer = setTimeout(() => runInteractionCheck(filledDrugNames), 800);
+      return () => clearTimeout(timer);
+    }
+  }, [filledDrugNames.join(",")]);
 
   const handleSubmit = async () => {
     const valid = meds.filter(
@@ -529,6 +1245,8 @@ export function PrescriptionsTab({
       });
       setMeds([{ ...BLANK_MED }]);
       setShowForm(false);
+      setInteractions(null);
+      setLastChecked([]);
       onSaved();
     } catch (err: any) {
       onError(
@@ -540,13 +1258,15 @@ export function PrescriptionsTab({
   };
 
   const filledCount = meds.filter((m) => m.medicationName.trim()).length;
+  const hasMajorInteraction =
+    interactions?.some((i) => i.severity === "major") ?? false;
 
   return (
     <div
       className="p-5 space-y-4"
       style={{ fontFamily: "'DM Sans', sans-serif" }}
     >
-      {/* ── Past prescriptions ─────────────────────────────────────────────── */}
+      {/* ── Past prescriptions ─────────────────────────────────────────── */}
       {prescriptions.length > 0 && (
         <div>
           <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2.5 px-0.5">
@@ -560,15 +1280,14 @@ export function PrescriptionsTab({
         </div>
       )}
 
-      {/* ── New prescription form ──────────────────────────────────────────── */}
+      {/* ── New prescription form ──────────────────────────────────────── */}
       {!isCompleted &&
         (!showForm ? (
           <button
             onClick={() => setShowForm(true)}
             className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-dashed border-gray-200 text-sm font-semibold text-gray-400 hover:border-cyan-300 hover:text-cyan-600 hover:bg-cyan-50/40 transition-all"
           >
-            <PlusCircle className="w-4 h-4" />
-            New Prescription
+            <PlusCircle className="w-4 h-4" /> New Prescription
           </button>
         ) : (
           <div className="rounded-2xl border border-cyan-100 overflow-hidden">
@@ -584,7 +1303,7 @@ export function PrescriptionsTab({
                 <p className="text-xs text-gray-400 mt-0.5">
                   {filledCount > 0
                     ? `${filledCount} medication${filledCount !== 1 ? "s" : ""} added`
-                    : "Add one or more medications below"}
+                    : "Search or type drug names below"}
                 </p>
               </div>
               {prescriptions.length > 0 && (
@@ -592,6 +1311,7 @@ export function PrescriptionsTab({
                   onClick={() => {
                     setShowForm(false);
                     setMeds([{ ...BLANK_MED }]);
+                    setInteractions(null);
                   }}
                   className="ml-auto text-xs text-gray-400 hover:text-gray-600 font-medium"
                 >
@@ -616,9 +1336,64 @@ export function PrescriptionsTab({
                 onClick={addMed}
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-gray-200 text-sm text-gray-400 hover:border-cyan-400 hover:text-cyan-600 hover:bg-cyan-50/40 transition-all"
               >
-                <PlusCircle className="w-4 h-4" />
-                Add another medication
+                <PlusCircle className="w-4 h-4" /> Add another medication
               </button>
+
+              {/* ── Interaction checker ──────────────────────────────────── */}
+              {filledCount >= 1 && (
+                <div className="space-y-2 pt-1">
+                  {/* Manual check button — always shown when 2+ drugs */}
+                  {filledCount >= 2 && (
+                    <button
+                      onClick={() => runInteractionCheck(filledDrugNames)}
+                      disabled={checking}
+                      className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors disabled:opacity-50"
+                      style={{
+                        background: "#f0fdf4",
+                        borderColor: "#bbf7d0",
+                        color: "#166534",
+                      }}
+                    >
+                      {checking ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />{" "}
+                          Checking…
+                        </>
+                      ) : (
+                        <>
+                          <ShieldAlert className="w-3.5 h-3.5" /> Check Drug
+                          Interactions
+                        </>
+                      )}
+                    </button>
+                  )}
+
+                  {/* Results panel */}
+                  {(checking || interactions !== null) && (
+                    <InteractionPanel
+                      interactions={interactions ?? []}
+                      checking={checking}
+                      onDismiss={() => setInteractions(null)}
+                    />
+                  )}
+                </div>
+              )}
+
+              {/* Major interaction warning on submit */}
+              {hasMajorInteraction && (
+                <div className="flex items-start gap-3 p-3.5 rounded-xl bg-red-50 border border-red-200">
+                  <ShieldAlert className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-bold text-red-800">
+                      Major interaction detected
+                    </p>
+                    <p className="text-xs text-red-600 mt-0.5">
+                      Review the interaction above before prescribing. You can
+                      still proceed if clinically indicated.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-end pt-3 border-t border-gray-100">
                 <SubmitBtn
@@ -635,7 +1410,7 @@ export function PrescriptionsTab({
           </div>
         ))}
 
-      {/* ── Empty state ────────────────────────────────────────────────────── */}
+      {/* ── Empty state ────────────────────────────────────────────────── */}
       {prescriptions.length === 0 && isCompleted && (
         <div className="flex flex-col items-center gap-2 py-10 rounded-2xl border border-dashed border-gray-200 bg-gray-50/60">
           <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center">

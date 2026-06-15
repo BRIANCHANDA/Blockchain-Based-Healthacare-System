@@ -725,4 +725,304 @@ export const appointmentRouter = createRouter()
             console.error('[APPOINTMENT_RESCHEDULE]', err);
             return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
         }
+    })
+
+
+
+
+    // ── ADD THESE ROUTES to backend/src/routes/appointments.ts ───────────────────
+    // Paste after the existing .reschedule route, before the closing semicolon.
+    //
+    // Also add this import at the top of appointments.ts if not already there:
+    //   import { patientInstitutionRegistrations } from '../db/schema';
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // GET /appointments/my
+    // Patient views their own appointments (scheduled + past).
+    // ══════════════════════════════════════════════════════════════════════════
+    .openapi(createRoute({
+        tags: ['Appointments'],
+        summary: 'Patient — list my appointments',
+        method: 'get',
+        path: '/my',
+        security: [{ bearerAuth: [] }],
+        middleware: [authMiddleware],
+        request: {
+            query: z.object({
+                status: z.enum(['scheduled', 'in-progress', 'completed', 'cancelled']).optional(),
+                limit: z.string().regex(/^\d+$/).transform(Number).optional().default('50'),
+                offset: z.string().regex(/^\d+$/).transform(Number).optional().default('0'),
+            }),
+        },
+        responses: {
+            200: { content: { 'application/json': { schema: successData } }, description: 'My appointments' },
+            403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+            500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+        },
+    }), async (c) => {
+        try {
+            const userType = c.get('userType');
+            const userId = c.get('userId');
+
+            if (userType !== 'patient')
+                return c.json({ success: false, error: { message: 'Patients only' } }, 403);
+
+            const { status, limit, offset } = c.req.valid('query');
+
+            const conditions: any[] = [eq(visits.patientId, userId)];
+
+            // Only show APT- prefixed visits (actual appointments, not regular visits)
+            conditions.push(sql`${visits.visitNumber} LIKE 'APT-%'`);
+
+            if (status) {
+                conditions.push(eq(visits.status, status as any));
+            } else {
+                // Default: all except cancelled (patient can toggle)
+            }
+
+            const rows = await db
+                .select({
+                    id: visits.id,
+                    visitNumber: visits.visitNumber,
+                    visitType: visits.visitType,
+                    priority: visits.priority,
+                    status: visits.status,
+                    admissionDate: visits.admissionDate,
+                    chiefComplaint: visits.chiefComplaint,
+                    admittingDiagnosis: visits.admittingDiagnosis,
+                    wardOrRoom: visits.wardOrRoom,
+                    institutionId: visits.institutionId,
+                    createdByPractitionerId: visits.createdByPractitionerId,
+                    institutionName: institutions.institutionName,
+                    doctorFirst: practitioners.firstNameEncrypted,
+                    doctorLast: practitioners.lastNameEncrypted,
+                    specialization: practitioners.specialization,
+                })
+                .from(visits)
+                .leftJoin(institutions, eq(institutions.id, visits.institutionId))
+                .leftJoin(practitioners, eq(practitioners.id, visits.assignedDoctorId))
+                .where(and(...conditions))
+                .orderBy(asc(visits.admissionDate))
+                .limit(limit)
+                .offset(offset);
+
+            const result = await Promise.all(rows.map(async (r) => {
+                const { doctorFirst, doctorLast, ...rest } = r;
+                return {
+                    ...rest,
+                    doctorName: doctorFirst && doctorLast
+                        ? await decryptName(doctorFirst, doctorLast)
+                        : null,
+                    // Is this a patient-requested appointment?
+                    isPatientRequested: r.visitNumber.startsWith('APT-REQ-'),
+                };
+            }));
+
+            return c.json({ success: true, data: { appointments: result, total: result.length } });
+        } catch (err: any) {
+            console.error('[MY_APPOINTMENTS]', err);
+            return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+        }
+    })
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // POST /appointments/request
+    // Patient submits an appointment request to a hospital they've visited before.
+    // Creates a scheduled visit with visitNumber = APT-REQ-XXXX.
+    // The receptionist at that hospital will see it in their pending queue
+    // and confirm/reschedule/cancel via the existing endpoints.
+    // ══════════════════════════════════════════════════════════════════════════
+    .openapi(createRoute({
+        tags: ['Appointments'],
+        summary: 'Patient — request an appointment',
+        method: 'post',
+        path: '/request',
+        security: [{ bearerAuth: [] }],
+        middleware: [authMiddleware],
+        request: {
+            body: {
+                content: {
+                    'application/json': {
+                        schema: z.object({
+                            institutionId: z.string().uuid(),
+                            preferredDate: z.string().datetime(),
+                            reason: z.string().min(10, 'Please describe your reason (min 10 chars)'),
+                            department: z.string().optional(), // e.g. "Cardiology", "General OPD"
+                            visitType: z.enum(['outpatient', 'consultation']).default('outpatient'),
+                            priority: z.enum(['routine', 'urgent']).default('routine'),
+                        }),
+                    },
+                },
+            },
+        },
+        responses: {
+            201: {
+                content: {
+                    'application/json': {
+                        schema: z.object({
+                            success: z.boolean(),
+                            data: z.object({
+                                appointmentId: z.string(),
+                                visitNumber: z.string(),
+                                message: z.string(),
+                            }),
+                        }),
+                    },
+                },
+                description: 'Request submitted',
+            },
+            400: { content: { 'application/json': { schema: errorSchema } }, description: 'Bad request' },
+            403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+            404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' },
+            500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+        },
+    }), async (c) => {
+        try {
+            const userType = c.get('userType');
+            const userId = c.get('userId');
+
+            if (userType !== 'patient')
+                return c.json({ success: false, error: { message: 'Patients only' } }, 403);
+
+            const body = c.req.valid('json');
+
+            // Verify the patient has had a past visit at this institution
+            const pastVisit = await db
+                .select({ id: visits.id })
+                .from(visits)
+                .where(and(
+                    eq(visits.patientId, userId),
+                    eq(visits.institutionId, body.institutionId),
+                ))
+                .limit(1);
+
+            if (!pastVisit.length)
+                return c.json({
+                    success: false,
+                    error: { message: 'You can only request appointments at hospitals where you have had a past visit' },
+                }, 403);
+
+            // Verify institution exists and is active
+            const institution = await db
+                .select({ id: institutions.id, institutionName: institutions.institutionName })
+                .from(institutions)
+                .where(and(eq(institutions.id, body.institutionId), eq(institutions.isActive, true)))
+                .limit(1);
+
+            if (!institution.length)
+                return c.json({ success: false, error: { message: 'Institution not found' } }, 404);
+
+            const preferredDate = new Date(body.preferredDate);
+            if (preferredDate <= new Date())
+                return c.json({ success: false, error: { message: 'Preferred date must be in the future' } }, 400);
+
+            // Get patient blockchain address for fabric
+            const patient = await db
+                .select({ blockchainAddress: patients.blockchainAddress })
+                .from(patients)
+                .where(eq(patients.id, userId))
+                .limit(1);
+
+            // Build visit number: APT-REQ- prefix so receptionists can identify these
+            const visitNumber = `APT-REQ-${new Date().getFullYear()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+
+            const visitHash = generateRecordHash({
+                patientId: userId,
+                visitNumber,
+                institutionId: body.institutionId,
+                preferredDate: body.preferredDate,
+                requestedAt: new Date().toISOString(),
+            });
+
+            const chiefComplaint = body.department
+                ? `${body.reason} [Dept: ${body.department}]`
+                : body.reason;
+
+            const [newVisit] = await db.insert(visits).values({
+                patientId: userId,
+                institutionId: body.institutionId,
+                visitNumber,
+                visitType: body.visitType,
+                priority: body.priority,
+                chiefComplaint,
+                admittingDiagnosis: body.department ?? null, // reuse field for department hint
+                admissionDate: preferredDate,           // preferred date — receptionist may change
+                status: 'scheduled',
+                blockchainHash: visitHash,
+                createdByPractitionerId: null,                    // patient-created, not staff
+            }).returning({ id: visits.id, visitNumber: visits.visitNumber });
+
+            if (patient[0]?.blockchainAddress) {
+                await storeRecordHash(newVisit.id, patient[0].blockchainAddress, visitHash, 'appointment_request')
+                    .catch(() => { }); // non-blocking
+            }
+
+            return c.json({
+                success: true,
+                data: {
+                    appointmentId: newVisit.id,
+                    visitNumber: newVisit.visitNumber,
+                    message: `Appointment request submitted to ${institution[0].institutionName}. They will confirm your date and time.`,
+                },
+            }, 201);
+        } catch (err: any) {
+            console.error('[APPOINTMENT_REQUEST]', err);
+            return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+        }
+    })
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // PATCH /appointments/:appointmentId/cancel-request
+    // Patient cancels their own pending request.
+    // ══════════════════════════════════════════════════════════════════════════
+    .openapi(createRoute({
+        tags: ['Appointments'],
+        summary: 'Patient — cancel my appointment request',
+        method: 'patch',
+        path: '/:appointmentId/cancel-request',
+        security: [{ bearerAuth: [] }],
+        middleware: [authMiddleware],
+        request: {
+            params: z.object({ appointmentId: z.string().uuid() }),
+        },
+        responses: {
+            200: { content: { 'application/json': { schema: successData } }, description: 'Cancelled' },
+            403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+            404: { content: { 'application/json': { schema: errorSchema } }, description: 'Not found' },
+            500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+        },
+    }), async (c) => {
+        try {
+            const userType = c.get('userType');
+            const userId = c.get('userId');
+
+            if (userType !== 'patient')
+                return c.json({ success: false, error: { message: 'Patients only' } }, 403);
+
+            const { appointmentId } = c.req.valid('param');
+
+            const [appt] = await db
+                .select({ id: visits.id, status: visits.status, patientId: visits.patientId, visitNumber: visits.visitNumber })
+                .from(visits)
+                .where(eq(visits.id, appointmentId))
+                .limit(1);
+
+            if (!appt)
+                return c.json({ success: false, error: { message: 'Appointment not found' } }, 404);
+
+            if (appt.patientId !== userId)
+                return c.json({ success: false, error: { message: 'Not your appointment' } }, 403);
+
+            if (appt.status !== 'scheduled')
+                return c.json({ success: false, error: { message: `Cannot cancel — appointment is ${appt.status}` } }, 403);
+
+            await db.update(visits)
+                .set({ status: 'cancelled', updatedAt: new Date() })
+                .where(eq(visits.id, appointmentId));
+
+            return c.json({ success: true, data: { message: 'Appointment request cancelled' } });
+        } catch (err: any) {
+            console.error('[APPOINTMENT_CANCEL_REQUEST]', err);
+            return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
+        }
     });

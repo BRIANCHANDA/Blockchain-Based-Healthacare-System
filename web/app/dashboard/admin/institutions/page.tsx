@@ -1,7 +1,10 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuthStore } from "@/lib/store";
 import { institutionApi } from "@/lib/api";
-import { Building2, RefreshCw, Plus, ChevronRight, X } from "lucide-react";
+import { Building2, RefreshCw, Plus, X, ShieldAlert } from "lucide-react";
+import { PhoneInput } from "@/components/ui/PhoneInput";
 
 function SkeletonCard() {
   return (
@@ -13,20 +16,41 @@ function SkeletonCard() {
   );
 }
 
+const TYPE_COLORS: Record<string, { bg: string; color: string }> = {
+  hospital: { bg: "#eff6ff", color: "#2563eb" },
+  clinic: { bg: "#f0fdf4", color: "#16a34a" },
+  laboratory: { bg: "#fdf4ff", color: "#9333ea" },
+  pharmacy: { bg: "#fff7ed", color: "#ea580c" },
+};
+
 export default function AdminInstitutionsPage() {
+  const router = useRouter();
+  const { user } = useAuthStore();
+  const isSuperAdmin = !(user as any)?.institutionId;
+
   const [institutions, setInstitutions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({
-    institutionName: "",
-    institutionType: "hospital",
-    licenseNumber: "",
-    bedCapacity: "",
-  });
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [form, setForm] = useState({
+    institutionName: "",
+    institutionCode: "",
+    institutionType: "hospital",
+    licenseNumber: "",
+    address: "",
+    phone: "+260",
+    bedCapacity: "",
+  });
+
+  // Hard guard — hospital admins should not be on this page
+  useEffect(() => {
+    if (user && !isSuperAdmin) {
+      router.replace("/dashboard/admin");
+    }
+  }, [user, isSuperAdmin]);
 
   const load = async (silent = false) => {
     if (silent) setRefreshing(true);
@@ -47,8 +71,12 @@ export default function AdminInstitutionsPage() {
   }, []);
 
   const handleSubmit = async () => {
-    if (!form.institutionName || !form.licenseNumber) {
-      setError("Name and license number are required.");
+    if (!form.institutionName || !form.institutionCode || !form.licenseNumber || !form.address || !form.phone) {
+      setError("Name, institution code, license number, address, and phone are required.");
+      return;
+    }
+    if (!/^\+\d{10,13}$/.test(form.phone)) {
+      setError("Enter a valid phone number (e.g. +260977123456).");
       return;
     }
     setSubmitting(true);
@@ -62,8 +90,11 @@ export default function AdminInstitutionsPage() {
       setShowForm(false);
       setForm({
         institutionName: "",
+        institutionCode: "",
         institutionType: "hospital",
         licenseNumber: "",
+        address: "",
+        phone: "+260",
         bedCapacity: "",
       });
       await load(true);
@@ -76,12 +107,23 @@ export default function AdminInstitutionsPage() {
     }
   };
 
-  const TYPE_COLORS: Record<string, { bg: string; color: string }> = {
-    hospital: { bg: "#eff6ff", color: "#2563eb" },
-    clinic: { bg: "#f0fdf4", color: "#16a34a" },
-    laboratory: { bg: "#fdf4ff", color: "#9333ea" },
-    pharmacy: { bg: "#fff7ed", color: "#ea580c" },
-  };
+  // Show access denied if hospital admin somehow reaches this page
+  if (user && !isSuperAdmin) {
+    return (
+      <div className="flex flex-col items-center justify-center py-32 gap-4">
+        <ShieldAlert className="w-12 h-12 text-red-300" />
+        <p className="text-sm font-semibold text-gray-500">
+          Access restricted to Super Admins
+        </p>
+        <button
+          onClick={() => router.replace("/dashboard/admin")}
+          className="text-xs text-green-700 underline"
+        >
+          Back to Dashboard
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
@@ -130,7 +172,6 @@ export default function AdminInstitutionsPage() {
         </div>
       )}
 
-      {/* Create form */}
       {showForm && (
         <div className="bg-white rounded-2xl border border-green-100 shadow-sm p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
@@ -152,9 +193,19 @@ export default function AdminInstitutionsPage() {
                 placeholder: "e.g. City General Hospital",
               },
               {
+                key: "institutionCode",
+                label: "Institution Code",
+                placeholder: "e.g. CGH-001",
+              },
+              {
                 key: "licenseNumber",
                 label: "License Number",
                 placeholder: "e.g. LIC-2024-001",
+              },
+              {
+                key: "address",
+                label: "Address",
+                placeholder: "e.g. 123 Main St, Lusaka",
               },
               {
                 key: "bedCapacity",
@@ -178,6 +229,15 @@ export default function AdminInstitutionsPage() {
                 />
               </div>
             ))}
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                Phone
+              </label>
+              <PhoneInput
+                value={form.phone}
+                onChange={(v) => setForm((f) => ({ ...f, phone: v }))}
+              />
+            </div>
             <div>
               <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
                 Type
@@ -219,7 +279,6 @@ export default function AdminInstitutionsPage() {
         </div>
       )}
 
-      {/* Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
         {loading ? (
           Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
@@ -239,7 +298,7 @@ export default function AdminInstitutionsPage() {
             return (
               <div
                 key={inst.id}
-                className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow group"
+                className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div
@@ -268,7 +327,7 @@ export default function AdminInstitutionsPage() {
                   <span>License: {inst.licenseNumber}</span>
                   {inst.bedCapacity && <span>{inst.bedCapacity} beds</span>}
                 </div>
-                <div className="mt-3 pt-3 border-t border-gray-50 flex items-center justify-between">
+                <div className="mt-3 pt-3 border-t border-gray-50">
                   <span
                     className={`text-xs font-semibold px-2 py-0.5 rounded-full ${inst.isActive ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}`}
                   >

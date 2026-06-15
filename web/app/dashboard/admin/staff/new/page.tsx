@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { api, institutionApi } from "@/lib/api";
+import { PhoneInput } from "@/components/ui/PhoneInput";
 import {
   ArrowLeft,
   UserPlus,
@@ -112,6 +113,7 @@ export default function NewStaffPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [emailError, setEmailError] = useState("");
 
   // Institutions
   const [institutions, setInstitutions] = useState<
@@ -130,10 +132,10 @@ export default function NewStaffPage() {
     department: "",
     specialization: "",
     shift: "",
-    phoneNumber: "",
+    phoneNumber: "+260",
     email: "",
-    password: "",
-    confirmPassword: "",
+    password: "test1234",
+    confirmPassword: "test1234",
     qualifications: "",
   });
 
@@ -182,6 +184,17 @@ export default function NewStaffPage() {
       !form.institutionId
     ) {
       setError("Please fill in all required fields, including Hospital.");
+      return;
+    }
+
+    if (!/^\+\d{10,13}$/.test(form.phoneNumber)) {
+      setError("Enter a valid phone number (e.g. +260977123456).");
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) {
+      setEmailError("Enter a valid email address.");
+      setError("Enter a valid email address.");
       return;
     }
 
@@ -262,6 +275,7 @@ export default function NewStaffPage() {
             <button
               onClick={() => {
                 setSuccess(false);
+                setEmailError("");
                 setForm({
                   role: "practitioner",
                   firstName: "",
@@ -272,10 +286,10 @@ export default function NewStaffPage() {
                   department: "",
                   specialization: "",
                   shift: "",
-                  phoneNumber: "",
+                  phoneNumber: "+260",
                   email: "",
-                  password: "",
-                  confirmPassword: "",
+                  password: "test1234",
+                  confirmPassword: "test1234",
                   qualifications: "",
                 });
               }}
@@ -378,20 +392,31 @@ export default function NewStaffPage() {
               className={inputClass}
             />
           </Field>
-          <Field label="Phone Number">
-            <input
+          <Field label="Phone Number" required>
+            <PhoneInput
               value={form.phoneNumber}
-              onChange={(e) => setFormField("phoneNumber", e.target.value)}
-              className={inputClass}
+              onChange={(v) => setFormField("phoneNumber", v)}
             />
           </Field>
           <Field label="Email Address" required>
             <input
               type="email"
               value={form.email}
-              onChange={(e) => setFormField("email", e.target.value)}
-              className={inputClass}
+              onChange={(e) => {
+                setFormField("email", e.target.value);
+                if (emailError) setEmailError("");
+              }}
+              onBlur={() => {
+                if (form.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
+                  setEmailError("Enter a valid email address.");
+                else
+                  setEmailError("");
+              }}
+              className={`${inputClass} ${emailError ? "border-red-300 focus:border-red-500 focus:ring-red-500/10" : ""}`}
             />
+            {emailError && (
+              <p className="mt-1 text-xs text-red-500">{emailError}</p>
+            )}
           </Field>
         </div>
       </div>
@@ -517,7 +542,7 @@ export default function NewStaffPage() {
               type="password"
               value={form.password}
               onChange={(e) => setFormField("password", e.target.value)}
-              placeholder="Leave blank for default: test1234"
+              placeholder="Password"
               className={inputClass}
             />
           </Field>

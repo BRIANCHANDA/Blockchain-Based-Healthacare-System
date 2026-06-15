@@ -9,76 +9,79 @@ import {
   Modal,
   StatusBar,
   Platform,
+  FlatList,
+  RefreshControl,
 } from "react-native";
-import { MaterialIcons as Icon } from "@expo/vector-icons";
+import { MaterialIcons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getMyReferrals } from "../../api/records";
 
-// ── Design tokens ─────────────────────────────────────────────────────────────
+// ── Design tokens ────────────────────────────────────────────────────────────
 const C = {
-  ink: "#1A1D2E",
-  inkSoft: "#5A5F7A",
-  inkMuted: "#9498B3",
-  teal: "#0D9488",
-  tealDark: "#0F766E",
-  tealDeep: "#115E59",
-  tealGhost: "#F0FDFA",
+  primary: "#059669",
+  primaryDark: "#047857",
+  primaryGhost: "#ECFDF5",
+  primaryLight: "#D1FAE5",
+  coral: "#FF5757",
+  coralLight: "#FFE4E4",
   amber: "#F59E0B",
   amberLight: "#FEF3C7",
-  coral: "#EF4444",
-  coralLight: "#FEE2E2",
   blue: "#3B82F6",
-  green: "#16A34A",
-  greenLight: "#F0FDF4",
-  greenBorder: "#BBF7D0",
-  bg: "#F8F9FC",
+  blueLight: "#DBEAFE",
+  violet: "#8B5CF6",
+  violetLight: "#EDE9FE",
+  orange: "#EA580C",
+  orangeLight: "#FFF7ED",
+  ink: "#0A0E1A",
+  inkSoft: "#4B5563",
+  inkMuted: "#9CA3AF",
+  inkSubtle: "#D1D5DB",
+  bg: "#FAFAFB",
+  bgAlt: "#F4F5F7",
   card: "#FFFFFF",
-  cardBorder: "#ECEEF4",
-  divider: "#F1F2F6",
+  cardBorder: "#E5E7EB",
+  divider: "#F3F4F6",
 };
 
 const URGENCY: Record<
   string,
-  { color: string; bg: string; dot: string; border: string; label: string }
+  { color: string; bg: string; border: string; label: string }
 > = {
   routine: {
-    color: C.green,
-    bg: C.greenLight,
-    dot: C.green,
-    border: C.greenBorder,
+    color: C.primary,
+    bg: C.primaryGhost,
+    border: C.primaryLight,
     label: "Routine",
   },
   urgent: {
     color: C.amber,
     bg: C.amberLight,
-    dot: C.amber,
     border: "#FDE68A",
     label: "Urgent",
   },
   emergency: {
-    color: "#EA580C",
-    bg: "#FFF7ED",
-    dot: "#F97316",
+    color: C.orange,
+    bg: C.orangeLight,
     border: "#FED7AA",
     label: "Emergency",
   },
   critical: {
     color: C.coral,
     bg: C.coralLight,
-    dot: C.coral,
     border: "#FECACA",
     label: "Critical",
   },
 };
-const getU = (u: string) => URGENCY[u] ?? URGENCY.routine;
 
 const STATUS: Record<string, { color: string; bg: string; label: string }> = {
   pending: { color: C.amber, bg: C.amberLight, label: "Pending" },
-  accepted: { color: C.blue, bg: "#EFF6FF", label: "Accepted" },
-  completed: { color: C.green, bg: C.greenLight, label: "Completed" },
+  accepted: { color: C.blue, bg: C.blueLight, label: "Accepted" },
+  completed: { color: C.primary, bg: C.primaryGhost, label: "Completed" },
   rejected: { color: C.coral, bg: C.coralLight, label: "Rejected" },
-  cancelled: { color: "#6B7280", bg: "#F9FAFB", label: "Cancelled" },
+  cancelled: { color: C.inkMuted, bg: C.bgAlt, label: "Cancelled" },
 };
+
+const getU = (u: string) => URGENCY[u] ?? URGENCY.routine;
 const getS = (s: string) => STATUS[s] ?? STATUS.pending;
 
 function fmtDate(d: string, opts?: Intl.DateTimeFormatOptions) {
@@ -89,7 +92,7 @@ function fmtDate(d: string, opts?: Intl.DateTimeFormatOptions) {
   );
 }
 
-// ── Referral list card ────────────────────────────────────────────────────────
+// ── Referral card ─────────────────────────────────────────────────────────────
 function ReferralCard({
   referral,
   onPress,
@@ -101,13 +104,9 @@ function ReferralCard({
   const st = getS(referral.status);
 
   return (
-    <TouchableOpacity
-      style={[styles.card, { borderLeftColor: u.dot }]}
-      onPress={onPress}
-      activeOpacity={0.75}
-    >
-      {/* Header */}
-      <View style={styles.cardHeader}>
+    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.7}>
+      {/* Top row */}
+      <View style={styles.cardTopRow}>
         <Text style={styles.refNum}>{referral.referralNumber}</Text>
         <View style={[styles.statusPill, { backgroundColor: st.bg }]}>
           <Text style={[styles.statusText, { color: st.color }]}>
@@ -116,14 +115,11 @@ function ReferralCard({
         </View>
       </View>
 
-      {/* Institution */}
+      {/* Institution — headline */}
       {referral.receivingInstitutionName && (
-        <View style={styles.instRow}>
-          <Icon name="local-hospital" size={13} color={u.color} />
-          <Text style={[styles.instName, { color: u.color }]} numberOfLines={1}>
-            {referral.receivingInstitutionName}
-          </Text>
-        </View>
+        <Text style={styles.instName} numberOfLines={1}>
+          {referral.receivingInstitutionName}
+        </Text>
       )}
 
       {/* Reason */}
@@ -133,22 +129,34 @@ function ReferralCard({
 
       {/* Footer */}
       <View style={styles.cardFooter}>
-        <View style={[styles.urgencyPill, { backgroundColor: u.bg }]}>
-          <View style={[styles.urgencyDot, { backgroundColor: u.dot }]} />
+        <View
+          style={[
+            styles.urgencyPill,
+            { backgroundColor: u.bg, borderColor: u.border },
+          ]}
+        >
+          <View style={[styles.urgencyDot, { backgroundColor: u.color }]} />
           <Text style={[styles.urgencyText, { color: u.color }]}>
             {u.label}
           </Text>
         </View>
+
         <View style={styles.footerRight}>
+          <MaterialIcons name="event" size={12} color={C.inkMuted} />
           <Text style={styles.dateText}>{fmtDate(referral.referredAt)}</Text>
-          <Icon name="chevron-right" size={14} color={C.inkMuted} />
+          <MaterialIcons
+            name="chevron-right"
+            size={16}
+            color={C.inkSubtle}
+            style={{ marginLeft: 2 }}
+          />
         </View>
       </View>
     </TouchableOpacity>
   );
 }
 
-// ── Referral detail modal ─────────────────────────────────────────────────────
+// ── Detail modal ──────────────────────────────────────────────────────────────
 function ReferralDetailModal({
   referral,
   onClose,
@@ -163,11 +171,10 @@ function ReferralDetailModal({
   return (
     <Modal animationType="slide" transparent visible onRequestClose={onClose}>
       <View style={detail.overlay}>
-        <View style={[detail.sheet, { paddingBottom: insets.bottom + 20 }]}>
-          {/* Handle */}
+        <View style={[detail.sheet, { paddingBottom: insets.bottom + 24 }]}>
           <View style={detail.handle} />
 
-          {/* Header row */}
+          {/* Header */}
           <View style={detail.headerRow}>
             <View style={{ flex: 1 }}>
               <Text style={detail.refNum}>{referral.referralNumber}</Text>
@@ -177,29 +184,40 @@ function ReferralDetailModal({
                 </Text>
               </View>
             </View>
-            <TouchableOpacity onPress={onClose} style={detail.closeBtn}>
-              <Icon name="close" size={18} color={C.inkMuted} />
+            <TouchableOpacity
+              onPress={onClose}
+              style={detail.closeBtn}
+              activeOpacity={0.6}
+            >
+              <MaterialIcons name="close" size={18} color={C.inkSoft} />
             </TouchableOpacity>
           </View>
 
           <ScrollView showsVerticalScrollIndicator={false}>
-            {/* Referred to — hero section */}
+            {/* Institution hero */}
             <View
               style={[
                 detail.institutionBox,
-                { borderColor: u.border, backgroundColor: u.bg },
+                { backgroundColor: u.bg, borderColor: u.border },
               ]}
             >
               <Text style={[detail.institutionLabel, { color: u.color }]}>
                 Referred to
               </Text>
               <View style={detail.institutionRow}>
-                <Icon name="local-hospital" size={20} color={u.color} />
-                <Text style={[detail.institutionName, { color: u.color }]}>
+                <MaterialIcons
+                  name="local-hospital"
+                  size={22}
+                  color={u.color}
+                />
+                <Text
+                  style={[detail.institutionName, { color: C.ink }]}
+                  numberOfLines={2}
+                >
                   {referral.receivingInstitutionName ?? "Unknown Institution"}
                 </Text>
               </View>
-              <View style={[detail.urgencyBadge, { backgroundColor: u.dot }]}>
+              <View style={[detail.urgencyBadge, { backgroundColor: u.color }]}>
                 <Text style={detail.urgencyBadgeText}>{u.label} priority</Text>
               </View>
             </View>
@@ -224,59 +242,58 @@ function ReferralDetailModal({
             {/* Timeline */}
             <View style={detail.section}>
               <Text style={detail.sectionLabel}>Timeline</Text>
-              <View style={detail.timelineItem}>
-                <View
-                  style={[detail.timelineDot, { backgroundColor: C.teal }]}
-                />
-                <View>
-                  <Text style={detail.timelineEvent}>Referred</Text>
-                  <Text style={detail.timelineDate}>
-                    {fmtDate(referral.referredAt, {
-                      day: "numeric",
-                      month: "short",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </Text>
-                </View>
+              <View style={detail.timelineWrap}>
+                {[
+                  {
+                    event: "Referred",
+                    date: referral.referredAt,
+                    color: C.primary,
+                  },
+                  {
+                    event: "Accepted by receiving hospital",
+                    date: referral.acceptedAt,
+                    color: C.blue,
+                  },
+                  {
+                    event: "Completed",
+                    date: referral.completedAt,
+                    color: C.primary,
+                  },
+                ]
+                  .filter((t) => t.date)
+                  .map((t, i, arr) => (
+                    <View key={i} style={detail.timelineItem}>
+                      <View style={detail.timelineLeftCol}>
+                        <View
+                          style={[
+                            detail.timelineDot,
+                            { backgroundColor: t.color },
+                          ]}
+                        />
+                        {i < arr.length - 1 && (
+                          <View style={detail.timelineLine} />
+                        )}
+                      </View>
+                      <View
+                        style={{
+                          flex: 1,
+                          paddingBottom: i < arr.length - 1 ? 16 : 0,
+                        }}
+                      >
+                        <Text style={detail.timelineEvent}>{t.event}</Text>
+                        <Text style={detail.timelineDate}>
+                          {fmtDate(t.date, {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
               </View>
-              {referral.acceptedAt && (
-                <View style={detail.timelineItem}>
-                  <View
-                    style={[detail.timelineDot, { backgroundColor: C.blue }]}
-                  />
-                  <View>
-                    <Text style={detail.timelineEvent}>
-                      Accepted by receiving institution
-                    </Text>
-                    <Text style={detail.timelineDate}>
-                      {fmtDate(referral.acceptedAt, {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </Text>
-                  </View>
-                </View>
-              )}
-              {referral.completedAt && (
-                <View style={detail.timelineItem}>
-                  <View
-                    style={[detail.timelineDot, { backgroundColor: C.green }]}
-                  />
-                  <View>
-                    <Text style={detail.timelineEvent}>Completed</Text>
-                    <Text style={detail.timelineDate}>
-                      {fmtDate(referral.completedAt, {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </Text>
-                  </View>
-                </View>
-              )}
             </View>
 
             {/* Response notes */}
@@ -287,7 +304,11 @@ function ReferralDetailModal({
                     Response from institution
                   </Text>
                   <View style={detail.noteBox}>
-                    <Icon name="format-quote" size={16} color={C.inkMuted} />
+                    <MaterialIcons
+                      name="format-quote"
+                      size={16}
+                      color={C.inkMuted}
+                    />
                     <Text style={detail.noteText}>
                       {referral.responseNotes}
                     </Text>
@@ -301,131 +322,12 @@ function ReferralDetailModal({
   );
 }
 
-const detail = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.5)",
-    justifyContent: "flex-end",
-  },
-  sheet: {
-    backgroundColor: C.card,
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    padding: 20,
-    maxHeight: "90%",
-  },
-  handle: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: C.cardBorder,
-    alignSelf: "center",
-    marginBottom: 16,
-  },
-  headerRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginBottom: 16,
-  },
-  refNum: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: C.inkMuted,
-    fontFamily: Platform.OS === "android" ? "monospace" : "Courier",
-    marginBottom: 4,
-  },
-  statusPill: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-  },
-  statusText: { fontSize: 10, fontWeight: "700" },
-  closeBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: C.bg,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-
-  institutionBox: {
-    borderWidth: 1,
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 16,
-  },
-  institutionLabel: {
-    fontSize: 10,
-    fontWeight: "700",
-    letterSpacing: 0.8,
-    marginBottom: 6,
-    textTransform: "uppercase",
-  },
-  institutionRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 10,
-  },
-  institutionName: { fontSize: 16, fontWeight: "700", flex: 1 },
-  urgencyBadge: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  urgencyBadgeText: { fontSize: 10, fontWeight: "700", color: "#fff" },
-
-  section: { marginBottom: 16 },
-  sectionLabel: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: C.inkMuted,
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-    marginBottom: 6,
-  },
-  sectionBody: { fontSize: 13, color: C.ink, lineHeight: 20 },
-
-  timelineItem: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-    marginBottom: 10,
-  },
-  timelineDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginTop: 4,
-    flexShrink: 0,
-  },
-  timelineEvent: { fontSize: 12, fontWeight: "600", color: C.ink },
-  timelineDate: { fontSize: 11, color: C.inkMuted, marginTop: 1 },
-
-  noteBox: {
-    flexDirection: "row",
-    gap: 8,
-    backgroundColor: C.bg,
-    borderRadius: 10,
-    padding: 12,
-  },
-  noteText: {
-    fontSize: 12,
-    color: C.inkSoft,
-    fontStyle: "italic",
-    flex: 1,
-    lineHeight: 18,
-  },
-});
-
 // ── Main screen ───────────────────────────────────────────────────────────────
 export default function ReferralsScreen() {
   const insets = useSafeAreaInsets();
   const [referrals, setReferrals] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [selected, setSelected] = useState<any | null>(null);
   const [filter, setFilter] = useState<"all" | "active" | "completed">("all");
 
@@ -433,20 +335,22 @@ export default function ReferralsScreen() {
     try {
       const res = await getMyReferrals();
       const raw: any[] = res?.referrals ?? res?.data?.referrals ?? [];
-      const sorted = [...raw].sort((a, b) => {
-        const order: Record<string, number> = {
-          pending: 0,
-          accepted: 1,
-          completed: 2,
-          rejected: 3,
-          cancelled: 4,
-        };
-        const diff = (order[a.status] ?? 9) - (order[b.status] ?? 9);
-        return diff !== 0
-          ? diff
-          : new Date(b.referredAt).getTime() - new Date(a.referredAt).getTime();
-      });
-      setReferrals(sorted);
+      const order: Record<string, number> = {
+        pending: 0,
+        accepted: 1,
+        completed: 2,
+        rejected: 3,
+        cancelled: 4,
+      };
+      setReferrals(
+        [...raw].sort((a, b) => {
+          const diff = (order[a.status] ?? 9) - (order[b.status] ?? 9);
+          return diff !== 0
+            ? diff
+            : new Date(b.referredAt).getTime() -
+                new Date(a.referredAt).getTime();
+        }),
+      );
     } catch {
       setReferrals([]);
     } finally {
@@ -457,6 +361,12 @@ export default function ReferralsScreen() {
   useEffect(() => {
     load();
   }, [load]);
+
+  const onRefresh = async () => {
+    setRefreshing(true);
+    await load();
+    setRefreshing(false);
+  };
 
   const filtered = referrals.filter((r) => {
     if (filter === "active") return ["pending", "accepted"].includes(r.status);
@@ -473,92 +383,109 @@ export default function ReferralsScreen() {
   ).length;
 
   return (
-    <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="dark-content" />
+    <View style={styles.root}>
+      <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
-      {/* Header */}
-      <View style={styles.pageHeader}>
-        <View>
-          <Text style={styles.pageTitle}>My Referrals</Text>
-          {!loading && activeCount > 0 && (
-            <Text style={styles.pageSubtitle}>
-              <Text style={{ color: C.amber, fontWeight: "700" }}>
-                {activeCount} active
-              </Text>
-              {completedCount > 0 && ` · ${completedCount} completed`}
+      {/* ── Header ── */}
+      <View style={[styles.headerBar, { paddingTop: insets.top + 8 }]}>
+        <View style={styles.headerTopRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.greeting}>My Referrals</Text>
+            <Text style={styles.subgreeting}>
+              {loading
+                ? "Loading…"
+                : activeCount > 0
+                  ? `${activeCount} active · ${completedCount} completed`
+                  : "Your referral history"}
             </Text>
+          </View>
+          {activeCount > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{activeCount}</Text>
+            </View>
           )}
         </View>
-        <TouchableOpacity onPress={load} style={styles.refreshBtn}>
-          <Icon name="refresh" size={18} color={C.tealDark} />
-        </TouchableOpacity>
+
+        {/* Filter tabs */}
+        <View style={styles.tabRow}>
+          {(
+            [
+              { key: "all", label: "All", count: referrals.length },
+              { key: "active", label: "Active", count: activeCount },
+              { key: "completed", label: "Past", count: completedCount },
+            ] as const
+          ).map((f) => {
+            const isActive = filter === f.key;
+            return (
+              <TouchableOpacity
+                key={f.key}
+                style={[styles.tab, isActive && styles.tabActive]}
+                onPress={() => setFilter(f.key)}
+                activeOpacity={0.7}
+              >
+                <Text
+                  style={[styles.tabText, isActive && styles.tabTextActive]}
+                >
+                  {f.label}
+                </Text>
+                <View
+                  style={[styles.tabCount, isActive && styles.tabCountActive]}
+                >
+                  <Text
+                    style={[
+                      styles.tabCountText,
+                      isActive && styles.tabCountTextActive,
+                    ]}
+                  >
+                    {f.count}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
       </View>
 
-      {/* Filter tabs */}
-      <View style={styles.filterRow}>
-        {(["all", "active", "completed"] as const).map((f) => (
-          <TouchableOpacity
-            key={f}
-            style={[styles.filterTab, filter === f && styles.filterTabActive]}
-            onPress={() => setFilter(f)}
-            activeOpacity={0.7}
-          >
-            <Text
-              style={[
-                styles.filterText,
-                filter === f && styles.filterTextActive,
-              ]}
-            >
-              {f === "all"
-                ? `All (${referrals.length})`
-                : f === "active"
-                  ? `Active (${activeCount})`
-                  : `Past (${completedCount})`}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* List */}
+      {/* ── List ── */}
       {loading ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" color={C.teal} />
-        </View>
-      ) : filtered.length === 0 ? (
-        <View style={styles.center}>
-          <Icon
-            name="compare-arrows"
-            size={40}
-            color={C.inkMuted}
-            style={{ marginBottom: 10 }}
-          />
-          <Text style={styles.emptyTitle}>
-            {referrals.length === 0
-              ? "No referrals yet"
-              : "No referrals in this category"}
-          </Text>
-          <Text style={styles.emptySubtitle}>
-            {referrals.length === 0
-              ? "When your doctor refers you to another hospital, it will appear here"
-              : "Try switching the filter above"}
-          </Text>
+          <ActivityIndicator size="large" color={C.primary} />
         </View>
       ) : (
-        <ScrollView
-          contentContainerStyle={styles.list}
+        <FlatList
+          data={filtered}
+          keyExtractor={(r) => r.id}
+          contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
-        >
-          {filtered.map((r) => (
-            <ReferralCard
-              key={r.id}
-              referral={r}
-              onPress={() => setSelected(r)}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              colors={[C.primary]}
+              tintColor={C.primary}
             />
-          ))}
-        </ScrollView>
+          }
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              <View style={styles.emptyIcon}>
+                <MaterialIcons name="swap-horiz" size={36} color={C.primary} />
+              </View>
+              <Text style={styles.emptyTitle}>
+                {referrals.length === 0 ? "No referrals yet" : "Nothing here"}
+              </Text>
+              <Text style={styles.emptyBody}>
+                {referrals.length === 0
+                  ? "When your doctor refers you to another hospital, it will appear here."
+                  : "Try switching the filter above."}
+              </Text>
+            </View>
+          }
+          renderItem={({ item }) => (
+            <ReferralCard referral={item} onPress={() => setSelected(item)} />
+          )}
+        />
       )}
 
-      {/* Detail modal */}
       {selected && (
         <ReferralDetailModal
           referral={selected}
@@ -569,123 +496,386 @@ export default function ReferralsScreen() {
   );
 }
 
+// ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: C.bg },
 
-  pageHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingTop: 12,
-    paddingBottom: 8,
+  // ── Header ──
+  headerBar: {
+    paddingHorizontal: 20,
+    paddingBottom: 16,
   },
-  pageTitle: {
-    fontSize: 22,
+  headerTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  greeting: {
+    fontSize: 28,
     fontWeight: "800",
     color: C.ink,
-    letterSpacing: -0.4,
+    letterSpacing: -0.8,
   },
-  pageSubtitle: { fontSize: 12, color: C.inkSoft, marginTop: 2 },
-  refreshBtn: {
-    width: 36,
-    height: 36,
+  subgreeting: {
+    fontSize: 14,
+    color: C.inkMuted,
+    marginTop: 2,
+    fontWeight: "500",
+  },
+  badge: {
+    minWidth: 32,
+    height: 32,
     borderRadius: 10,
-    backgroundColor: C.tealGhost,
+    backgroundColor: C.ink,
     justifyContent: "center",
     alignItems: "center",
+    paddingHorizontal: 10,
+  },
+  badgeText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#fff",
   },
 
-  filterRow: {
+  // ── Tabs ──
+  tabRow: {
     flexDirection: "row",
-    gap: 6,
-    paddingHorizontal: 16,
-    marginBottom: 12,
+    backgroundColor: C.bgAlt,
+    borderRadius: 12,
+    padding: 4,
+    gap: 4,
   },
-  filterTab: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
-    backgroundColor: C.card,
-    borderWidth: 1,
-    borderColor: C.cardBorder,
-  },
-  filterTabActive: { backgroundColor: C.tealGhost, borderColor: C.teal },
-  filterText: { fontSize: 11, fontWeight: "600", color: C.inkMuted },
-  filterTextActive: { color: C.tealDark },
-
-  list: { paddingHorizontal: 16, paddingBottom: 20, gap: 8 },
-
-  card: {
-    backgroundColor: C.card,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: C.cardBorder,
-    borderLeftWidth: 3,
-    padding: 12,
-    gap: 5,
-    ...Platform.select({
-      ios: {
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.04,
-        shadowRadius: 4,
-      },
-      android: { elevation: 1 },
-    }),
-  },
-  cardHeader: {
+  tab: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingVertical: 10,
+    borderRadius: 9,
+  },
+  tabActive: {
+    backgroundColor: C.ink,
+  },
+  tabText: {
+    fontSize: 12.5,
+    fontWeight: "700",
+    color: C.inkSoft,
+    letterSpacing: -0.1,
+  },
+  tabTextActive: {
+    color: "#fff",
+  },
+  tabCount: {
+    backgroundColor: C.cardBorder,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+    minWidth: 20,
+    alignItems: "center",
+  },
+  tabCountActive: {
+    backgroundColor: "rgba(255,255,255,0.15)",
+  },
+  tabCountText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: C.inkSoft,
+  },
+  tabCountTextActive: {
+    color: "#fff",
+  },
+
+  // ── List ──
+  listContent: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 110,
+  },
+
+  // ── Card ──
+  card: {
+    backgroundColor: C.card,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: C.cardBorder,
+  },
+  cardTopRow: {
+    flexDirection: "row",
     justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
   },
   refNum: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: "700",
     color: C.inkMuted,
+    letterSpacing: 0.3,
     fontFamily: Platform.OS === "android" ? "monospace" : "Courier",
   },
-  statusPill: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: 5 },
-  statusText: { fontSize: 9, fontWeight: "800" },
-  instRow: { flexDirection: "row", alignItems: "center", gap: 4 },
-  instName: { fontSize: 13, fontWeight: "700", flex: 1 },
-  reason: { fontSize: 11, color: C.inkSoft, lineHeight: 16 },
+  statusPill: {
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 7,
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+
+  instName: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: C.ink,
+    letterSpacing: -0.3,
+    marginBottom: 6,
+  },
+  reason: {
+    fontSize: 13,
+    color: C.inkSoft,
+    lineHeight: 19,
+    fontWeight: "500",
+    marginBottom: 12,
+  },
+
   cardFooter: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginTop: 2,
   },
   urgencyPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 7,
-    paddingVertical: 3,
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
     borderRadius: 8,
+    borderWidth: 1,
   },
-  urgencyDot: { width: 5, height: 5, borderRadius: 3 },
-  urgencyText: { fontSize: 9, fontWeight: "700" },
-  footerRight: { flexDirection: "row", alignItems: "center", gap: 2 },
-  dateText: { fontSize: 9, color: C.inkMuted },
-
-  center: {
-    flex: 1,
-    justifyContent: "center",
+  urgencyDot: { width: 6, height: 6, borderRadius: 3 },
+  urgencyText: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  footerRight: {
+    flexDirection: "row",
     alignItems: "center",
+    gap: 4,
+  },
+  dateText: {
+    fontSize: 11,
+    color: C.inkMuted,
+    fontWeight: "500",
+  },
+
+  // ── Empty / loading ──
+  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+  empty: {
+    alignItems: "center",
+    marginTop: 60,
     paddingHorizontal: 40,
   },
+  emptyIcon: {
+    width: 80,
+    height: 80,
+    borderRadius: 24,
+    backgroundColor: C.primaryGhost,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 20,
+  },
   emptyTitle: {
+    fontSize: 20,
+    fontWeight: "800",
+    color: C.ink,
+    marginBottom: 6,
+    letterSpacing: -0.4,
+    textAlign: "center",
+  },
+  emptyBody: {
     fontSize: 14,
-    fontWeight: "700",
     color: C.inkSoft,
     textAlign: "center",
+    lineHeight: 21,
+    fontWeight: "500",
+  },
+});
+
+// ── Detail modal styles ──────────────────────────────────────────────────────
+const detail = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(10,14,26,0.5)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: C.card,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: 12,
+    maxHeight: "90%",
+  },
+  handle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: C.cardBorder,
+    alignSelf: "center",
+    marginBottom: 16,
+  },
+
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginBottom: 20,
+  },
+  refNum: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: C.inkMuted,
+    letterSpacing: 0.3,
+    fontFamily: Platform.OS === "android" ? "monospace" : "Courier",
     marginBottom: 6,
   },
-  emptySubtitle: {
+  statusPill: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 7,
+  },
+  statusText: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 0.3,
+  },
+  closeBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    backgroundColor: C.bgAlt,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+
+  // ── Institution hero ──
+  institutionBox: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 20,
+  },
+  institutionLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    letterSpacing: 0.5,
+    marginBottom: 8,
+    textTransform: "uppercase",
+  },
+  institutionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginBottom: 12,
+  },
+  institutionName: {
+    fontSize: 18,
+    fontWeight: "800",
+    flex: 1,
+    letterSpacing: -0.4,
+  },
+  urgencyBadge: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  urgencyBadgeText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#fff",
+    letterSpacing: 0.3,
+    textTransform: "capitalize",
+  },
+
+  // ── Sections ──
+  section: { marginBottom: 20 },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: C.inkSoft,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    marginBottom: 8,
+  },
+  sectionBody: {
+    fontSize: 14,
+    color: C.ink,
+    lineHeight: 21,
+    fontWeight: "500",
+  },
+
+  // ── Timeline ──
+  timelineWrap: {
+    paddingLeft: 4,
+  },
+  timelineItem: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  timelineLeftCol: {
+    alignItems: "center",
+    width: 12,
+    paddingTop: 4,
+  },
+  timelineDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    borderWidth: 2,
+    borderColor: "#fff",
+  },
+  timelineLine: {
+    flex: 1,
+    width: 2,
+    backgroundColor: C.divider,
+    marginTop: 2,
+  },
+  timelineEvent: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: C.ink,
+    letterSpacing: -0.2,
+  },
+  timelineDate: {
     fontSize: 12,
     color: C.inkMuted,
-    textAlign: "center",
-    lineHeight: 18,
+    marginTop: 2,
+    fontWeight: "500",
+  },
+
+  // ── Response note ──
+  noteBox: {
+    flexDirection: "row",
+    gap: 10,
+    backgroundColor: C.bg,
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: C.divider,
+  },
+  noteText: {
+    fontSize: 13,
+    color: C.inkSoft,
+    fontStyle: "italic",
+    flex: 1,
+    lineHeight: 19,
+    fontWeight: "500",
   },
 });
