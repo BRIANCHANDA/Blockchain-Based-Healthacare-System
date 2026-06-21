@@ -1,15 +1,21 @@
 // src/services/email.ts
 // Email service using Resend
 // Add to .env: RESEND_API_KEY=re_xxxx
-//              DEV_EMAIL_OVERRIDE=brianchanda02@gmail.com  (dev only)
+//              DEV_EMAIL_OVERRIDE=chandabrian02@gmail.com  (routes ALL emails here if set)
+//              RESEND_FROM_EMAIL=MedLink <noreply@yourdomain.com>  (verified sender domain)
 
 import { Resend } from 'resend';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// In dev, all emails go to DEV_EMAIL_OVERRIDE instead of actual address
+// If DEV_EMAIL_OVERRIDE is set, all emails route there (useful for demo/dev)
 function resolveRecipient(actualEmail: string): string {
   return process.env.DEV_EMAIL_OVERRIDE || actualEmail;
+}
+
+// Use a verified sender domain in production; fall back to resend test sender in dev
+function getSender(): string {
+  return process.env.RESEND_FROM_EMAIL || 'MedLink <onboarding@resend.dev>';
 }
 
 // ── Send OTP ──────────────────────────────────────────────────────────────────
@@ -19,10 +25,10 @@ export async function sendOTPEmail(
   otp: string,
 ): Promise<void> {
   const recipient = resolveRecipient(toEmail);
-  const isDev = !!process.env.DEV_EMAIL_OVERRIDE;
+  const isDev = !!process.env.DEV_EMAIL_OVERRIDE && recipient !== toEmail;
 
   const { error } = await resend.emails.send({
-    from: 'MedLink <onboarding@resend.dev>', // change to your domain in production
+    from: getSender(),
     to: recipient,
     subject: `${otp} — Your MedLink verification code`,
     html: `
