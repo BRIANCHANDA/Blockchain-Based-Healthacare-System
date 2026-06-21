@@ -5,11 +5,11 @@ import {
   visits, consultations, diagnoses, vitalSigns,
   labTestOrders, labTestResults, imagingOrders,
   prescriptions, patients, auditLogs, practitioners,
-  patientInstitutionRegistrations,
+  patientInstitutionRegistrations, patientGuardians,
 } from '../db/schema';
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
-import { checkPermission, storeRecordHash, logAccess, verifyRecordHash } from '../services/fabric';
+import { checkPermission, storeRecordHash, logAccess, verifyRecordHash, VerifyResult } from '../services/fabric';
 import { generateRecordHash, decrypt } from '../services/crypto';
 import crypto from 'crypto';
 
@@ -107,6 +107,22 @@ type AccessResult =
   | { allowed: false }
   | { allowed: true; scopeInstitutionId: string | null }; // null = all institutions
 
+// ── Helper: verify active canConsent guardian link ────────────────────────────
+async function isActiveGuardian(guardianPatientId: string, minorPatientId: string): Promise<boolean> {
+  const links = await db
+    .select({ endsAt: patientGuardians.endsAt })
+    .from(patientGuardians)
+    .where(and(
+      eq(patientGuardians.guardianPatientId, guardianPatientId),
+      eq(patientGuardians.patientId, minorPatientId),
+      eq(patientGuardians.canConsent, true),
+    ))
+    .limit(1);
+  if (!links.length) return false;
+  const { endsAt } = links[0];
+  return !endsAt || endsAt > new Date();
+}
+
 async function resolveAccess(
   userType: string,
   userId: string,
@@ -116,11 +132,18 @@ async function resolveAccess(
   resourceType: string,
   resourceId: string,
   ipAddress?: string,
+  actingAsPatientId?: string,
 ): Promise<AccessResult> {
 
-  // Patients always see their own data, no institution scoping
+  // Patient accessing their own records or a dependent's via guardian link
   if (userType === 'patient') {
-    return { allowed: true, scopeInstitutionId: null };
+    if (patientId === userId) return { allowed: true, scopeInstitutionId: null };
+    // Guardian acting as a dependent
+    if (actingAsPatientId && actingAsPatientId === patientId) {
+      const ok = await isActiveGuardian(userId, patientId);
+      if (ok) return { allowed: true, scopeInstitutionId: null };
+    }
+    return { allowed: false };
   }
 
   // Staff: check blockchain permission first (explicit patient consent = full access)
@@ -193,6 +216,7 @@ export const recordRouter = createRouter()
       const userType = c.get('userType');
       const blockchainAddress = c.get('blockchainAddress');
       const ip = c.req.header('x-forwarded-for');
+      const actingAs = c.req.header('X-Acting-As-Patient');
 
       const patient = await db
         .select({ id: patients.id, blockchainAddress: patients.blockchainAddress })
@@ -206,7 +230,7 @@ export const recordRouter = createRouter()
       const access = await resolveAccess(
         userType, userId, blockchainAddress,
         patientId, patient[0].blockchainAddress,
-        'visits', patientId, ip,
+        'visits', patientId, ip, actingAs,
       );
 
       if (!access.allowed)
@@ -271,6 +295,7 @@ export const recordRouter = createRouter()
       const userType = c.get('userType');
       const blockchainAddress = c.get('blockchainAddress');
       const ip = c.req.header('x-forwarded-for');
+      const actingAs = c.req.header('X-Acting-As-Patient');
 
       const patient = await db
         .select({ blockchainAddress: patients.blockchainAddress })
@@ -284,7 +309,7 @@ export const recordRouter = createRouter()
       const access = await resolveAccess(
         userType, userId, blockchainAddress,
         patientId, patient[0].blockchainAddress,
-        'visit_detail', visitId, ip,
+        'visit_detail', visitId, ip, actingAs,
       );
 
       if (!access.allowed)
@@ -488,6 +513,7 @@ export const recordRouter = createRouter()
       const userType = c.get('userType');
       const blockchainAddress = c.get('blockchainAddress');
       const ip = c.req.header('x-forwarded-for');
+      const actingAs = c.req.header('X-Acting-As-Patient');
 
       // Resolve visit → patient
       const visit = await db
@@ -513,7 +539,7 @@ export const recordRouter = createRouter()
       const access = await resolveAccess(
         userType, userId, blockchainAddress,
         patientId, patient[0].blockchainAddress,
-        'lab_results', visitId, ip,
+        'lab_results', visitId, ip, actingAs,
       );
 
       if (!access.allowed)
@@ -576,15 +602,23 @@ export const recordRouter = createRouter()
     try {
       const { recordId, recordData } = c.req.valid('json');
       const currentHash = generateRecordHash(recordData);
-      const isValid = await verifyRecordHash(recordId, currentHash);
+      const result: VerifyResult = await verifyRecordHash(recordId, currentHash);
+
+      const message = result.timedOut
+        ? 'Unable to verify — blockchain temporarily unavailable'
+        : result.notFound
+          ? 'Record not found on blockchain — it may not have been anchored yet'
+          : result.verified
+            ? 'Record integrity verified — data matches blockchain'
+            : 'WARNING: Record hash mismatch — data may have been tampered with';
 
       return c.json({
         success: true,
         data: {
-          isValid,
-          message: isValid
-            ? 'Record integrity verified — data matches blockchain'
-            : 'WARNING: Record may have been tampered with',
+          isValid: result.verified,
+          timedOut: result.timedOut,
+          notFound: result.notFound,
+          message,
         },
       });
     } catch (err: any) {

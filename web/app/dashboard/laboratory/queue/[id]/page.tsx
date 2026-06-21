@@ -27,6 +27,7 @@ import {
   History as HistoryIcon,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import { MinorBadge, ageFromDob } from "@/components/ui/MinorBadge";
 
 // ════════════════════════════════════════════════════════════════════════════
 // Types
@@ -689,9 +690,14 @@ function PatientContextPanel({
             <User size={22} className="text-green-700" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-base font-bold text-gray-900">
-              {patient.fullName}
-            </p>
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="text-base font-bold text-gray-900">
+                {patient.fullName}
+              </p>
+              {patient.isMinor && (
+                <MinorBadge age={patient.dateOfBirth ? ageFromDob(patient.dateOfBirth) : patient.age} />
+              )}
+            </div>
             <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500 flex-wrap">
               {patient.age != null && (
                 <span className="font-semibold">{patient.age} yrs</span>

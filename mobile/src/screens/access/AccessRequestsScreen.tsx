@@ -234,6 +234,18 @@ export default function AccessRequestsScreen({ navigation }: Props) {
           const isActioning = actioning === item.id;
           return (
             <View style={styles.card}>
+              {/* Guardian / dependent banner */}
+              {item.isForDependent && item.dependentName && (
+                <View style={styles.dependentBanner}>
+                  <MaterialIcons name="child-care" size={15} color="#7C3AED" />
+                  <Text style={styles.dependentBannerText}>
+                    Access request for{" "}
+                    <Text style={{ fontWeight: "800" }}>{item.dependentName}</Text>
+                    {item.dependentRelationship ? ` (your ${item.dependentRelationship})` : ""}
+                  </Text>
+                </View>
+              )}
+
               {/* Provider row */}
               <View style={styles.providerRow}>
                 <View style={[styles.roleIcon, { backgroundColor: role.bg }]}>
@@ -458,6 +470,25 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: C.cardBorder,
+  },
+  dependentBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: C.violetLight,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#DDD6FE",
+  },
+  dependentBannerText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#5B21B6",
+    flex: 1,
+    lineHeight: 17,
   },
 
   providerRow: {

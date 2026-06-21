@@ -23,8 +23,11 @@ client.interceptors.request.use(
             if (!config.headers) {
                 config.headers = {} as any;
             }
-            // cast to any to avoid mismatched Axios internal headers type
             (config.headers as any).Authorization = `Bearer ${token}`;
+        }
+        const activePatientId = await AsyncStorage.getItem('active_patient_id');
+        if (activePatientId) {
+            (config.headers as any)['X-Acting-As-Patient'] = activePatientId;
         }
         return config;
     }

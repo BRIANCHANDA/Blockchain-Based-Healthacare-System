@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { visitApi } from "@/lib/api";
+import { MinorBadge, ageFromDob } from "@/components/ui/MinorBadge";
 import {
   ChevronLeft,
   CheckCircle2,
@@ -29,6 +30,8 @@ interface Patient {
   lastName: string;
   gender: string;
   bloodType: string;
+  isMinor?: boolean;
+  dateOfBirth?: string;
 }
 
 interface Vitals {
@@ -314,11 +317,16 @@ function PatientBanner({
           {patient?.lastName?.[0]}
         </div>
         <div className="flex-1 min-w-0">
-          <p className="font-bold text-gray-900">
-            {patient
-              ? `${patient.firstName} ${patient.lastName}`
-              : "Unknown Patient"}
-          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="font-bold text-gray-900">
+              {patient
+                ? `${patient.firstName} ${patient.lastName}`
+                : "Unknown Patient"}
+            </p>
+            {patient?.isMinor && (
+              <MinorBadge age={patient.dateOfBirth ? ageFromDob(patient.dateOfBirth) : undefined} />
+            )}
+          </div>
           <p className="text-xs text-gray-500 font-mono mt-0.5">
             {visit.visitNumber}
           </p>

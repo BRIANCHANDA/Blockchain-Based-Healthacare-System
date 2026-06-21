@@ -5,7 +5,8 @@ import {
   visits, vitalSigns, consultations, diagnoses,
   labTestOrders, labTestResults, imagingOrders, imagingReports,
   prescriptions, prescriptionItems, patients, auditLogs,
-  practitioners, patientInstitutionRegistrations, medicationStock, stockMovements
+  practitioners, patientInstitutionRegistrations, medicationStock, stockMovements,
+  wardBeds, wards,
 } from '../db/schema';
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
@@ -105,6 +106,84 @@ export const visitRouter = createRouter()
     }
   })
 
+  // ── ADMITTED (INPATIENT) LIST ─────────────────────────────────────────────
+  .openapi(createRoute({
+    tags: ['Visits'], summary: 'List all current inpatients for the institution',
+    method: 'get', path: '/inpatients',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    responses: {
+      200: { content: { 'application/json': { schema: successData } }, description: 'Inpatient list' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+    },
+  }), async (c) => {
+    try {
+      const userType = c.get('userType');
+      if (!['practitioner', 'nurse', 'admin'].includes(userType))
+        return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+
+      const userId = c.get('userId');
+      const institutionId = await getStaffInstitution(userId);
+      if (!institutionId)
+        return c.json({ success: false, error: { message: 'No institution' } }, 403);
+
+      const { decrypt } = await import('../services/crypto');
+
+      const rows = await db.execute(sql`
+        SELECT
+          v.id,
+          v.visit_number         AS "visitNumber",
+          v.patient_id           AS "patientId",
+          v.priority,
+          v.admission_date       AS "admissionDate",
+          v.admitting_diagnosis  AS "admittingDiagnosis",
+          v.ward_or_room         AS "wardOrRoom",
+          v.bed_number           AS "bedNumber",
+          p.first_name_encrypted AS "firstNameEncrypted",
+          p.last_name_encrypted  AS "lastNameEncrypted",
+          p.gender,
+          p.blood_type           AS "bloodType",
+          dr.first_name_encrypted AS "drFirstEncrypted",
+          dr.last_name_encrypted  AS "drLastEncrypted",
+          wb.bed_code            AS "bedCode",
+          w.ward_name            AS "wardName"
+        FROM visits v
+        JOIN patients p ON p.id = v.patient_id
+        LEFT JOIN practitioners dr ON dr.id = v.assigned_doctor_id
+        LEFT JOIN ward_beds wb ON wb.current_visit_id = v.id
+        LEFT JOIN wards w ON w.id = wb.ward_id
+        WHERE v.institution_id = ${institutionId}
+          AND v.visit_type = 'inpatient'
+          AND v.status = 'in-progress'
+        ORDER BY
+          CASE v.priority WHEN 'critical' THEN 1 WHEN 'emergency' THEN 2 WHEN 'urgent' THEN 3 ELSE 4 END,
+          v.admission_date ASC
+      `);
+
+      const result = await Promise.all((rows as any[]).map(async (r) => ({
+        id:                r.id,
+        visitNumber:       r.visitNumber,
+        patientId:         r.patientId,
+        priority:          r.priority,
+        admissionDate:     r.admissionDate,
+        admittingDiagnosis: r.admittingDiagnosis,
+        wardName:          r.wardName ?? r.wardOrRoom ?? null,
+        bedCode:           r.bedCode ?? r.bedNumber ?? null,
+        gender:            r.gender,
+        bloodType:         r.bloodType,
+        patientName:       `${await decrypt(r.firstNameEncrypted)} ${await decrypt(r.lastNameEncrypted)}`,
+        doctorName:        r.drFirstEncrypted
+                             ? `${await decrypt(r.drFirstEncrypted)} ${await decrypt(r.drLastEncrypted)}`
+                             : null,
+      })));
+
+      return c.json({ success: true, data: { patients: result, total: result.length } });
+    } catch (err: unknown) {
+      console.error('Inpatients error:', err);
+      return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+    }
+  })
+
   // ── TODAY'S QUEUE ─────────────────────────────────────────────────────────
   .openapi(createRoute({
     tags: ['Visits'], summary: "Get today's active visits queue",
@@ -190,11 +269,19 @@ export const visitRouter = createRouter()
       const patient = await db.select({
         firstNameEncrypted: patients.firstNameEncrypted, lastNameEncrypted: patients.lastNameEncrypted,
         gender: patients.gender, bloodType: patients.bloodType,
+        isMinor: patients.isMinor, dateOfBirthEncrypted: patients.dateOfBirthEncrypted,
       }).from(patients).where(eq(patients.id, visit[0].patientId)).limit(1);
       return c.json({
         success: true, data: {
           visit: visit[0],
-          patient: patient.length ? { firstName: decrypt(patient[0].firstNameEncrypted), lastName: decrypt(patient[0].lastNameEncrypted), gender: patient[0].gender, bloodType: patient[0].bloodType } : null,
+          patient: patient.length ? {
+            firstName: decrypt(patient[0].firstNameEncrypted),
+            lastName: decrypt(patient[0].lastNameEncrypted),
+            gender: patient[0].gender,
+            bloodType: patient[0].bloodType,
+            isMinor: patient[0].isMinor,
+            dateOfBirth: patient[0].dateOfBirthEncrypted ? decrypt(patient[0].dateOfBirthEncrypted) : undefined,
+          } : null,
         }
       });
     } catch (err: any) {
@@ -1052,6 +1139,7 @@ export const visitRouter = createRouter()
             v.admission_date        AS "admissionDate",
             v.ward_or_room          AS "wardOrRoom",
             v.assigned_doctor_id    AS "assignedDoctorId",
+            v.assigned_nurse_id     AS "assignedNurseId",
             p.first_name_encrypted  AS "patientFirstNameEncrypted",
             p.last_name_encrypted   AS "patientLastNameEncrypted",
             p.gender,
@@ -1064,8 +1152,9 @@ export const visitRouter = createRouter()
           FROM visits v
           JOIN patients p ON p.id = v.patient_id
           LEFT JOIN practitioners doc ON doc.id = v.assigned_doctor_id
-          WHERE v.assigned_nurse_id = ${userId}
+          WHERE v.institution_id = ${institutionId}
             AND v.status = 'in-progress'
+            AND (v.assigned_nurse_id = ${userId} OR v.assigned_nurse_id IS NULL)
           ORDER BY
             CASE v.priority WHEN 'critical' THEN 1 WHEN 'emergency' THEN 2 WHEN 'urgent' THEN 3 ELSE 4 END,
             v.admission_date ASC
@@ -1083,6 +1172,7 @@ export const visitRouter = createRouter()
             status: row.status, admissionDate: row.admissionDate,
             wardOrRoom: row.wardOrRoom ?? null,
             assignedDoctorId: row.assignedDoctorId ?? null,
+            assignedNurseId: row.assignedNurseId ?? null,
             doctorName: row.doctorFirstNameEncrypted
               ? `${decrypt(row.doctorFirstNameEncrypted)} ${decrypt(row.doctorLastNameEncrypted)}`
               : null,
@@ -1121,8 +1211,9 @@ export const visitRouter = createRouter()
           FROM visits v
           JOIN patients p ON p.id = v.patient_id
           LEFT JOIN practitioners nur ON nur.id = v.assigned_nurse_id
-          WHERE v.assigned_doctor_id = ${userId}
+          WHERE v.institution_id = ${institutionId}
             AND v.status = 'in-progress'
+            AND (v.assigned_doctor_id = ${userId} OR v.assigned_doctor_id IS NULL)
           ORDER BY
             CASE v.priority WHEN 'critical' THEN 1 WHEN 'emergency' THEN 2 WHEN 'urgent' THEN 3 ELSE 4 END,
             v.admission_date ASC
@@ -1567,7 +1658,8 @@ export const visitRouter = createRouter()
       }
 
       const remaining = await db.select().from(prescriptionItems).where(and(eq(prescriptionItems.prescriptionId, prescriptionId), eq(prescriptionItems.isDispensed, false)));
-      if (remaining.length === 0) await db.update(prescriptions).set({ status: 'dispensed' }).where(eq(prescriptions.id, prescriptionId));
+      const newStatus = remaining.length === 0 ? 'dispensed' : 'dispensing';
+      await db.update(prescriptions).set({ status: newStatus }).where(eq(prescriptions.id, prescriptionId));
       await auditAction(userId, userType, visitRow[0].patientId, patient[0].blockchainAddress, 'update', 'prescription_dispense', prescriptionId, ip);
 
       return c.json({
@@ -1711,6 +1803,113 @@ export const visitRouter = createRouter()
     }
   })
 
+  // ── ADMIT TO WARD ─────────────────────────────────────────────────────────
+  .openapi(createRoute({
+    tags: ['Visits'], summary: 'Doctor admits patient to ward (changes visit to inpatient)',
+    method: 'patch', path: '/:visitId/admit',
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    request: {
+      params: z.object({ visitId: z.string().uuid() }),
+      body: {
+        content: {
+          'application/json': {
+            schema: z.object({
+              admittingDiagnosis: z.string().min(3),
+              priority: z.enum(['routine', 'urgent', 'emergency', 'critical']).optional(),
+              notes: z.string().optional(),
+            }),
+          },
+        },
+      },
+    },
+    responses: {
+      200: { content: { 'application/json': { schema: successData } }, description: 'Patient admitted' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+      404: { content: { 'application/json': { schema: errorSchema } }, description: 'Visit not found' },
+      409: { content: { 'application/json': { schema: errorSchema } }, description: 'Already admitted' },
+      500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
+    },
+  }), async (c) => {
+    try {
+      const userType = c.get('userType');
+      if (userType !== 'practitioner')
+        return c.json({ success: false, error: { message: 'Only practitioners can admit patients' } }, 403);
+
+      const { visitId } = c.req.valid('param');
+      const body = c.req.valid('json');
+
+      const visitRow = await db.select({
+        status: visits.status, visitType: visits.visitType,
+        patientId: visits.patientId, institutionId: visits.institutionId,
+        visitNumber: visits.visitNumber, priority: visits.priority,
+      }).from(visits).where(eq(visits.id, visitId)).limit(1);
+
+      if (!visitRow.length)
+        return c.json({ success: false, error: { message: 'Visit not found' } }, 404);
+      if (visitRow[0].status !== 'in-progress')
+        return c.json({ success: false, error: { message: 'Visit is already closed' } }, 409);
+      if (visitRow[0].visitType === 'inpatient')
+        return c.json({ success: false, error: { message: 'Patient is already admitted as inpatient' } }, 409);
+
+      const updateData: Record<string, unknown> = {
+        visitType: 'inpatient',
+        admittingDiagnosis: body.admittingDiagnosis,
+        updatedAt: new Date(),
+      };
+      if (body.priority) updateData.priority = body.priority;
+
+      await db.update(visits).set(updateData).where(eq(visits.id, visitId));
+
+      const userId = c.get('userId');
+      const ip = c.req.header('x-forwarded-for');
+      const patient = await db.select({ blockchainAddress: patients.blockchainAddress })
+        .from(patients).where(eq(patients.id, visitRow[0].patientId)).limit(1);
+      if (patient.length) {
+        await auditAction(userId, 'practitioner', visitRow[0].patientId, patient[0].blockchainAddress, 'update', 'admit', visitId, ip)
+          .catch(() => {});
+      }
+
+      // Notify all active nurses at the institution
+      try {
+        const { decrypt } = await import('../services/crypto');
+        const patientDetails = await db.select({
+          firstNameEncrypted: patients.firstNameEncrypted,
+          lastNameEncrypted: patients.lastNameEncrypted,
+        }).from(patients).where(eq(patients.id, visitRow[0].patientId)).limit(1);
+
+        const patientName = patientDetails.length
+          ? `${decrypt(patientDetails[0].firstNameEncrypted)} ${decrypt(patientDetails[0].lastNameEncrypted)}`
+          : 'Unknown Patient';
+
+        const nurses = await db.select({ id: practitioners.id })
+          .from(practitioners)
+          .where(and(
+            eq(practitioners.institutionId, visitRow[0].institutionId!),
+            eq(practitioners.role, 'nurse'),
+            eq(practitioners.isActive, true),
+          ));
+
+        for (const nurse of nurses) {
+          notifyUser(nurse.id, 'patient_admitted', {
+            visitId,
+            visitNumber: visitRow[0].visitNumber,
+            patientName,
+            admittingDiagnosis: body.admittingDiagnosis,
+            priority: body.priority ?? visitRow[0].priority,
+            ts: new Date().toISOString(),
+          });
+        }
+      } catch (notifyErr) {
+        console.warn('[ADMIT] Failed to notify nurses:', notifyErr);
+      }
+
+      return c.json({ success: true, data: { message: 'Patient admitted to ward. Assign a bed from the ward view.' } });
+    } catch (err: unknown) {
+      console.error('Admit error:', err);
+      return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+    }
+  })
+
   // ── DISCHARGE ─────────────────────────────────────────────────────────────
   .openapi(createRoute({
     tags: ['Visits'], summary: 'Discharge patient and close visit (Practitioner)',
@@ -1759,6 +1958,21 @@ export const visitRouter = createRouter()
         dischargeInstructions: body.dischargeInstructions, followUpDate: body.followUpDate ? new Date(body.followUpDate) : null,
         updatedAt: new Date(), dischargeBlockchainHash: dischargeHash,
       }).where(eq(visits.id, visitId)).returning();
+
+      // Auto-release any bed assigned to this visit
+      await db.execute(sql`
+        UPDATE ward_beds
+        SET status = 'available', current_visit_id = NULL, updated_at = NOW()
+        WHERE current_visit_id = ${visitId}
+      `);
+      // Sync ward available_beds counts
+      await db.execute(sql`
+        UPDATE wards w
+        SET available_beds = (
+          SELECT COUNT(*) FROM ward_beds wb WHERE wb.ward_id = w.id AND wb.status = 'available'
+        )
+        WHERE w.id IN (SELECT ward_id FROM ward_beds WHERE institution_id = ${visitRow[0].institutionId})
+      `);
 
       await storeRecordHash(`${visitId}:discharge`, patient[0].blockchainAddress, dischargeHash, 'discharge');
       await auditAction(userId, 'practitioner', visitRow[0].patientId, patient[0].blockchainAddress, 'update', 'discharge', visitId, ip);

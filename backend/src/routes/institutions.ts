@@ -62,7 +62,7 @@ const createDepartmentSchema = z.object({
     phone: z.string().optional(),
 });
 
-const updateDepartmentSchema = createDepartmentSchema.partial();
+const updateDepartmentSchema = createDepartmentSchema.partial().extend({ isActive: z.boolean().optional() });
 
 const createWardSchema = z.object({
     wardCode: z.string().min(1),
@@ -416,6 +416,7 @@ export const institutionRouter = createRouter()
         middleware: [authMiddleware],
         request: {
             params: z.object({ institutionId: z.string().uuid() }),
+            query: z.object({ includeInactive: z.string().optional() }),
         },
         responses: {
             200: { content: { 'application/json': { schema: successData } }, description: 'List of departments' },
@@ -425,8 +426,12 @@ export const institutionRouter = createRouter()
     }), async (c) => {
         try {
             const { institutionId } = c.req.valid('param');
+            const { includeInactive } = c.req.valid('query');
+            const showAll = includeInactive === 'true';
             const deptList = await db.select().from(departments)
-                .where(and(eq(departments.institutionId, institutionId), eq(departments.isActive, true)));
+                .where(showAll
+                    ? eq(departments.institutionId, institutionId)
+                    : and(eq(departments.institutionId, institutionId), eq(departments.isActive, true)));
             return c.json({ success: true, data: { departments: deptList } });
         } catch (err: unknown) {
             console.error('List departments error:', err);
@@ -525,6 +530,7 @@ export const institutionRouter = createRouter()
             if (body.departmentType !== undefined) updateData.departmentType = body.departmentType;
             if (body.location !== undefined) updateData.location = body.location;
             if (body.phone !== undefined) updateData.phone = body.phone;
+            if (body.isActive !== undefined) updateData.isActive = body.isActive;
 
             if (Object.keys(updateData).length === 0) {
                 return c.json({ success: true, data: { message: 'No changes' } });

@@ -41,7 +41,8 @@ const registerPatientSchema = z.object({
   institutionId: z.string().uuid().optional(),
 });
 
-const loginPatientSchema = z.object({ nationalId: z.string(), password: z.string() });
+// identifier = NRC (adults) or HC-MINOR-* temporary clinic ID (minors)
+const loginPatientSchema = z.object({ identifier: z.string().min(1), password: z.string() });
 
 // Staff can login with licenseNumber OR email
 const loginStaffSchema = z.object({
@@ -200,20 +201,44 @@ export const authRouter = createRouter()
     },
   }), async (c) => {
     try {
-      const { nationalId, password } = c.req.valid('json');
+      const { identifier, password } = c.req.valid('json');
       const ip = c.req.header('x-forwarded-for') || c.req.header('x-real-ip');
       const userAgent = c.req.header('user-agent');
+
       const allPatients = await db.select().from(patients).where(eq(patients.isActive, true));
       let matched: typeof allPatients[0] | null = null;
-      for (const p of allPatients) {
-        try { if (decrypt(p.nationalIdEncrypted) === nationalId) { matched = p; break; } } catch { }
+
+      const isClinicId = identifier.startsWith('HC-MINOR-');
+
+      if (isClinicId) {
+        // Minor login — match directly by temporaryPatientId (plaintext, not encrypted)
+        matched = allPatients.find(p => p.temporaryPatientId === identifier) ?? null;
+      } else {
+        // Adult login — match by decrypting nationalIdEncrypted
+        for (const p of allPatients) {
+          try { if (p.nationalIdEncrypted && decrypt(p.nationalIdEncrypted) === identifier) { matched = p; break; } } catch { }
+        }
       }
+
       if (!matched) return c.json({ success: false, error: { message: 'Invalid credentials' } }, 401);
       if (matched.isDeceased) return c.json({ success: false, error: { message: 'Account unavailable' } }, 401);
       if (!await compare(password, matched.passwordHash)) return c.json({ success: false, error: { message: 'Invalid credentials' } }, 401);
+
       const token = sign({ userId: matched.id, userType: 'patient', blockchainAddress: matched.blockchainAddress }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
       await createSession(matched.id, 'patient', token, ip, userAgent);
-      return c.json({ success: true, data: { token, user: { id: matched.id, type: 'patient', blockchainAddress: matched.blockchainAddress, firstName: decrypt(matched.firstNameEncrypted), lastName: decrypt(matched.lastNameEncrypted), institutionId: undefined, institutionName: null, mustChangePassword: matched.mustChangePassword ?? false } } });
+
+      return c.json({ success: true, data: { token, user: {
+        id: matched.id,
+        type: 'patient',
+        blockchainAddress: matched.blockchainAddress,
+        firstName: decrypt(matched.firstNameEncrypted),
+        lastName: decrypt(matched.lastNameEncrypted),
+        isMinor: matched.isMinor,
+        temporaryPatientId: matched.temporaryPatientId ?? undefined,
+        institutionId: undefined,
+        institutionName: null,
+        mustChangePassword: matched.mustChangePassword ?? false,
+      } } });
     } catch (err: any) {
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }

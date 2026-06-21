@@ -7,6 +7,8 @@ export type AuthUser = {
     blockchainAddress: string;
     firstName: string;
     lastName: string;
+    isMinor?: boolean;
+    temporaryPatientId?: string;
 };
 
 export type AuthResponse = {
@@ -17,10 +19,10 @@ export type AuthResponse = {
     };
 };
 
-// POST /auth/login/patient  — patients log in with nationalId + password
-export const loginPatient = async (nationalId: string, password: string) => {
+// POST /auth/login/patient  — identifier is NRC for adults, HC-MINOR-* for minors
+export const loginPatient = async (identifier: string, password: string) => {
     const res = await client.post<AuthResponse>('/auth/login/patient', {
-        nationalId,
+        identifier,
         password,
     });
     return res.data;

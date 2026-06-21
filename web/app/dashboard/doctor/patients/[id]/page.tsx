@@ -17,6 +17,8 @@ import {
   Users,
 } from "lucide-react";
 import { format, differenceInYears } from "date-fns";
+import { MinorBadge, ageFromDob } from "@/components/ui/MinorBadge";
+import { PatientGuardiansSection } from "@/components/ui/PatientGuardiansSection";
 
 const bloodTypeColor: Record<string, string> = {
   "A+": "#3b82f6",
@@ -142,12 +144,21 @@ export default function PatientDetailPage() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div>
-                    <h1
-                      className="text-xl font-bold text-gray-900"
-                      style={{ fontFamily: "'Playfair Display', serif" }}
-                    >
-                      {patient.firstName} {patient.lastName}
-                    </h1>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h1
+                        className="text-xl font-bold text-gray-900"
+                        style={{ fontFamily: "'Playfair Display', serif" }}
+                      >
+                        {patient.firstName} {patient.lastName}
+                      </h1>
+                      {patient.isMinor && (
+                        <MinorBadge
+                          age={patient.dateOfBirth ? ageFromDob(patient.dateOfBirth) : undefined}
+                          primaryGuardianName={patient.guardians?.[0]?.guardianName}
+                          primaryGuardianRelationship={patient.guardians?.[0]?.relationship}
+                        />
+                      )}
+                    </div>
                     <p className="text-sm text-gray-500 mt-0.5 capitalize">
                       {patient.gender}
                       {age ? ` · ${age} years old` : ""}
@@ -275,6 +286,11 @@ export default function PatientDetailPage() {
             </div>
           )}
         </div>
+
+        {/* ── Guardians (minor only) ── */}
+        {patient.isMinor && (
+          <PatientGuardiansSection patientId={patientId} canManage={false} />
+        )}
 
         {/* ── Allergies ── */}
         {patient.allergies?.length > 0 && (

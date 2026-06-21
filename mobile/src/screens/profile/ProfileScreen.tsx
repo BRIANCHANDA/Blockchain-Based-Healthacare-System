@@ -253,7 +253,7 @@ export default function ProfileScreen() {
     maritalStatus?: string; occupation?: string;
   } | null>(null);
 
-  const { user, clearAuth } = useAuthStore();
+  const { user, clearAuth, dependents, setActivePatient } = useAuthStore();
   const insets = useSafeAreaInsets();
 
   const loadReferrals = useCallback(async () => {
@@ -664,6 +664,37 @@ export default function ProfileScreen() {
             )}
           </View>
         </View>
+
+        {/* ── My Children (guardian view) ──────────────────────────────── */}
+        {dependents.length > 0 && (
+          <View style={styles.sectionOuter}>
+            <Text style={styles.sectionLabel}>My Children</Text>
+            <View style={styles.menuCard}>
+              {dependents.map((dep, idx) => (
+                <TouchableOpacity
+                  key={dep.id}
+                  style={[styles.menuItem, idx < dependents.length - 1 && styles.menuDivider]}
+                  activeOpacity={0.7}
+                  onPress={() => {
+                    setActivePatient(dep.patientId, `${dep.firstName} ${dep.lastName}`);
+                    Toast.show({ type: "info", text1: `Viewing ${dep.firstName}'s records`, text2: "Go to Records tab" });
+                  }}
+                >
+                  <View style={[styles.menuIconWrap, { backgroundColor: "#FEF3C7" }]}>
+                    <Icon name="child-care" size={18} color="#B45309" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.menuLabel}>{dep.firstName} {dep.lastName}</Text>
+                    <Text style={styles.menuSublabel} numberOfLines={1}>
+                      {dep.relationship.replace("_", " ")} · Tap to view records
+                    </Text>
+                  </View>
+                  <Icon name="chevron-right" size={20} color={C.inkSubtle} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
 
         {/* ── Menu sections ─────────────────────────────────────────────── */}
         {MENU_SECTIONS.map((section) => (

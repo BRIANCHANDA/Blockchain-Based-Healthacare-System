@@ -31,6 +31,7 @@ import ReferralsScreen from "../screens/referrals/ReferralsScreen";
 import ProfileScreen from "../screens/profile/ProfileScreen";
 import AppointmentsScreen from "../screens/appointments/Appointmentsscreen";
 import VitalsTrendsScreen from "../screens/health/VitalsTrendsScreen";
+import SensitiveRecordsScreen from "../screens/health/SensitiveRecordsScreen";
 import PatientQRScreen from "../screens/profile/PatientQRScreen";
 
 // ── DS tokens ─────────────────────────────────────────────────────────────────
@@ -90,11 +91,12 @@ function RecordsNavigator() {
         headerShadowVisible: false,
       }}
     >
-      <RecordsStack.Screen name="RecordsList"  component={RecordsListScreen}  options={{ headerShown: false }} />
-      <RecordsStack.Screen name="RecordDetail" component={RecordDetailScreen} options={{ headerShown: false }} />
-      <RecordsStack.Screen name="Profile"      component={ProfileScreen}      options={{ ...innerHeader, title: "Profile" }} />
-      <RecordsStack.Screen name="VitalsTrends" component={VitalsTrendsScreen} options={{ ...innerHeader, title: "Health Trends" }} />
-      <RecordsStack.Screen name="PatientQR"    component={PatientQRScreen}    options={{ ...innerHeader, title: "My Hospital ID" }} />
+      <RecordsStack.Screen name="RecordsList"        component={RecordsListScreen}       options={{ headerShown: false }} />
+      <RecordsStack.Screen name="RecordDetail"       component={RecordDetailScreen}      options={{ headerShown: false }} />
+      <RecordsStack.Screen name="Profile"            component={ProfileScreen}           options={{ ...innerHeader, title: "Profile" }} />
+      <RecordsStack.Screen name="VitalsTrends"       component={VitalsTrendsScreen}      options={{ ...innerHeader, title: "Health Trends" }} />
+      <RecordsStack.Screen name="PatientQR"          component={PatientQRScreen}         options={{ ...innerHeader, title: "My Hospital ID" }} />
+      <RecordsStack.Screen name="SensitiveRecords"   component={SensitiveRecordsScreen}  options={{ ...innerHeader, title: "Sensitive Records" }} />
     </RecordsStack.Navigator>
   );
 }

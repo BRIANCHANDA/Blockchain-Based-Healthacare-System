@@ -25,6 +25,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import { MinorBadge, ageFromDob } from "@/components/ui/MinorBadge";
 
 const PRIORITY: Record<
   string,
@@ -287,10 +288,13 @@ export default function ReceptionistVisitDetailPage({
                 </span>
               </div>
               <h1
-                className="text-white text-xl font-bold"
+                className="text-white text-xl font-bold flex items-center gap-2 flex-wrap"
                 style={{ fontFamily: "'Playfair Display',serif" }}
               >
                 {patientName}
+                {patient?.isMinor && (
+                  <MinorBadge age={patient.dateOfBirth ? ageFromDob(patient.dateOfBirth) : undefined} />
+                )}
               </h1>
               <div className="flex items-center gap-3 mt-1.5 flex-wrap">
                 {patient?.gender && (

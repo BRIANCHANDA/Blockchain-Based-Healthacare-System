@@ -1,17 +1,22 @@
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { User } from '../types';
+import { User, Dependent } from '../types';
 
 type AuthState = {
     token: string | null;
     user: User | null;
-    isLoading: boolean;       // checking AsyncStorage on app boot
+    isLoading: boolean;
     isAuthenticated: boolean;
+    dependents: Dependent[];
+    activePatientId: string | null;
+    activeDependentName: string | null;
 
-    // actions
     setAuth: (token: string, user: User) => Promise<void>;
     clearAuth: () => Promise<void>;
     loadFromStorage: () => Promise<void>;
+    setDependents: (deps: Dependent[]) => void;
+    setActivePatient: (patientId: string, name: string) => Promise<void>;
+    clearActivePatient: () => Promise<void>;
 };
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -19,6 +24,9 @@ export const useAuthStore = create<AuthState>((set) => ({
     user: null,
     isLoading: true,
     isAuthenticated: false,
+    dependents: [],
+    activePatientId: null,
+    activeDependentName: null,
 
     setAuth: async (token, user) => {
         await AsyncStorage.setItem('auth_token', token);
@@ -27,26 +35,35 @@ export const useAuthStore = create<AuthState>((set) => ({
     },
 
     clearAuth: async () => {
-        await AsyncStorage.removeItem('auth_token');
-        await AsyncStorage.removeItem('auth_user');
-        set({ token: null, user: null, isAuthenticated: false });
+        await AsyncStorage.multiRemove(['auth_token', 'auth_user', 'active_patient_id']);
+        set({ token: null, user: null, isAuthenticated: false, dependents: [], activePatientId: null, activeDependentName: null });
     },
 
     loadFromStorage: async () => {
         try {
             const token = await AsyncStorage.getItem('auth_token');
             const userStr = await AsyncStorage.getItem('auth_user');
+            const activePatientId = await AsyncStorage.getItem('active_patient_id');
             if (token && userStr) {
                 const user = JSON.parse(userStr) as User;
-                set({ token, user, isAuthenticated: true });
+                set({ token, user, isAuthenticated: true, activePatientId: activePatientId ?? null });
             }
         } catch {
-            // corrupted storage — clear it
-            await AsyncStorage.multiRemove(['auth_token', 'auth_user']);
+            await AsyncStorage.multiRemove(['auth_token', 'auth_user', 'active_patient_id']);
         } finally {
             set({ isLoading: false });
         }
     },
+
+    setDependents: (deps) => set({ dependents: deps }),
+
+    setActivePatient: async (patientId, name) => {
+        await AsyncStorage.setItem('active_patient_id', patientId);
+        set({ activePatientId: patientId, activeDependentName: name });
+    },
+
+    clearActivePatient: async () => {
+        await AsyncStorage.removeItem('active_patient_id');
+        set({ activePatientId: null, activeDependentName: null });
+    },
 }));
-
-

@@ -21,11 +21,15 @@ import { adminStatsRouter } from './routes/admin-stats';
 import { pharmacyStatsRouter } from './routes/pharmacy';
 import { appointmentRouter } from './routes/appointments';
 import { reportsRouter } from "./routes/reports";
+import { personalReportRouter } from "./routes/personal-report";
 import { stockRouter } from "./routes/stock";
+import { wardRouter } from "./routes/wards";
 import { notificationsRouter } from './routes/notifications';
 import { adminBlockchainRouter } from './routes/blockchain';
 import { aiRouter } from './routes/ai/ai';
 import { labRouter } from './routes/lab';
+import { medicalRouter } from './routes/medical';
+import { guardiansRouter } from './routes/guardians';
 
 
 
@@ -36,7 +40,7 @@ const app = new OpenAPIHono();
 app.use('*', cors({
   origin: (_origin) => _origin ?? '*',   // allow all origins; tighten in production if needed
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowHeaders: ['Content-Type', 'Authorization'],
+  allowHeaders: ['Content-Type', 'Authorization', 'X-Acting-As-Patient'],
   credentials: true,
 }));
 
@@ -64,10 +68,14 @@ app.route('/api/dashboard/admin', adminStatsRouter);
 app.route('/api/pharmacy-stats', pharmacyStatsRouter);
 app.route('/api/appointments', appointmentRouter);
 app.route('/api/reports', reportsRouter);
+app.route('/api/reports/personal', personalReportRouter);
 app.route('/api/stock', stockRouter);
+app.route('/api/wards', wardRouter);
 app.route('/api/notifications', notificationsRouter);
 app.route('/api/ai', aiRouter);
 app.route('/api/lab', labRouter);
+app.route('/api/medical', medicalRouter);
+app.route('/api/guardians', guardiansRouter);
 app.route('/api/admin/blockchain', adminBlockchainRouter);
 // ── OpenAPI docs ──────────────────────────────────────────────────────────────
 const serverUrl = process.env.RENDER_EXTERNAL_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;

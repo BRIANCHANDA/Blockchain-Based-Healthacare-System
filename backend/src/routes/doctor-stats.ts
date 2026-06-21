@@ -251,6 +251,14 @@ export const doctorStatsRouter = createRouter()
                 institutionFilter,
             );
 
+            // Visible workload — assigned to me OR unclaimed at my institution.
+            // Unassigned visits surface to every doctor at the institution until
+            // someone claims them, so caseload counts should match that.
+            const whereVisible = and(
+                sql`(${visits.assignedDoctorId} = ${userId} OR ${visits.assignedDoctorId} IS NULL)`,
+                institutionFilter,
+            );
+
             // Today's admissions assigned to this doctor
             const whereTodayAssigned = and(
                 gte(visits.admissionDate, startOfDay),
@@ -281,10 +289,10 @@ export const doctorStatsRouter = createRouter()
                 recentConsultations,
             ] = await Promise.all([
 
-                // Active patient load
+                // Active patient load (includes unclaimed visits at my institution)
                 db.select({ cnt: count() })
                     .from(visits)
-                    .where(and(eq(visits.status, 'in-progress'), whereAssigned)),
+                    .where(and(eq(visits.status, 'in-progress'), whereVisible)),
 
                 // Awaiting consultation — triaged (vitals recorded) but no consultation yet
                 db.select({ cnt: count() })
@@ -293,7 +301,7 @@ export const doctorStatsRouter = createRouter()
                         eq(visits.status, 'in-progress'),
                         sql`${visits.id} IN (SELECT DISTINCT ${vitalSigns.visitId} FROM ${vitalSigns})`,
                         sql`${visits.id} NOT IN (SELECT DISTINCT ${consultations.visitId} FROM ${consultations})`,
-                        whereAssigned,
+                        whereVisible,
                     )),
 
                 // Consulted today (has a consultation created today by this doctor)
@@ -327,7 +335,7 @@ export const doctorStatsRouter = createRouter()
                     .where(and(
                         eq(visits.status, 'in-progress'),
                         sql`${visits.priority} IN ('critical', 'emergency')`,
-                        whereAssigned,
+                        whereVisible,
                     )),
 
                 // Urgent active
@@ -336,7 +344,7 @@ export const doctorStatsRouter = createRouter()
                     .where(and(
                         eq(visits.status, 'in-progress'),
                         eq(visits.priority, 'urgent'),
-                        whereAssigned,
+                        whereVisible,
                     )),
 
                 // Today's new admissions

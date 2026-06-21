@@ -5,34 +5,49 @@ import {
   patients, institutions, patientInstitutionRegistrations,
   visits, consultations, diagnoses, imagingOrders, imagingReports,
   labTestOrders, labTestResults, prescriptionItems, prescriptions,
-  vitalSigns, practitioners, allergies,
+  vitalSigns, practitioners, allergies, patientGuardians,
 } from '../db/schema';
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
-import { encrypt, decrypt, hashData, generateRecordHash } from '../services/crypto';
+import { encrypt, decrypt, generateRecordHash } from '../services/crypto';
 import { storeRecordHash, checkPermission } from '../services/fabric';
 import crypto from 'crypto';
-import { hash } from 'bcryptjs'
+import { hash, compare } from 'bcryptjs'
 
 const errorSchema = z.object({ success: z.boolean(), error: z.object({ message: z.string() }) });
 const successData = z.object({ success: z.boolean(), data: z.any() });
 
-const registerPatientSchema = z.object({
-  firstName: z.string().min(1),
-  lastName: z.string().min(1),
-  middleName: z.string().optional(),
-  dateOfBirth: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
-  gender: z.enum(['male', 'female', 'other']),
-  bloodType: z.enum(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'unknown']).default('unknown'),
-  phoneNumber: z.string().min(5),
-  email: z.string().email().optional(),
-  address: z.string().min(5),
-  emergencyContact: z.string().min(5),
-  nationalId: z.string().min(5),
-  maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).optional(),
-  occupation: z.string().optional(),
-  password: z.string().min(8),
-  institutionId: z.string().uuid().optional(),
+function ageFromDob(dob: string): number {
+  const d = new Date(dob);
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  const m = now.getMonth() - d.getMonth();
+  if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
+  return age;
+}
+
+// Base schema — no superRefine so .omit() works for OpenAPI route definition
+const registerPatientBaseSchema = z.object({
+  firstName:            z.string().min(1),
+  lastName:             z.string().min(1),
+  middleName:           z.string().optional(),
+  dateOfBirth:          z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  gender:               z.enum(['male', 'female', 'other']),
+  bloodType:            z.enum(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'unknown']).default('unknown'),
+  phoneNumber:          z.string().min(5),
+  email:                z.string().email().optional(),
+  address:              z.string().min(5),
+  emergencyContact:     z.string().min(5),
+  nationalId:           z.string().min(5).optional(),
+  isMinor:              z.boolean().default(false),
+  // Guardian fields — guardianPatientId is a FK to an existing adult patient
+  guardianPatientId:    z.string().uuid().optional(),
+  guardianRelationship: z.enum(['mother', 'father', 'legal_guardian', 'grandparent', 'other']).optional(),
+  guardianDocumentReference: z.string().optional(),
+  maritalStatus:        z.enum(['single', 'married', 'divorced', 'widowed']).optional(),
+  occupation:           z.string().optional(),
+  password:             z.string().min(8),
+  institutionId:        z.string().uuid().optional(),
   hospitalPatientNumber: z.string().optional(),
 });
 
@@ -105,60 +120,124 @@ export const patientRouter = createRouter()
   .openapi(createRoute({
     tags: ['Patients'], summary: 'Register a new patient',
     method: 'post', path: '/',
-    request: { body: { content: { 'application/json': { schema: registerPatientSchema.omit({ password: true }) } } } },
+    request: { body: { content: { 'application/json': { schema: registerPatientBaseSchema.omit({ password: true }) } } } },
     responses: {
-      201: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ patientId: z.string().uuid(), blockchainAddress: z.string() }) }) } }, description: 'Registered' },
+      201: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ patientId: z.string().uuid(), blockchainAddress: z.string(), isMinor: z.boolean(), temporaryPatientId: z.string().nullable() }) }) } }, description: 'Registered' },
+      400: { content: { 'application/json': { schema: errorSchema } }, description: 'Validation error' },
       409: { content: { 'application/json': { schema: errorSchema } }, description: 'Duplicate national ID' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
     try {
       const body = c.req.valid('json');
+      const staffId = c.get('userId') ?? null;
 
-      const blockchainAddress = `patient:${crypto.createHash('sha256').update(body.nationalId + (process.env.BLOCKCHAIN_SALT || 'salt')).digest('hex')}`;
+      // Cross-field validation
+      if (!body.isMinor && !body.nationalId)
+        return c.json({ success: false, error: { message: 'National ID is required for adult patients' } }, 400);
+      if (body.isMinor && !body.guardianPatientId)
+        return c.json({ success: false, error: { message: 'guardianPatientId is required for minor patients' } }, 400);
+      if (body.isMinor && !body.guardianRelationship)
+        return c.json({ success: false, error: { message: 'guardianRelationship is required for minor patients' } }, 400);
+
+      // Age validation
+      if (body.isMinor) {
+        const age = ageFromDob(body.dateOfBirth);
+        if (age >= 16)
+          return c.json({ success: false, error: { message: `Patient age is ${age} — minor registration is only for patients under 16` } }, 400);
+      }
+
+      // Validate guardian exists and is an adult
+      if (body.isMinor && body.guardianPatientId) {
+        const [gRow] = await db.select().from(patients).where(eq(patients.id, body.guardianPatientId)).limit(1);
+        if (!gRow) return c.json({ success: false, error: { message: 'Guardian patient not found' } }, 400);
+        if (gRow.isMinor) return c.json({ success: false, error: { message: 'Guardian cannot be a minor patient' } }, 400);
+        const guardianAge = ageFromDob(decrypt(gRow.dateOfBirthEncrypted));
+        if (guardianAge < 18)
+          return c.json({ success: false, error: { message: `Guardian is ${guardianAge} years old — must be at least 18` } }, 400);
+      }
+
+      // Generate a temporary ID for minors; use nationalId hash for adults
+      const temporaryPatientId = body.isMinor
+        ? `HC-MINOR-${new Date().getFullYear()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`
+        : null;
+
+      const blockchainAddress = body.isMinor
+        ? `patient:minor:${crypto.createHash('sha256').update(temporaryPatientId! + (process.env.BLOCKCHAIN_SALT || 'salt')).digest('hex')}`
+        : `patient:${crypto.createHash('sha256').update(body.nationalId! + (process.env.BLOCKCHAIN_SALT || 'salt')).digest('hex')}`;
+
+      // Pre-insert duplicate check — blockchain_address is deterministic for same NRC
+      const existing = await db.select({ id: patients.id }).from(patients).where(eq(patients.blockchainAddress, blockchainAddress)).limit(1);
+      if (existing.length)
+        return c.json({ success: false, error: { message: 'National ID already registered' } }, 409);
 
       const result = await db.insert(patients).values({
         blockchainAddress,
-        firstNameEncrypted: encrypt(body.firstName),
-        lastNameEncrypted: encrypt(body.lastName),
-        middleNameEncrypted: body.middleName ? encrypt(body.middleName) : null,
-        dateOfBirthEncrypted: encrypt(body.dateOfBirth),
-        phoneNumberEncrypted: encrypt(body.phoneNumber),
-        emailEncrypted: body.email ? encrypt(body.email) : null,
-        addressEncrypted: encrypt(body.address),
+        firstNameEncrypted:        encrypt(body.firstName),
+        lastNameEncrypted:         encrypt(body.lastName),
+        middleNameEncrypted:       body.middleName ? encrypt(body.middleName) : null,
+        dateOfBirthEncrypted:      encrypt(body.dateOfBirth),
+        phoneNumberEncrypted:      encrypt(body.phoneNumber),
+        emailEncrypted:            body.email ? encrypt(body.email) : null,
+        addressEncrypted:          encrypt(body.address),
         emergencyContactEncrypted: encrypt(body.emergencyContact),
-        nationalIdEncrypted: encrypt(body.nationalId),
-        gender: body.gender,
-        bloodType: body.bloodType,
-        maritalStatus: body.maritalStatus,
-        occupation: body.occupation,
-        passwordHash: hashData('test1234'),
-        isActive: true,
+        nationalIdEncrypted:       body.nationalId ? encrypt(body.nationalId) : null,
+        isMinor:                   body.isMinor ?? false,
+        temporaryPatientId,
+        gender:                    body.gender,
+        bloodType:                 body.bloodType,
+        maritalStatus:             body.maritalStatus,
+        occupation:                body.occupation,
+        passwordHash:              await hash('test1234', 12),
+        mustChangePassword:        true,
+        isActive:                  true,
       }).returning({ id: patients.id, blockchainAddress: patients.blockchainAddress });
 
       const patientId = result[0].id;
 
       // ── Link to institution ───────────────────────────────────────────────
-      // Always create the registration link when institutionId is provided.
-      // Auto-generate hospitalPatientNumber if not supplied — never skip silently.
       if (body.institutionId) {
         const hospitalPatientNumber =
           body.hospitalPatientNumber?.trim() ||
           `HPN-${new Date().getFullYear()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
-
         await db.insert(patientInstitutionRegistrations).values({
-          patientId,
-          institutionId: body.institutionId,
-          hospitalPatientNumber,
-          isActive: true,
-          isHomeInstitution: true,
+          patientId, institutionId: body.institutionId, hospitalPatientNumber,
+          isActive: true, isHomeInstitution: true,
         });
+      }
+
+      // ── Guardian link (minors only) — FK to existing adult patient ────────
+      if (body.isMinor && body.guardianPatientId) {
+        const minorDob  = body.dateOfBirth;
+        const dob       = new Date(minorDob);
+        const endsAt    = new Date(dob.getFullYear() + 16, dob.getMonth(), dob.getDate());
+        await db.insert(patientGuardians).values({
+          patientId,
+          guardianPatientId:  body.guardianPatientId,
+          relationship:       body.guardianRelationship!,
+          isPrimary:          true,
+          canConsent:         true,
+          endsAt,
+          documentReference:  body.guardianDocumentReference ?? null,
+          verifiedByStaffId:  staffId,
+        });
+
+        // Notify guardian
+        try {
+          const minorName = `${body.firstName} ${body.lastName}`;
+          const { notifyUser } = await import('../services/notifications');
+          await notifyUser(body.guardianPatientId, 'guardian_linked', {
+            message: `You have been registered as guardian (${body.guardianRelationship}) for ${minorName}`,
+            minorPatientId: patientId, minorName,
+          });
+        } catch { /* non-blocking */ }
       }
 
       storeRecordHash(patientId, blockchainAddress, generateRecordHash({ patientId, blockchainAddress, timestamp: new Date().toISOString() }), 'patient_registration').catch(() => { });
 
-      return c.json({ success: true, data: { patientId, blockchainAddress } }, 201);
+      return c.json({ success: true, data: { patientId, blockchainAddress, isMinor: body.isMinor ?? false, temporaryPatientId } }, 201);
     } catch (err: any) {
+      console.error('[REGISTER]', err?.message, err?.code, err);
       if (err.code === '23505')
         return c.json({ success: false, error: { message: 'National ID already registered' } }, 409);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
@@ -215,7 +294,7 @@ export const patientRouter = createRouter()
       if (body.emergencyContact) u.emergencyContactEncrypted = encrypt(body.emergencyContact);
       if (body.maritalStatus !== undefined) u.maritalStatus = body.maritalStatus;
       if (body.occupation !== undefined) u.occupation = body.occupation;
-      if (body.password) u.passwordHash = hashData(body.password);
+      if (body.password) u.passwordHash = await hash(body.password, 12);
       u.updatedAt = new Date();
       if (Object.keys(u).length === 1) return c.json({ success: true, data: { message: 'No fields to update' } });
       const result = await db.update(patients).set(u).where(eq(patients.id, patientId)).returning();
@@ -235,6 +314,7 @@ export const patientRouter = createRouter()
         q: z.string().optional(),
         limit: z.string().regex(/^\d+$/).transform(Number).optional().default('50'),
         offset: z.string().regex(/^\d+$/).transform(Number).optional().default('0'),
+        global: z.enum(['true', 'false']).optional().default('false'),
       }),
     },
     responses: {
@@ -249,14 +329,17 @@ export const patientRouter = createRouter()
       if (!['receptionist', 'nurse', 'practitioner', 'lab_technician', 'radiologist', 'admin'].includes(userType))
         return c.json({ success: false, error: { message: 'Access denied' } }, 403);
 
-      const { q, limit, offset } = c.req.valid('query');
+      const { q, limit, offset, global: globalSearch } = c.req.valid('query');
       const searchTerm = q?.toLowerCase().trim() || '';
       const staffInstitutionId = await getStaffInstitution(userId);
+
+      // global=true bypasses institution scoping — only receptionist/admin allowed
+      const skipScope = globalSearch === 'true' && ['receptionist', 'admin'].includes(userType);
 
       // UUID fast-path
       const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (searchTerm && UUID_RE.test(searchTerm)) {
-        if (staffInstitutionId) {
+        if (staffInstitutionId && !skipScope) {
           const reg = await db.select().from(patientInstitutionRegistrations)
             .where(and(eq(patientInstitutionRegistrations.patientId, searchTerm), eq(patientInstitutionRegistrations.institutionId, staffInstitutionId), eq(patientInstitutionRegistrations.isActive, true)))
             .limit(1);
@@ -265,12 +348,12 @@ export const patientRouter = createRouter()
         const row = await db.select().from(patients).where(and(eq(patients.id, searchTerm), eq(patients.isActive, true))).limit(1);
         if (!row.length) return c.json({ success: true, data: { patients: [], total: 0, limit, offset } });
         const p = row[0];
-        return c.json({ success: true, data: { patients: [{ id: p.id, blockchainAddress: p.blockchainAddress, firstName: decrypt(p.firstNameEncrypted), lastName: decrypt(p.lastNameEncrypted), middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : undefined, dateOfBirth: decrypt(p.dateOfBirthEncrypted), gender: p.gender, phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : undefined, nationalId: decrypt(p.nationalIdEncrypted), createdAt: p.createdAt.toISOString() }], total: 1, limit, offset } });
+        return c.json({ success: true, data: { patients: [{ id: p.id, blockchainAddress: p.blockchainAddress, firstName: decrypt(p.firstNameEncrypted), lastName: decrypt(p.lastNameEncrypted), middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : undefined, dateOfBirth: decrypt(p.dateOfBirthEncrypted), gender: p.gender, phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : undefined, nationalId: p.nationalIdEncrypted ? decrypt(p.nationalIdEncrypted) : null, createdAt: p.createdAt.toISOString() }], total: 1, limit, offset } });
       }
 
       // Decrypt-and-filter path
       let scopedIds: string[] | null = null;
-      if (staffInstitutionId) {
+      if (staffInstitutionId && !skipScope) {
         scopedIds = await getInstitutionPatientIds(staffInstitutionId);
         if (scopedIds.length === 0) return c.json({ success: true, data: { patients: [], total: 0, limit, offset } });
       }
@@ -284,9 +367,11 @@ export const patientRouter = createRouter()
         try {
           const firstName = decrypt(p.firstNameEncrypted);
           const lastName = decrypt(p.lastNameEncrypted);
-          const nationalId = decrypt(p.nationalIdEncrypted);
-          if (!searchTerm || `${firstName} ${lastName}`.toLowerCase().includes(searchTerm) || nationalId.toLowerCase().includes(searchTerm) || p.id.includes(searchTerm)) {
-            matched.push({ id: p.id, blockchainAddress: p.blockchainAddress, firstName, lastName, middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : undefined, dateOfBirth: decrypt(p.dateOfBirthEncrypted), gender: p.gender, phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : undefined, nationalId, createdAt: p.createdAt.toISOString() });
+          const nationalId = p.nationalIdEncrypted ? decrypt(p.nationalIdEncrypted) : null;
+          const tmpId = p.temporaryPatientId ?? '';
+          const searchable = `${firstName} ${lastName} ${nationalId ?? ''} ${tmpId} ${p.id}`.toLowerCase();
+          if (!searchTerm || searchable.includes(searchTerm)) {
+            matched.push({ id: p.id, blockchainAddress: p.blockchainAddress, firstName, lastName, middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : undefined, dateOfBirth: decrypt(p.dateOfBirthEncrypted), gender: p.gender, phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : undefined, nationalId, isMinor: p.isMinor, temporaryPatientId: p.temporaryPatientId, createdAt: p.createdAt.toISOString() });
           }
         } catch (e) { console.error(`[SEARCH] skip ${p.id}:`, e); }
       }
@@ -551,8 +636,29 @@ export const patientRouter = createRouter()
       if (!allowed) return c.json({ success: false, error: { message: 'Access denied' } }, 403);
 
       const p = row[0];
-      return c.json({ success: true, data: { id: p.id, blockchainAddress: p.blockchainAddress, firstName: decrypt(p.firstNameEncrypted), lastName: decrypt(p.lastNameEncrypted), middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : undefined, dateOfBirth: decrypt(p.dateOfBirthEncrypted), gender: p.gender, bloodType: p.bloodType, phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : undefined, address: decrypt(p.addressEncrypted), emergencyContact: decrypt(p.emergencyContactEncrypted), maritalStatus: p.maritalStatus || undefined, occupation: p.occupation || undefined, isActive: p.isActive, createdAt: p.createdAt.toISOString() } });
-    } catch { return c.json({ success: false, error: { message: 'Internal server error' } }, 500); }
+
+      // Fetch guardians if minor
+      let guardians: any[] = [];
+      if (p.isMinor) {
+        const gLinks = await db.select().from(patientGuardians)
+          .where(eq(patientGuardians.patientId, p.id))
+          .orderBy(desc(patientGuardians.isPrimary));
+        const now = new Date();
+        guardians = await Promise.all(
+          gLinks.filter(g => !g.endsAt || g.endsAt > now).map(async (g) => {
+            const [gp] = await db.select().from(patients).where(eq(patients.id, g.guardianPatientId)).limit(1);
+            return {
+              id: g.id, relationship: g.relationship, isPrimary: g.isPrimary, canConsent: g.canConsent,
+              guardianPatientId: g.guardianPatientId,
+              guardianName: gp ? `${decrypt(gp.firstNameEncrypted)} ${decrypt(gp.lastNameEncrypted)}` : null,
+              guardianPhone: gp ? decrypt(gp.phoneNumberEncrypted) : null,
+            };
+          }),
+        );
+      }
+
+      return c.json({ success: true, data: { id: p.id, blockchainAddress: p.blockchainAddress, firstName: decrypt(p.firstNameEncrypted), lastName: decrypt(p.lastNameEncrypted), middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : undefined, dateOfBirth: decrypt(p.dateOfBirthEncrypted), gender: p.gender, bloodType: p.bloodType, phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : undefined, address: decrypt(p.addressEncrypted), emergencyContact: decrypt(p.emergencyContactEncrypted), maritalStatus: p.maritalStatus || undefined, occupation: p.occupation || undefined, isActive: p.isActive, isMinor: p.isMinor, temporaryPatientId: p.temporaryPatientId, guardians, createdAt: p.createdAt.toISOString() } });
+    } catch (e) { console.error('[GET_BY_ID]', e); return c.json({ success: false, error: { message: 'Internal server error' } }, 500); }
   })
 
   // ── LIST PATIENTS ─────────────────────────────────────────────────────────
@@ -604,13 +710,13 @@ export const patientRouter = createRouter()
         const q = search.toLowerCase();
         const filtered = [];
         for (const p of rows) {
-          try { if (`${decrypt(p.firstNameEncrypted)} ${decrypt(p.lastNameEncrypted)}`.toLowerCase().includes(q) || decrypt(p.nationalIdEncrypted).includes(q)) filtered.push(p); } catch { }
+          try { const nid = p.nationalIdEncrypted ? decrypt(p.nationalIdEncrypted) : ''; if (`${decrypt(p.firstNameEncrypted)} ${decrypt(p.lastNameEncrypted)}`.toLowerCase().includes(q) || nid.includes(q)) filtered.push(p); } catch { }
         }
         rows = filtered;
       }
 
       const total = rows.length;
-      return c.json({ success: true, data: { patients: rows.slice(offset, offset + limit).map(p => ({ id: p.id, blockchainAddress: p.blockchainAddress, firstName: decrypt(p.firstNameEncrypted), lastName: decrypt(p.lastNameEncrypted), middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : undefined, dateOfBirth: decrypt(p.dateOfBirthEncrypted), gender: p.gender, bloodType: p.bloodType, phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : undefined, nationalId: decrypt(p.nationalIdEncrypted), createdAt: p.createdAt.toISOString() })), total, limit, offset } });
+      return c.json({ success: true, data: { patients: rows.slice(offset, offset + limit).map(p => ({ id: p.id, blockchainAddress: p.blockchainAddress, firstName: decrypt(p.firstNameEncrypted), lastName: decrypt(p.lastNameEncrypted), middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : undefined, dateOfBirth: decrypt(p.dateOfBirthEncrypted), gender: p.gender, bloodType: p.bloodType, phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : undefined, nationalId: p.nationalIdEncrypted ? decrypt(p.nationalIdEncrypted) : null, createdAt: p.createdAt.toISOString() })), total, limit, offset } });
     } catch (err: any) { console.error('[INSTITUTION PATIENTS]', err); return c.json({ success: false, error: { message: 'Internal server error' } }, 500); }
   })
 
@@ -699,7 +805,7 @@ export const patientRouter = createRouter()
         if (reg.length) registration = { hospitalPatientNumber: reg[0].hospitalPatientNumber, isHomeInstitution: reg[0].isHomeInstitution ?? false, registeredAt: reg[0].createdAt?.toISOString?.() ?? new Date().toISOString() };
       }
 
-      return c.json({ success: true, data: { id: p.id, blockchainAddress: p.blockchainAddress, firstName: decrypt(p.firstNameEncrypted), lastName: decrypt(p.lastNameEncrypted), middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : undefined, dateOfBirth: decrypt(p.dateOfBirthEncrypted), gender: p.gender, bloodType: p.bloodType, phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : undefined, address: decrypt(p.addressEncrypted), emergencyContact: decrypt(p.emergencyContactEncrypted), nationalId: decrypt(p.nationalIdEncrypted), maritalStatus: p.maritalStatus || undefined, occupation: p.occupation || undefined, isActive: p.isActive, createdAt: p.createdAt.toISOString(), registration } });
+      return c.json({ success: true, data: { id: p.id, blockchainAddress: p.blockchainAddress, firstName: decrypt(p.firstNameEncrypted), lastName: decrypt(p.lastNameEncrypted), middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : undefined, dateOfBirth: decrypt(p.dateOfBirthEncrypted), gender: p.gender, bloodType: p.bloodType, phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : undefined, address: decrypt(p.addressEncrypted), emergencyContact: decrypt(p.emergencyContactEncrypted), nationalId: p.nationalIdEncrypted ? decrypt(p.nationalIdEncrypted) : null, maritalStatus: p.maritalStatus || undefined, occupation: p.occupation || undefined, isActive: p.isActive, isMinor: p.isMinor, temporaryPatientId: p.temporaryPatientId || undefined, createdAt: p.createdAt.toISOString(), registration } });
     } catch (err: any) { console.error('[REGISTRATION]', err); return c.json({ success: false, error: { message: 'Internal server error' } }, 500); }
   })
 
@@ -747,7 +853,7 @@ export const patientRouter = createRouter()
       storeRecordHash(patientId, existing[0].blockchainAddress, generateRecordHash({ patientId, updatedBy: userId, timestamp: new Date().toISOString() }), 'patient_info_update').catch(() => { });
 
       const r = result[0];
-      return c.json({ success: true, data: { id: r.id, blockchainAddress: r.blockchainAddress, firstName: decrypt(r.firstNameEncrypted), lastName: decrypt(r.lastNameEncrypted), middleName: r.middleNameEncrypted ? decrypt(r.middleNameEncrypted) : undefined, dateOfBirth: decrypt(r.dateOfBirthEncrypted), gender: r.gender, bloodType: r.bloodType, phoneNumber: decrypt(r.phoneNumberEncrypted), email: r.emailEncrypted ? decrypt(r.emailEncrypted) : undefined, address: decrypt(r.addressEncrypted), emergencyContact: decrypt(r.emergencyContactEncrypted), nationalId: decrypt(r.nationalIdEncrypted), maritalStatus: r.maritalStatus || undefined, occupation: r.occupation || undefined, isActive: r.isActive, createdAt: r.createdAt.toISOString() } });
+      return c.json({ success: true, data: { id: r.id, blockchainAddress: r.blockchainAddress, firstName: decrypt(r.firstNameEncrypted), lastName: decrypt(r.lastNameEncrypted), middleName: r.middleNameEncrypted ? decrypt(r.middleNameEncrypted) : undefined, dateOfBirth: decrypt(r.dateOfBirthEncrypted), gender: r.gender, bloodType: r.bloodType, phoneNumber: decrypt(r.phoneNumberEncrypted), email: r.emailEncrypted ? decrypt(r.emailEncrypted) : undefined, address: decrypt(r.addressEncrypted), emergencyContact: decrypt(r.emergencyContactEncrypted), nationalId: r.nationalIdEncrypted ? decrypt(r.nationalIdEncrypted) : null, maritalStatus: r.maritalStatus || undefined, occupation: r.occupation || undefined, isActive: r.isActive, createdAt: r.createdAt.toISOString() } });
     } catch (err: any) { console.error('[UPDATE]', err); return c.json({ success: false, error: { message: 'Internal server error' } }, 500); }
   })
 
@@ -829,5 +935,34 @@ export const patientRouter = createRouter()
     }
   })
 
+  // ── GET guardians for a minor patient ────────────────────────────────────
+  .openapi(createRoute({
+    tags: ['Patients'], summary: 'Get guardians for a patient (staff only)',
+    method: 'get', path: '/:patientId/guardians',
+    middleware: [authMiddleware], security: [{ bearerAuth: [] }],
+    request: { params: z.object({ patientId: z.string().uuid() }) },
+    responses: { 200: { content: { 'application/json': { schema: successData } }, description: 'OK' } },
+  }), async (c) => {
+    const { patientId } = c.req.valid('param');
+
+    const rows = await db.select().from(patientGuardians)
+      .where(and(eq(patientGuardians.patientId, patientId), eq(patientGuardians.isActive, true)))
+      .orderBy(desc(patientGuardians.isPrimary));
+
+    const decrypted = rows.map((g) => ({
+      id:           g.id,
+      patientId:    g.patientId,
+      firstName:    decrypt(g.firstNameEncrypted),
+      lastName:     decrypt(g.lastNameEncrypted),
+      relationship: g.relationship,
+      nationalId:   decrypt(g.nationalIdEncrypted),
+      phoneNumber:  decrypt(g.phoneNumberEncrypted),
+      email:        g.emailEncrypted ? decrypt(g.emailEncrypted) : null,
+      isPrimary:    g.isPrimary,
+      createdAt:    g.createdAt,
+    }));
+
+    return c.json({ success: true, data: decrypted });
+  })
 
   ;

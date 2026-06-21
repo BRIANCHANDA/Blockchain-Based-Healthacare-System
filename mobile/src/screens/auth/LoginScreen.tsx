@@ -30,10 +30,17 @@ function formatNRC(raw: string): string {
   return `${digits.slice(0, 6)}/${digits.slice(6, 8)}/${digits.slice(8)}`;
 }
 
+const NRC_REGEX    = /^\d{6}\/\d{2}\/\d{1,2}$/;
+const CLINIC_REGEX = /^HC-MINOR-\d{4}-[A-F0-9]{4}$/i;
+
 const schema = z.object({
-  nationalId: z
+  identifier: z
     .string()
-    .regex(/^\d{6}\/\d{2}\/\d{1,2}$/, "Format: 123456/78/1"),
+    .min(1, "Required")
+    .refine(
+      (v) => NRC_REGEX.test(v) || CLINIC_REGEX.test(v),
+      "Enter your NRC (123456/78/1) or clinic patient ID (HC-MINOR-…)"
+    ),
   password: z.string().min(8, "Password must be at least 8 characters"),
 });
 type FormData = z.infer<typeof schema>;
@@ -68,7 +75,7 @@ export default function LoginScreen({ navigation }: Props) {
   const onSubmit = async (data: FormData) => {
     setLoading(true);
     try {
-      const res = await loginPatient(data.nationalId, data.password);
+      const res = await loginPatient(data.identifier, data.password);
       if (res.success) {
         const user = { ...res.data.user, type: "patient" as const };
         await setAuth(res.data.token, user);
@@ -123,16 +130,21 @@ export default function LoginScreen({ navigation }: Props) {
           <View style={styles.formWrap}>
             <Controller
               control={control}
-              name="nationalId"
+              name="identifier"
               render={({ field: { onChange, value } }) => (
                 <Input
-                  label="National ID (NRC)"
-                  placeholder="123456/78/1"
+                  label="National ID or Patient ID"
+                  placeholder="123456/78/1  or  HC-MINOR-2026-A3F2"
                   value={value}
-                  onChangeText={(text) => onChange(formatNRC(text))}
-                  keyboardType="number-pad"
-                  autoCapitalize="none"
-                  error={errors.nationalId?.message}
+                  onChangeText={(text) => {
+                    // Auto-format NRC digits; leave HC-MINOR IDs untouched
+                    const upper = text.toUpperCase();
+                    onChange(upper.startsWith("HC-") ? upper : formatNRC(text));
+                  }}
+                  keyboardType="default"
+                  autoCapitalize="characters"
+                  autoCorrect={false}
+                  error={errors.identifier?.message}
                 />
               )}
             />

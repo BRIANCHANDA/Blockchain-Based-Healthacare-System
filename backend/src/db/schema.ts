@@ -223,20 +223,48 @@ export const patients = pgTable('patients', {
     emailEncrypted: text('email_encrypted'),
     addressEncrypted: text('address_encrypted').notNull(),
     emergencyContactEncrypted: text('emergency_contact_encrypted').notNull(),
-    nationalIdEncrypted: text('national_id_encrypted').notNull().unique(),
+    nationalIdEncrypted: text('national_id_encrypted').unique(),
     maritalStatus: maritalStatusEnum('marital_status'),
     occupation: text('occupation'),
     passwordHash: text('password_hash').notNull(),
     profilePhotoUrl: text('profile_photo_url'),
+    isMinor: boolean('is_minor').default(false).notNull(),
+    temporaryPatientId: text('temporary_patient_id').unique(),
+    mustChangePassword: boolean('must_change_password').default(false).notNull(),
     isActive: boolean('is_active').default(true).notNull(),
     isDeceased: boolean('is_deceased').default(false).notNull(),
     deceasedDate: timestamp('deceased_date'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => ({
-    blockchainIdx: index('idx_patients_blockchain_address').on(table.blockchainAddress),
-    nationalIdIdx: index('idx_patients_national_id').on(table.nationalIdEncrypted),
-    activeIdx: index('idx_patients_is_active').on(table.isActive),
+    blockchainIdx:      index('idx_patients_blockchain_address').on(table.blockchainAddress),
+    nationalIdIdx:      index('idx_patients_national_id').on(table.nationalIdEncrypted),
+    temporaryIdIdx:     index('idx_patients_temporary_id').on(table.temporaryPatientId),
+    activeIdx:          index('idx_patients_is_active').on(table.isActive),
+    isMinorIdx:         index('idx_patients_is_minor').on(table.isMinor),
+}));
+
+// ─── Patient guardians (for minor patients under 16) ──────────────
+// guardianPatientId → FK to an existing adult patient account.
+// relationship: 'mother' | 'father' | 'legal_guardian' | 'grandparent' | 'other'
+// endsAt auto-set to the minor's 16th birthday at creation time.
+// A minor must always have at least one canConsent=true guardian.
+export const patientGuardians = pgTable('patient_guardians', {
+    id:                  uuid('id').defaultRandom().primaryKey(),
+    patientId:           uuid('patient_id').notNull().references(() => patients.id),
+    guardianPatientId:   uuid('guardian_patient_id').notNull().references(() => patients.id),
+    relationship:        text('relationship').notNull(),
+    isPrimary:           boolean('is_primary').default(false).notNull(),
+    canConsent:          boolean('can_consent').default(true).notNull(),
+    startsAt:            timestamp('starts_at').defaultNow().notNull(),
+    endsAt:              timestamp('ends_at'),
+    documentReference:   text('document_reference'),
+    verifiedByStaffId:   uuid('verified_by_staff_id').references(() => practitioners.id),
+    createdAt:           timestamp('created_at').defaultNow().notNull(),
+    updatedAt:           timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+    patientIdx:         index('idx_patient_guardians_patient_id').on(table.patientId),
+    guardianIdx:        index('idx_patient_guardians_guardian_patient_id').on(table.guardianPatientId),
 }));
 
 // ─── Unified staff table (practitioners) ───────────────────────────
@@ -334,6 +362,25 @@ export const visits = pgTable('visits', {
     nurseIdx: index('idx_visits_assigned_nurse').on(table.assignedNurseId),
     doctorIdx: index('idx_visits_assigned_doctor').on(table.assignedDoctorId),
 
+}));
+
+export const wardBeds = pgTable('ward_beds', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    wardId: uuid('ward_id').notNull().references(() => wards.id),
+    institutionId: uuid('institution_id').notNull().references(() => institutions.id),
+    bedCode: text('bed_code').notNull(),
+    bedType: text('bed_type').default('general').notNull(),
+    status: text('status').default('available').notNull(), // available | occupied | maintenance
+    currentVisitId: uuid('current_visit_id').references(() => visits.id),
+    notes: text('notes'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+    wardIdx:        index('idx_ward_beds_ward_id').on(table.wardId),
+    institutionIdx: index('idx_ward_beds_institution_id').on(table.institutionId),
+    statusIdx:      index('idx_ward_beds_status').on(table.status),
+    visitIdx:       index('idx_ward_beds_visit_id').on(table.currentVisitId),
+    uniqueBedCode:  unique('unique_bed_code').on(table.wardId, table.bedCode),
 }));
 
 // ==================== NURSING RECORDS ====================
@@ -718,7 +765,7 @@ export const accessRequests = pgTable('access_requests', {
     requestedByUserId: uuid('requested_by_user_id').notNull(),
     requestedByUserType: userTypeEnum('requested_by_user_type').notNull(),
     patientId: uuid('patient_id').notNull().references(() => patients.id),
-    visitId: uuid('visit_id').references(() => visits.id),   // ← ADD THIS LINE
+    visitId: uuid('visit_id').references(() => visits.id),
     requestedPermissions: jsonb('requested_permissions').notNull(),
     reason: text('reason').notNull(),
     status: requestStatusEnum('status').default('pending').notNull(),
@@ -726,6 +773,7 @@ export const accessRequests = pgTable('access_requests', {
     respondedAt: timestamp('responded_at'),
     expiresAt: timestamp('expires_at').notNull(),
     responseNote: text('response_note'),
+    approvedByGuardianId: uuid('approved_by_guardian_id').references(() => patients.id),
 }, (table) => ({
     patientIdx: index('idx_access_requests_patient_id').on(table.patientId),
     requestedByIdx: index('idx_access_requests_requested_by').on(table.requestedByUserId),
@@ -814,6 +862,26 @@ export const emergencyAccessLogs = pgTable('emergency_access_logs', {
 }));
 
 
+
+// ==================== SENSITIVE MEDICAL RECORDS (Doctor-only) ====================
+
+export const patientSensitiveRecords = pgTable('patient_sensitive_records', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    patientId: uuid('patient_id').notNull().references(() => patients.id),
+    category: text('category').notNull(), // 'infectious_disease' | 'mental_health' | 'reproductive' | 'genetic' | 'substance_use' | 'other'
+    condition: text('condition').notNull(),
+    status: text('status').notNull(),     // 'positive' | 'negative' | 'carrier' | 'resolved' | 'active' | 'unknown'
+    diagnosedDate: date('diagnosed_date'),
+    notes: text('notes'),
+    recordedByPractitionerId: uuid('recorded_by_practitioner_id').references(() => practitioners.id),
+    isActive: boolean('is_active').default(true).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+}, (table) => ({
+    patientIdx:   index('idx_sensitive_records_patient_id').on(table.patientId),
+    categoryIdx:  index('idx_sensitive_records_category').on(table.category),
+    activeIdx:    index('idx_sensitive_records_is_active').on(table.isActive),
+}));
 
 export const medicationStock = pgTable('medication_stock', {
     id: uuid('id').primaryKey().defaultRandom(),

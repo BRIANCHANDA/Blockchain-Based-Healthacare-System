@@ -20,3 +20,9 @@ export const getMyVitalsTrends = () =>
 
 export const getMyHealth = () =>
     client.get("/patients/my-health");
+
+export const getMySensitiveRecords = () =>
+    client.get("/medical/me/sensitive");
+
+export const getMyDependents = (guardianPatientId: string) =>
+    client.get(`/guardians/guardian/${guardianPatientId}/dependents`);

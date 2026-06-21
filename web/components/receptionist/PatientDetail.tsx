@@ -23,6 +23,8 @@ import {
   EyeOff,
   CheckCircle2,
 } from "lucide-react";
+import { MinorBadge, ageFromDob } from "@/components/ui/MinorBadge";
+import { PatientGuardiansSection } from "@/components/ui/PatientGuardiansSection";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface PatientRegistration {
@@ -38,10 +40,12 @@ interface PatientRegistration {
   email?: string;
   address: string;
   emergencyContact: string;
-  nationalId: string;
+  nationalId: string | null;
   maritalStatus?: string;
   occupation?: string;
   isActive: boolean;
+  isMinor?: boolean;
+  temporaryPatientId?: string;
   createdAt: string;
   registration?: {
     hospitalPatientNumber: string;
@@ -641,6 +645,11 @@ export default function PatientDetail({
                 >
                   {patient.isActive ? "Active" : "Inactive"}
                 </span>
+                {patient.isMinor && (
+                  <MinorBadge
+                    age={patient.dateOfBirth ? ageFromDob(patient.dateOfBirth) : undefined}
+                  />
+                )}
                 {editing && (
                   <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
                     Editing
@@ -673,6 +682,21 @@ export default function PatientDetail({
             </div>
           </div>
         </div>
+
+        {/* ── Minor ID display ────────────────────────────────────────────── */}
+        {patient.isMinor && patient.temporaryPatientId && (
+          <div className="mb-5 flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200">
+            <span className="text-xs font-semibold text-amber-600 uppercase tracking-wide">Minor Patient ID</span>
+            <span className="font-mono font-bold text-amber-900 text-sm">{patient.temporaryPatientId}</span>
+          </div>
+        )}
+
+        {/* ── Guardians section (minor only) ──────────────────────────────── */}
+        {patient.isMinor && !editing && (
+          <div className="mb-5">
+            <PatientGuardiansSection patientId={patient.id} canManage />
+          </div>
+        )}
 
         {/* ── VIEW MODE ─────────────────────────────────────────────────────── */}
         {!editing && (

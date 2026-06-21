@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
 import { patientApi } from "@/lib/api";
 import { Search, X, Users, ChevronRight, RefreshCw } from "lucide-react";
+import { MinorBadge } from "@/components/ui/MinorBadge";
 
 const GENDER_COLOR: Record<string, { bg: string; color: string }> = {
   male: { bg: "#eff6ff", color: "#2563eb" },
@@ -212,11 +213,12 @@ export default function AdminPatientsPage() {
                             {p.lastName?.[0]}
                           </div>
                           <div>
-                            <p className="text-sm font-semibold text-gray-800">
+                            <p className="text-sm font-semibold text-gray-800 flex items-center gap-1.5">
                               {p.firstName} {p.lastName}
+                              {p.isMinor && <MinorBadge />}
                             </p>
                             <p className="text-xs text-gray-400 font-mono">
-                              {p.id?.slice(0, 8)}…
+                              {p.temporaryPatientId ?? p.id?.slice(0, 8) + "…"}
                             </p>
                           </div>
                         </div>

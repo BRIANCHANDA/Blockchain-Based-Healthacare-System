@@ -5,6 +5,18 @@ export type User = {
     blockchainAddress: string;
     firstName: string;
     lastName: string;
+    isMinor?: boolean;
+    temporaryPatientId?: string;
+};
+
+export type Dependent = {
+    id: string;            // guardian link id
+    patientId: string;     // the minor's patient id
+    firstName: string;
+    lastName: string;
+    relationship: string;
+    endsAt: string | null;
+    dateOfBirth?: string;
 };
 
 // ── Visit ─────────────────────────────────────────────────
@@ -166,6 +178,20 @@ export type AuditLog = {
     ipAddress?: string;
 };
 
+// ── Sensitive Records ─────────────────────────────────────
+export type SensitiveRecord = {
+    id: string;
+    patientId: string;
+    category: 'infectious_disease' | 'mental_health' | 'reproductive' | 'genetic' | 'substance_use' | 'other';
+    condition: string;
+    status: 'positive' | 'negative' | 'carrier' | 'resolved' | 'active' | 'unknown';
+    diagnosedDate?: string;
+    notes?: string;
+    isActive: boolean;
+    createdAt: string;
+    updatedAt: string;
+};
+
 // ── Navigation param types ────────────────────────────────
 export type RootStackParamList = {
     Auth: undefined;
@@ -198,6 +224,7 @@ export type RecordsStackParamList = {
     Profile: undefined;
     VitalsTrends: undefined;
     PatientQR: undefined;
+    SensitiveRecords: undefined;
 };
 
 export type AccessStackParamList = {

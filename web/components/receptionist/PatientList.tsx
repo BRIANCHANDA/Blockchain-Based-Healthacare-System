@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Calendar,
 } from "lucide-react";
+import { MinorBadge } from "@/components/ui/MinorBadge";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Patient {
@@ -20,6 +21,8 @@ interface Patient {
   lastName: string;
   gender: string;
   createdAt: string;
+  isMinor?: boolean;
+  temporaryPatientId?: string;
 }
 
 interface PatientListProps {
@@ -96,7 +99,7 @@ export default function PatientList({
         });
         const { patients: newPatients } = res.data.data;
         setPatients((prev) =>
-          reset ? newPatients : [...prev, ...newPatients],
+          reset ? (newPatients as Patient[]) : [...prev, ...(newPatients as Patient[])],
         );
         setHasMore(newPatients.length === LIMIT);
         if (!reset) setOffset(currentOffset + LIMIT);
@@ -268,11 +271,14 @@ export default function PatientList({
                           {getInitials(p.firstName, p.lastName)}
                         </div>
                         <div>
-                          <p className="text-sm font-semibold text-gray-800">
-                            {p.firstName} {p.lastName}
-                          </p>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="text-sm font-semibold text-gray-800">
+                              {p.firstName} {p.lastName}
+                            </p>
+                            {p.isMinor && <MinorBadge />}
+                          </div>
                           <p className="text-xs text-gray-400 font-mono">
-                            {p.id.slice(0, 8)}…
+                            {p.temporaryPatientId ?? p.id.slice(0, 8) + "…"}
                           </p>
                         </div>
                       </div>

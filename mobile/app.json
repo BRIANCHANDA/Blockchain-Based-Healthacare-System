@@ -28,7 +28,8 @@
       ],
       "@react-native-community/datetimepicker",
       "expo-asset",
-      "expo-font"
+      "expo-font",
+      "expo-local-authentication"
     ],
     "extra": {
       "eas": {

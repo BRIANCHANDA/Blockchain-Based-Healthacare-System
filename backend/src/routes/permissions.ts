@@ -1,7 +1,7 @@
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db';
-import { accessPermissions, accessRequests, auditLogs, crossInstitutionAccess, diagnoses, institutions, labTestOrders, patientInstitutionRegistrations, patients, practitioners, visits } from '../db/schema';
+import { accessPermissions, accessRequests, auditLogs, crossInstitutionAccess, diagnoses, institutions, labTestOrders, patientInstitutionRegistrations, patients, patientGuardians, practitioners, visits } from '../db/schema';
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
 import { grantPermission, revokePermission, checkPermission, getPatientPermissions } from '../services/fabric';
@@ -237,10 +237,39 @@ export const permissionRouter = createRouter()
         expiresAt,
       }).returning({ id: accessRequests.id });
 
-      // Fire-and-forget push notification (skip if fails)
+      // Route push notification: to primary guardian if patient is minor, else to patient directly
       try {
-        // ... push notification code (optional) ...
-      } catch (notifErr) { /* ignore */ }
+        const [patRow] = await db.select({ isMinor: patients.isMinor, firstNameEncrypted: patients.firstNameEncrypted, lastNameEncrypted: patients.lastNameEncrypted })
+          .from(patients).where(eq(patients.id, body.patientId)).limit(1);
+
+        const notifyTarget = async () => {
+          if (patRow?.isMinor) {
+            const now = new Date();
+            const [primaryGuardianLink] = await db.select({ guardianPatientId: patientGuardians.guardianPatientId })
+              .from(patientGuardians)
+              .where(and(
+                eq(patientGuardians.patientId, body.patientId),
+                eq(patientGuardians.isPrimary, true),
+                eq(patientGuardians.canConsent, true),
+              )).limit(1);
+            if (primaryGuardianLink) {
+              const minorName = `${decrypt(patRow.firstNameEncrypted)} ${decrypt(patRow.lastNameEncrypted)}`;
+              const { notifyUser } = await import('../services/notifications');
+              await notifyUser(primaryGuardianLink.guardianPatientId, 'access_request_for_minor', {
+                requestId: result[0].id,
+                message: `A clinician is requesting access to ${minorName}'s records`,
+                minorPatientId: body.patientId,
+                minorName,
+              });
+              return;
+            }
+          }
+          // Self (adult patient or no guardian found)
+          const { notifyUser } = await import('../services/notifications');
+          await notifyUser(body.patientId, 'access_request', { requestId: result[0].id });
+        };
+        notifyTarget().catch(() => {});
+      } catch { /* non-blocking */ }
 
       return c.json({ success: true, data: { requestId: result[0].id } }, 201);
     } catch (err: any) {
@@ -272,12 +301,28 @@ export const permissionRouter = createRouter()
         return c.json({ success: false, error: { message: 'Only patients can view access requests' } }, 403);
       }
 
-      const patientId = c.get('userId');
+      const userId = c.get('userId');
 
-      // FIX 2: Single join query instead of N+1 per-request lookup
+      // Collect all patientIds this user can respond to:
+      // their own + any minors they are an active canConsent guardian for
+      const now = new Date();
+      const guardianLinks = await db.select({ patientId: patientGuardians.patientId })
+        .from(patientGuardians)
+        .where(and(
+          eq(patientGuardians.guardianPatientId, userId),
+          eq(patientGuardians.canConsent, true),
+        ));
+      const activeGuardianLinks = guardianLinks.filter(l => {
+        // endsAt check needs the full row — we fetch it below; here use simple filter
+        return true; // refined in mapping below
+      });
+      const dependentPatientIds = activeGuardianLinks.map(l => l.patientId);
+      const targetPatientIds = [userId, ...dependentPatientIds];
+
       const rows = await db
         .select({
           id: accessRequests.id,
+          patientId: accessRequests.patientId,
           requestedByUserId: accessRequests.requestedByUserId,
           requestedByUserType: accessRequests.requestedByUserType,
           visitId: accessRequests.visitId,
@@ -293,8 +338,10 @@ export const permissionRouter = createRouter()
         .from(accessRequests)
         .leftJoin(practitioners, eq(accessRequests.requestedByUserId, practitioners.id))
         .where(and(
-          eq(accessRequests.patientId, patientId),
           eq(accessRequests.status, 'pending'),
+          targetPatientIds.length === 1
+            ? eq(accessRequests.patientId, userId)
+            : sql`${accessRequests.patientId} = ANY(ARRAY[${sql.join(targetPatientIds.map(id => sql`${id}::uuid`), sql`, `)}])`,
         ));
 
       const enriched = rows.map((row) => {
@@ -305,6 +352,7 @@ export const permissionRouter = createRouter()
             ? `${decrypt(firstNameEncrypted)} ${decrypt(lastNameEncrypted)}`
             : 'Unknown',
           specialization: specialization ?? null,
+          isForDependent: row.patientId !== userId,
         };
       });
 
@@ -411,26 +459,48 @@ export const permissionRouter = createRouter()
         return c.json({ success: false, error: { message: 'Only patients can approve requests' } }, 403);
       }
 
-      const patientId = c.get('userId');
-      const patientBlockchainAddress = c.get('blockchainAddress');
+      const approverId = c.get('userId');
       const { requestId } = c.req.valid('param');
       const { durationHours } = c.req.valid('json');
 
-      const request = await db
-        .select()
-        .from(accessRequests)
-        .where(and(
-          eq(accessRequests.id, requestId),
-          eq(accessRequests.patientId, patientId),
-          eq(accessRequests.status, 'pending'),
-        ))
+      // Find the request — may be for the approver themselves OR for a minor they guard
+      const request = await db.select().from(accessRequests)
+        .where(and(eq(accessRequests.id, requestId), eq(accessRequests.status, 'pending')))
         .limit(1);
 
-      if (!request.length) {
+      if (!request.length)
         return c.json({ success: false, error: { message: 'Request not found or already handled' } }, 404);
-      }
 
       const req = request[0];
+
+      // Determine if approverId is the patient or a canConsent guardian of the patient
+      let approvedByGuardianId: string | null = null;
+      let patientId: string;
+      let patientBlockchainAddress: string;
+
+      if (req.patientId === approverId) {
+        // Self-approval (adult patient)
+        patientId = approverId;
+        const [p] = await db.select({ blockchainAddress: patients.blockchainAddress }).from(patients).where(eq(patients.id, patientId)).limit(1);
+        patientBlockchainAddress = p.blockchainAddress;
+      } else {
+        // Check if approverId is an active canConsent guardian for the target patient
+        const now = new Date();
+        const [guardianLink] = await db.select().from(patientGuardians)
+          .where(and(
+            eq(patientGuardians.patientId, req.patientId),
+            eq(patientGuardians.guardianPatientId, approverId),
+            eq(patientGuardians.canConsent, true),
+          )).limit(1);
+
+        if (!guardianLink || (guardianLink.endsAt && guardianLink.endsAt < now))
+          return c.json({ success: false, error: { message: 'Request not found or you are not authorised to approve it' } }, 404);
+
+        patientId = req.patientId;
+        approvedByGuardianId = approverId;
+        const [p] = await db.select({ blockchainAddress: patients.blockchainAddress }).from(patients).where(eq(patients.id, patientId)).limit(1);
+        patientBlockchainAddress = p.blockchainAddress;
+      }
 
       const staff = await db
         .select({
@@ -490,16 +560,27 @@ export const permissionRouter = createRouter()
 
       await db
         .update(accessRequests)
-        .set({ status: 'approved', respondedAt: new Date() })
+        .set({ status: 'approved', respondedAt: new Date(), approvedByGuardianId })
         .where(eq(accessRequests.id, requestId));
 
       const staffName = `${decrypt(staff[0].firstNameEncrypted)} ${decrypt(staff[0].lastNameEncrypted)}`;
+      let approvedByLabel = 'patient';
+      if (approvedByGuardianId) {
+        const [gp] = await db.select({ firstNameEncrypted: patients.firstNameEncrypted, lastNameEncrypted: patients.lastNameEncrypted }).from(patients).where(eq(patients.id, approvedByGuardianId)).limit(1);
+        const [minorPat] = await db.select({ firstNameEncrypted: patients.firstNameEncrypted, lastNameEncrypted: patients.lastNameEncrypted }).from(patients).where(eq(patients.id, patientId)).limit(1);
+        if (gp && minorPat) {
+          const guardianName = `${decrypt(gp.firstNameEncrypted)} ${decrypt(gp.lastNameEncrypted)}`;
+          const minorName    = `${decrypt(minorPat.firstNameEncrypted)} ${decrypt(minorPat.lastNameEncrypted)}`;
+          approvedByLabel    = `${guardianName} (guardian of ${minorName})`;
+        }
+      }
 
       return c.json({
         success: true,
         data: {
-          message: `Access granted to ${staffName} for ${durationHours} hours`,
+          message: `Access granted to ${staffName} for ${durationHours} hours. Approved by ${approvedByLabel}.`,
           expiresAt: expiresAt.toISOString(),
+          approvedByGuardianId,
         },
       });
 

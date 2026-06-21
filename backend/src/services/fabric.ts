@@ -54,7 +54,12 @@ function orgConfig(org: OrgKey): OrgConfig {
 }
 
 // ── Connection pool ───────────────────────────────────────────────────────────
-type PoolEntry = { client: grpc.Client; gateway: Gateway; contract: Contract };
+// Each entry carries a createdAt timestamp. getConnection evicts and reconnects
+// entries older than POOL_TTL_MS to prevent stale gRPC channels after a
+// network restart or peer certificate rotation.
+const POOL_TTL_MS = 5 * 60 * 1_000; // 5 minutes
+
+type PoolEntry = { client: grpc.Client; gateway: Gateway; contract: Contract; createdAt: number };
 const pool = new Map<string, PoolEntry>();
 
 function getFirstFile(dirPath: string): string {
@@ -65,7 +70,14 @@ function getFirstFile(dirPath: string): string {
 
 function getConnection(org: OrgKey): PoolEntry {
   const cached = pool.get(org);
-  if (cached) return cached;
+  if (cached) {
+    if (Date.now() - cached.createdAt < POOL_TTL_MS) return cached;
+    // Evict stale connection before creating a new one
+    try { cached.gateway.close(); } catch {}
+    try { cached.client.close(); } catch {}
+    pool.delete(org);
+    console.log(`[FABRIC] Connection pool evicted stale entry for ${org} (TTL exceeded)`);
+  }
 
   const cfg = orgConfig(org);
   const tlsCert = fs.readFileSync(cfg.tlsCertPath);
@@ -73,11 +85,15 @@ function getConnection(org: OrgKey): PoolEntry {
 
   const client = new grpc.Client(cfg.peerEndpoint, credentials, {
     'grpc.ssl_target_name_override': cfg.hostAlias,
-    'grpc.keepalive_time_ms': 10_000,
-    'grpc.keepalive_timeout_ms': 5_000,
-    'grpc.keepalive_permit_without_calls': 1,
+    // Fabric peers reject pings more frequent than their server-side minimum
+    // (default 300 s). 120 s gives headroom while still catching dead connections.
+    'grpc.keepalive_time_ms': 120_000,
+    'grpc.keepalive_timeout_ms': 20_000,
+    // 0 = only ping when there are active RPC calls — stops idle connections
+    // from flooding all 3 peers with pings every 10 s.
+    'grpc.keepalive_permit_without_calls': 0,
     'grpc.http2.max_pings_without_data': 0,
-    'grpc.http2.min_time_between_pings_ms': 10_000,
+    'grpc.http2.min_time_between_pings_ms': 120_000,
   });
 
   const certPath = getFirstFile(path.join(cfg.adminMspPath, 'signcerts'));
@@ -96,7 +112,7 @@ function getConnection(org: OrgKey): PoolEntry {
   });
 
   const contract = gateway.getNetwork(CHANNEL).getContract(CHAINCODE);
-  const entry: PoolEntry = { client, gateway, contract };
+  const entry: PoolEntry = { client, gateway, contract, createdAt: Date.now() };
   pool.set(org, entry);
   return entry;
 }
@@ -276,17 +292,25 @@ export async function storeRecordHash(
   }
 }
 
-export async function verifyRecordHash(recordId: string, sha256Hash: string): Promise<boolean> {
-  return withTimeout(
+export type VerifyResult = {
+  verified: boolean;
+  notFound: boolean;
+  timedOut: boolean;
+};
+
+export async function verifyRecordHash(recordId: string, sha256Hash: string): Promise<VerifyResult> {
+  return withTimeout<VerifyResult>(
     async () => {
       const { contract } = getConnection('hospital');
       const result = await contract.evaluateTransaction(
         'RecordContract:verifyRecordHash',
         recordId, sha256Hash,
       );
-      return Buffer.from(result).toString() === 'true';
+      const parsed = JSON.parse(Buffer.from(result).toString()) as { verified: boolean; notFound: boolean };
+      return { ...parsed, timedOut: false };
     },
-    8_000, 'verifyRecordHash', () => false,
+    8_000, 'verifyRecordHash',
+    () => ({ verified: false, notFound: false, timedOut: true }),
   );
 }
 
