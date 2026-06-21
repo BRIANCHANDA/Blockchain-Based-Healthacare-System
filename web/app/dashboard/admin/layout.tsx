@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import { ProfileDrawer } from "@/components/ProfileDrawer";
+import { Logo } from "@/components/Logo";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
 import {
@@ -19,6 +20,8 @@ import {
   Activity,
   FileText,
   Link2,
+  BedDouble,
+  Layers,
 } from "lucide-react";
 
 // ── Nav structure ─────────────────────────────────────────────────────────────
@@ -53,6 +56,16 @@ function getNavGroups(isSuperAdmin: boolean) {
           label: "Visits",
           href: "/dashboard/admin/visits",
           icon: ClipboardList,
+        },
+        {
+          label: "Wards",
+          href: "/dashboard/admin/wards",
+          icon: BedDouble,
+        },
+        {
+          label: "Departments",
+          href: "/dashboard/admin/departments",
+          icon: Layers,
         },
         {
           label: "Permissions",
@@ -232,37 +245,12 @@ export default function AdminLayout({
                 width: 36,
                 height: 36,
                 borderRadius: 10,
-                background:
-                  "linear-gradient(135deg, rgba(255,255,255,0.15), rgba(255,255,255,0.05))",
-                border: "1px solid rgba(255,255,255,0.15)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                overflow: "hidden",
                 flexShrink: 0,
                 boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
               }}
             >
-              <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-                <rect
-                  x="8"
-                  y="2"
-                  width="4"
-                  height="16"
-                  rx="2"
-                  fill="white"
-                  opacity="0.9"
-                />
-                <rect
-                  x="2"
-                  y="8"
-                  width="16"
-                  height="4"
-                  rx="2"
-                  fill="white"
-                  opacity="0.9"
-                />
-                <circle cx="10" cy="10" r="2.5" fill="white" />
-              </svg>
+              <Logo size={36} />
             </div>
             <div style={{ flex: 1, minWidth: 0 }}>
               <p

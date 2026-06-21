@@ -6,6 +6,7 @@ import { z } from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useAuthStore } from "@/lib/store";
 import { api } from "@/lib/api";
+import { Logo } from "@/components/Logo";
 import {
   Eye,
   EyeOff,
@@ -185,44 +186,22 @@ export default function LoginPage() {
               width: 44,
               height: 44,
               borderRadius: 12,
-              background: "#166534",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
+              overflow: "hidden",
               margin: "0 auto 12px",
             }}
           >
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <rect
-                x="8"
-                y="2"
-                width="4"
-                height="16"
-                rx="2"
-                fill="white"
-                opacity="0.95"
-              />
-              <rect
-                x="2"
-                y="8"
-                width="16"
-                height="4"
-                rx="2"
-                fill="white"
-                opacity="0.95"
-              />
-            </svg>
+            <Logo size={44} />
           </div>
           <p
             style={{
               fontFamily: "'Playfair Display',serif",
               fontSize: 20,
               fontWeight: 700,
-              color: "#111827",
+              color: "#0A0E1A",
               margin: 0,
             }}
           >
-            MedLink
+            Med<span style={{ color: "#059669" }}>Link</span>
           </p>
           <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 3 }}>
             Staff Portal · Zambia

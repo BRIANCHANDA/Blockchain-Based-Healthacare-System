@@ -79,8 +79,8 @@ export const patientApi = {
     register: (data: any, institutionId?: string) =>
         api.post('/api/auth/register/patient', institutionId ? { ...data, institutionId } : data),
 
-    search: (query: string) =>
-        api.get<ApiResponse<SearchResponse>>(`/api/patients/search?q=${encodeURIComponent(query)}`),
+    search: (query: string, global = false) =>
+        api.get<ApiResponse<SearchResponse>>(`/api/patients/search?q=${encodeURIComponent(query)}${global ? '&global=true' : ''}`),
 
     searchPaginated: (params: { q?: string; limit?: number; offset?: number }) => {
         const p = new URLSearchParams();
@@ -107,7 +107,30 @@ export const patientApi = {
         const url = `/api/patients/institution/${institutionId}${p.toString() ? `?${p.toString()}` : ''}`;
         return api.get(url);
     },
+    registerMinor: (data: {
+        firstName: string; lastName: string; middleName?: string;
+        dateOfBirth: string; gender: string; phoneNumber: string;
+        email?: string; address: string; emergencyContact: string;
+        isMinor: true;
+        guardianPatientId: string;
+        guardianRelationship: string;
+        guardianDocumentReference?: string;
+        institutionId?: string; hospitalPatientNumber?: string;
+    }) => api.post('/api/patients', data),
 };
+
+export const guardiansApi = {
+    create: (data: {
+        patientId: string; guardianPatientId: string; relationship: string;
+        isPrimary?: boolean; canConsent?: boolean; documentReference?: string;
+    }) => api.post('/api/guardians', data),
+    listForPatient: (patientId: string) => api.get(`/api/guardians/patient/${patientId}`),
+    listDependents:  (guardianPatientId: string) => api.get(`/api/guardians/guardian/${guardianPatientId}/dependents`),
+    update: (linkId: string, data: { relationship?: string; isPrimary?: boolean; canConsent?: boolean; documentReference?: string }) =>
+        api.patch(`/api/guardians/${linkId}`, data),
+    remove: (linkId: string) => api.delete(`/api/guardians/${linkId}`),
+};
+
 // ── Add these methods to practitionersApi in web/src/lib/api.ts ──────────────
 // Replace the existing practitionersApi block with this full version.
 
@@ -203,6 +226,8 @@ export const visitApi = {
         api.post(`/api/visits/${visitId}/prescriptions`, data),
     discharge: (visitId: string, data: any) =>
         api.patch(`/api/visits/${visitId}/discharge`, data),
+    admit: (visitId: string, data: { admittingDiagnosis: string; priority?: string; notes?: string }) =>
+        api.patch(`/api/visits/${visitId}/admit`, data),
 
     // ── Lab ──────────────────────────────────────────────
     getPendingLabOrders: () => api.get('/api/visits/lab-orders/pending'),

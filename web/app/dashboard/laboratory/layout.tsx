@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { ProfileDrawer } from "@/components/ProfileDrawer";
+import { Logo } from "@/components/Logo";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
 import {
@@ -12,10 +13,10 @@ import {
   X,
   ChevronRight,
   Bell,
-  Heart,
   Building2,
   Users,
   FlaskConical,
+  FileText,
 } from "lucide-react";
 
 const navItems = [
@@ -27,6 +28,7 @@ const navItems = [
   },
   { label: "My Results", href: "/dashboard/laboratory/history", icon: History },
   { label: "Patients", href: "/dashboard/laboratory/patients", icon: Users },
+  { label: "My Report", href: "/dashboard/laboratory/report", icon: FileText },
 ];
 
 export default function LaboratoryLayout({
@@ -102,14 +104,8 @@ export default function LaboratoryLayout({
         {/* Logo */}
         <div className="px-5 pt-6 pb-5 border-b border-white/[0.07]">
           <div className="flex items-center gap-3 mb-4">
-            <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{
-                background: "rgba(134,239,172,0.15)",
-                border: "1px solid rgba(134,239,172,0.2)",
-              }}
-            >
-              <Heart className="w-4 h-4 text-green-300" />
+            <div className="w-9 h-9 rounded-xl overflow-hidden flex-shrink-0">
+              <Logo size={36} />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-white font-bold text-sm leading-tight tracking-tight">

@@ -12,8 +12,9 @@ import {
   X,
   ChevronRight,
   Bell,
-  Scan,
+  FileText,
 } from "lucide-react";
+import { Logo } from "@/components/Logo";
 
 const navItems = [
   { label: "Overview", href: "/dashboard/radiology", icon: LayoutDashboard },
@@ -23,6 +24,7 @@ const navItems = [
     icon: ClipboardList,
   },
   { label: "Patients", href: "/dashboard/radiology/patients", icon: History },
+  { label: "My Report", href: "/dashboard/radiology/report", icon: FileText },
 ];
 
 export default function RadiologyLayout({
@@ -75,11 +77,8 @@ export default function RadiologyLayout({
       >
         {/* Logo */}
         <div className="flex items-center gap-3 px-5 py-5 border-b border-white/10">
-          <div
-            className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
-            style={{ background: "rgba(255,255,255,0.15)" }}
-          >
-            <Scan className="w-4 h-4 text-white" />
+          <div className="w-8 h-8 rounded-lg overflow-hidden flex-shrink-0">
+            <Logo size={32} />
           </div>
           <div>
             <p className="text-white font-bold text-sm leading-none">MedLink</p>

@@ -11,14 +11,16 @@ import {
   Menu,
   X,
   ChevronRight,
-  Stethoscope,
   Shield,
   Building2,
   ArrowLeftRight,
   QrCode,
+  FileText,
+  BedDouble,
 } from "lucide-react";
 import { NotificationBell } from "@/components/NotificationBell";
 import { ProfileDrawer } from "@/components/ProfileDrawer";
+import { Logo } from "@/components/Logo";
 
 const navItems = [
   {
@@ -37,6 +39,12 @@ const navItems = [
     badge: false,
   },
   {
+    label: "Admitted Patients",
+    href: "/dashboard/doctor/admitted",
+    icon: BedDouble,
+    badge: false,
+  },
+  {
     label: "Referrals",
     href: "/dashboard/doctor/referrals",
     icon: ArrowLeftRight,
@@ -52,6 +60,12 @@ const navItems = [
     label: "Patients",
     href: "/dashboard/doctor/patients",
     icon: Search,
+    badge: false,
+  },
+  {
+    label: "My Report",
+    href: "/dashboard/doctor/report",
+    icon: FileText,
     badge: false,
   },
 ];
@@ -155,14 +169,8 @@ export default function DoctorLayout({
         {/* Branding */}
         <div className="px-5 pt-6 pb-5 border-b border-white/[0.07]">
           <div className="flex items-center gap-3 mb-4">
-            <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{
-                background: "rgba(134,239,172,0.15)",
-                border: "1px solid rgba(134,239,172,0.2)",
-              }}
-            >
-              <Stethoscope className="w-4 h-4 text-green-300" />
+            <div className="w-9 h-9 rounded-xl overflow-hidden flex-shrink-0">
+              <Logo size={36} />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-white font-bold text-sm leading-tight tracking-tight">

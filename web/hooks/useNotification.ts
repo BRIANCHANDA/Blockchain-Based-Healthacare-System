@@ -66,6 +66,10 @@ export function useNotifications() {
                 push('imaging_result_ready', JSON.parse(e.data));
             });
 
+            es.addEventListener('patient_admitted', (e) => {
+                push('patient_admitted', JSON.parse(e.data));
+            });
+
             es.addEventListener('ping', () => {
                 // heartbeat — no action needed
             });

@@ -7,13 +7,13 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, FlaskConical, ScanLine, CheckCheck, Trash2 } from "lucide-react";
+import { Bell, FlaskConical, ScanLine, CheckCheck, Trash2, BedDouble } from "lucide-react";
 import { useNotifications, AppNotification } from "@/hooks/useNotification";
 import { formatDistanceToNow } from "date-fns";
 
 const EVENT_META: Record<
   string,
-  { label: string; color: string; bg: string; Icon: any }
+  { label: string; color: string; bg: string; Icon: any; nurseRoute?: boolean }
 > = {
   lab_result_ready: {
     label: "Lab Result Ready",
@@ -26,6 +26,13 @@ const EVENT_META: Record<
     color: "#7c3aed",
     bg: "#faf5ff",
     Icon: ScanLine,
+  },
+  patient_admitted: {
+    label: "Patient Admitted — Needs Bed",
+    color: "#d97706",
+    bg: "#fffbeb",
+    Icon: BedDouble,
+    nurseRoute: true,
   },
 };
 
@@ -47,8 +54,10 @@ function NotificationItem({
 
   function handleClick() {
     onClose();
-    if (n.data.visitId) {
-      router.push(`/dashboard/doctor/visits/${n.data.visitId}`);
+    if (meta.nurseRoute) {
+      router.push("/dashboard/nurse/ward");
+    } else if (n.data.visitId) {
+      router.push(`/dashboard/doctor/visit/${n.data.visitId}`);
     }
   }
 
@@ -72,9 +81,10 @@ function NotificationItem({
           {n.data.patientName ?? "Patient"}
           {n.data.testName ? ` — ${n.data.testName}` : ""}
           {n.data.modality ? ` — ${n.data.modality}` : ""}
+          {n.data.admittingDiagnosis ? ` — ${n.data.admittingDiagnosis}` : ""}
         </p>
         <p className="text-xs text-gray-400 mt-0.5">
-          {n.data.orderNumber} ·{" "}
+          {n.data.orderNumber ? `${n.data.orderNumber} · ` : ""}
           {formatDistanceToNow(new Date(n.receivedAt), { addSuffix: true })}
         </p>
       </div>

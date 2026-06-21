@@ -57,12 +57,12 @@ export default function PharmacyQueuePage() {
     .filter(
       (p) =>
         !search ||
-        p.prescription_number?.toLowerCase().includes(search.toLowerCase()) ||
-        p.visit_number?.toLowerCase().includes(search.toLowerCase()),
+        p.prescriptionNumber?.toLowerCase().includes(search.toLowerCase()) ||
+        p.visitNumber?.toLowerCase().includes(search.toLowerCase()),
     );
 
   const longWaiting = prescriptions.filter(
-    (p) => Date.now() - new Date(p.prescribed_at).getTime() > 30 * 60 * 1000,
+    (p) => Date.now() - new Date(p.prescribedAt).getTime() > 30 * 60 * 1000,
   ).length;
 
   if (loading) {
@@ -175,7 +175,7 @@ export default function PharmacyQueuePage() {
         <div className="space-y-3">
           {filtered.map((rx) => {
             const cfg = STATUS_CONFIG[rx.status] ?? STATUS_CONFIG.prescribed;
-            const waited = Date.now() - new Date(rx.prescribed_at).getTime();
+            const waited = Date.now() - new Date(rx.prescribedAt).getTime();
             const isOld = waited > 30 * 60 * 1000;
             const isVeryOld = waited > 60 * 60 * 1000;
             return (
@@ -222,7 +222,7 @@ export default function PharmacyQueuePage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap mb-1">
                       <p className="text-sm font-bold text-gray-900 font-mono">
-                        {rx.prescription_number}
+                        {rx.prescriptionNumber}
                       </p>
                       {isVeryOld && (
                         <span className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
@@ -237,17 +237,17 @@ export default function PharmacyQueuePage() {
                     </div>
                     <div className="flex items-center gap-3">
                       <span className="text-xs text-gray-500">
-                        {rx.visit_number}
+                        {rx.visitNumber}
                       </span>
                       <span className="text-xs text-gray-300">·</span>
                       <span className="text-xs text-gray-500">
-                        {rx.pending_items} of {rx.total_items} item
-                        {rx.total_items != 1 ? "s" : ""} pending
+                        {rx.pendingItems} of {rx.totalItems} item
+                        {rx.totalItems != 1 ? "s" : ""} pending
                       </span>
                     </div>
-                    {rx.chief_complaint && (
+                    {rx.chiefComplaint && (
                       <p className="text-xs text-gray-400 italic truncate mt-0.5">
-                        "{rx.chief_complaint}"
+                        "{rx.chiefComplaint}"
                       </p>
                     )}
                   </div>
@@ -262,9 +262,9 @@ export default function PharmacyQueuePage() {
                     </span>
                     <div className="flex items-center gap-1 text-xs text-gray-400">
                       <Clock size={11} />
-                      {rx.prescribed_at &&
-                      !isNaN(new Date(rx.prescribed_at).getTime())
-                        ? formatDistanceToNow(new Date(rx.prescribed_at), {
+                      {rx.prescribedAt &&
+                      !isNaN(new Date(rx.prescribedAt).getTime())
+                        ? formatDistanceToNow(new Date(rx.prescribedAt), {
                             addSuffix: true,
                           })
                         : "Unknown"}
@@ -277,21 +277,21 @@ export default function PharmacyQueuePage() {
                 </div>
 
                 {/* Item progress bar */}
-                {rx.total_items > 0 && (
+                {rx.totalItems > 0 && (
                   <div className="px-4 pb-3">
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs text-gray-400">
                         Dispensing progress
                       </span>
                       <span className="text-xs font-semibold text-gray-600">
-                        {rx.total_items - rx.pending_items}/{rx.total_items}
+                        {rx.totalItems - rx.pendingItems}/{rx.totalItems}
                       </span>
                     </div>
                     <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
                       <div
                         className="h-full rounded-full bg-green-500 transition-all"
                         style={{
-                          width: `${((rx.total_items - rx.pending_items) / rx.total_items) * 100}%`,
+                          width: `${((rx.totalItems - rx.pendingItems) / rx.totalItems) * 100}%`,
                         }}
                       />
                     </div>

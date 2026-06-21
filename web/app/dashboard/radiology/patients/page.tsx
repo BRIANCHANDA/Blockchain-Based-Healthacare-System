@@ -1,19 +1,8 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { patientApi } from "@/lib/api";
-import {
-  Search,
-  X,
-  Scan,
-  Users,
-  ChevronRight,
-  ChevronDown,
-  ChevronUp,
-  AlertCircle,
-  ArrowLeft,
-} from "lucide-react";
-import { format } from "date-fns";
+import { Search, X, Users, ChevronRight, RefreshCw, Scan } from "lucide-react";
 
 const BLOOD_COLOR: Record<string, string> = {
   "A+": "#3b82f6",
@@ -26,24 +15,28 @@ const BLOOD_COLOR: Record<string, string> = {
   "O-": "#14b8a6",
 };
 
-const STATUS_COLORS: Record<
-  string,
-  { bg: string; color: string; label: string }
-> = {
-  ordered: { bg: "#fef3c7", color: "#d97706", label: "Ordered" },
-  scheduled: { bg: "#eff6ff", color: "#2563eb", label: "Scheduled" },
-  completed: { bg: "#f0fdf4", color: "#16a34a", label: "Completed" },
-  reported: { bg: "#faf5ff", color: "#7c3aed", label: "Reported" },
-  cancelled: { bg: "#f3f4f6", color: "#6b7280", label: "Cancelled" },
-};
+const AVATAR_COLORS = [
+  "#4c1d95",
+  "#5b21b6",
+  "#6d28d9",
+  "#7c3aed",
+  "#1d4ed8",
+  "#0f766e",
+  "#b45309",
+  "#be185d",
+];
+
+function getAvatarColor(name: string) {
+  let hash = 0;
+  for (let i = 0; i < name.length; i++)
+    hash = name.charCodeAt(i) + ((hash << 5) - hash);
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+}
 
 function calcAge(dob?: string) {
   if (!dob) return "—";
-  return (
-    Math.floor(
-      (Date.now() - new Date(dob).getTime()) / (1000 * 60 * 60 * 24 * 365.25),
-    ) + " yrs"
-  );
+  const diff = Date.now() - new Date(dob).getTime();
+  return Math.floor(diff / (1000 * 60 * 60 * 24 * 365.25)) + " yrs";
 }
 
 function SkeletonRow() {
@@ -61,62 +54,99 @@ function SkeletonRow() {
   );
 }
 
-// ── Patient list ──────────────────────────────────────────────────────────────
-function PatientsList() {
+const PER_PAGE = 25;
+
+export default function RadiologyPatientsPage() {
   const router = useRouter();
+
   const [patients, setPatients] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [inputVal, setInputVal] = useState("");
   const [search, setSearch] = useState("");
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const PER_PAGE = 20;
+  const [error, setError] = useState("");
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  const load = useCallback(async () => {
-    if (!search.trim()) {
-      setPatients([]);
-      setTotal(0);
-      return;
-    }
-    setLoading(true);
-    try {
-      const res = await patientApi.searchPaginated({
-        q: search,
-        limit: PER_PAGE,
-        offset: (page - 1) * PER_PAGE,
-      });
-      setPatients(res.data.data?.patients ?? []);
-      setTotal(res.data.data?.total ?? 0);
-    } catch {
-      setPatients([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [search, page]);
+  const load = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true);
+      setError("");
+      try {
+        const res = await patientApi.searchPaginated({
+          q: search.trim() || undefined,
+          limit: PER_PAGE,
+          offset: (page - 1) * PER_PAGE,
+        });
+        setPatients(res.data.data?.patients ?? []);
+        setTotal(res.data.data?.total ?? 0);
+      } catch (err: any) {
+        setError(
+          err.response?.data?.error?.message ||
+            "Failed to load patients. Please try again.",
+        );
+        setPatients([]);
+        setTotal(0);
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [search, page],
+  );
 
   useEffect(() => {
     load();
   }, [load]);
+
   useEffect(() => {
     setPage(1);
   }, [search]);
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await load(true);
+  };
+
+  const handleSearch = () => setSearch(inputVal.trim());
+
+  const handleClear = () => {
+    setInputVal("");
+    setSearch("");
+    inputRef.current?.focus();
+  };
+
   const totalPages = Math.ceil(total / PER_PAGE);
 
   return (
-    <div style={{ fontFamily: "'DM Sans',sans-serif" }}>
+    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1
             className="text-2xl font-bold text-gray-900"
-            style={{ fontFamily: "'Playfair Display',serif" }}
+            style={{ fontFamily: "'Playfair Display', serif" }}
           >
             Patient Records
           </h1>
           <p className="text-sm text-gray-400 mt-0.5">
-            Search patients to view their imaging history
+            {loading
+              ? "Loading patients…"
+              : total > 0
+                ? `${total} patient${total !== 1 ? "s" : ""} found`
+                : "Search or browse all patients"}
           </p>
         </div>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing || loading}
+          className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-40"
+        >
+          <RefreshCw
+            className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`}
+          />
+          Refresh
+        </button>
       </div>
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-4">
@@ -124,149 +154,226 @@ function PatientsList() {
           <div className="flex-1 relative">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
+              ref={inputRef}
               value={inputVal}
               onChange={(e) => setInputVal(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && setSearch(inputVal.trim())}
-              placeholder="Search by patient name or ID…"
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              placeholder="Search by name, National ID, or patient ID…"
               className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-purple-600 focus:ring-2 focus:ring-purple-600/10 focus:bg-white transition-all"
             />
             {inputVal && (
               <button
-                onClick={() => {
-                  setInputVal("");
-                  setSearch("");
-                }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                onClick={handleClear}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
               >
                 <X className="w-4 h-4" />
               </button>
             )}
           </div>
           <button
-            onClick={() => setSearch(inputVal.trim())}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md"
+            onClick={handleSearch}
+            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md active:scale-[0.98]"
             style={{ background: "linear-gradient(135deg,#4c1d95,#7c3aed)" }}
           >
             Search
           </button>
         </div>
+
+        {search && (
+          <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100">
+            <span className="text-xs text-gray-500">Showing results for</span>
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-purple-50 border border-purple-100 text-xs font-semibold text-purple-700">
+              {search}
+              <button
+                onClick={handleClear}
+                className="hover:text-purple-900 transition-colors"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </span>
+          </div>
+        )}
       </div>
+
+      {error && (
+        <div className="flex items-center gap-2.5 p-3.5 mb-4 rounded-xl bg-red-50 border border-red-100 text-sm text-red-700">
+          <Scan className="w-4 h-4 shrink-0" />
+          {error}
+        </div>
+      )}
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
-              <tr className="border-b border-gray-100">
-                {["Patient", "Age", "Gender", "Blood Type", ""].map((h, i) => (
+              <tr className="border-b border-gray-100 bg-gray-50/50">
+                {[
+                  { label: "Patient", width: "w-64" },
+                  { label: "National ID", width: "w-36" },
+                  { label: "Age", width: "w-20" },
+                  { label: "Gender", width: "w-24" },
+                  { label: "Blood Type", width: "w-24" },
+                  { label: "", width: "w-10" },
+                ].map(({ label, width }, i) => (
                   <th
                     key={i}
-                    className={`py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide ${i === 0 ? "pl-5 pr-3" : i === 4 ? "pl-3 pr-5" : "px-3"}`}
+                    className={`py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide ${width} ${
+                      i === 0 ? "pl-5 pr-3" : i === 5 ? "pl-3 pr-5" : "px-3"
+                    }`}
                   >
-                    {h}
+                    {label}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)
-              ) : !search ? (
-                <tr>
-                  <td colSpan={5} className="py-16 text-center">
-                    <Scan className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-                    <p className="text-sm font-semibold text-gray-400">
-                      Search for a patient to view imaging records
-                    </p>
-                  </td>
-                </tr>
+                Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
               ) : patients.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-16 text-center">
-                    <Users className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-                    <p className="text-sm font-semibold text-gray-400">
-                      No patients found
+                  <td colSpan={6} className="py-20 text-center">
+                    <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
+                      <Users className="w-7 h-7 text-gray-400" />
+                    </div>
+                    <p className="text-sm font-semibold text-gray-500 mb-1">
+                      {search
+                        ? "No patients match your search"
+                        : "No patients found"}
                     </p>
+                    <p className="text-xs text-gray-400">
+                      {search
+                        ? "Try a different name, National ID, or patient ID"
+                        : "Patients will appear here once registered"}
+                    </p>
+                    {search && (
+                      <button
+                        onClick={handleClear}
+                        className="mt-4 px-4 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                      >
+                        Clear search
+                      </button>
+                    )}
                   </td>
                 </tr>
               ) : (
-                patients.map((p) => (
-                  <tr
-                    key={p.id}
-                    onClick={() =>
-                      router.push(`/dashboard/radiology/patients/${p.id}`)
-                    }
-                    className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors cursor-pointer group"
-                  >
-                    <td className="py-3.5 pl-5 pr-3">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-                          style={{
-                            background:
-                              "linear-gradient(135deg,#4c1d95,#7c3aed)",
-                          }}
-                        >
-                          {p.firstName?.[0]}
-                          {p.lastName?.[0]}
+                patients.map((p) => {
+                  const initials = `${p.firstName?.[0] ?? ""}${p.lastName?.[0] ?? ""}`;
+                  const avatarColor = getAvatarColor(p.firstName + p.lastName);
+                  return (
+                    <tr
+                      key={p.id}
+                      onClick={() =>
+                        router.push(`/dashboard/radiology/patients/${p.id}`)
+                      }
+                      className="border-b border-gray-50 hover:bg-purple-50/30 transition-colors cursor-pointer group"
+                    >
+                      <td className="py-3.5 pl-5 pr-3">
+                        <div className="flex items-center gap-3">
+                          <div
+                            className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                            style={{ backgroundColor: avatarColor }}
+                          >
+                            {initials}
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-800">
+                              {p.firstName} {p.lastName}
+                            </p>
+                            <p className="text-xs text-gray-400 font-mono mt-0.5">
+                              {p.id?.slice(0, 8)}…
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-sm font-semibold text-gray-800">
-                            {p.firstName} {p.lastName}
-                          </p>
-                          <p className="text-xs text-gray-400 font-mono">
-                            {p.id?.slice(0, 8)}…
-                          </p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-3 text-sm text-gray-600">
-                      {calcAge(p.dateOfBirth)}
-                    </td>
-                    <td className="py-3.5 px-3">
-                      <span className="text-xs font-semibold px-2.5 py-1 rounded-full capitalize bg-gray-100 text-gray-600">
-                        {p.gender ?? "—"}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-3">
-                      {p.bloodType && p.bloodType !== "unknown" ? (
-                        <span
-                          className="text-xs font-bold px-2.5 py-1 rounded-full text-white"
-                          style={{
-                            background: BLOOD_COLOR[p.bloodType] ?? "#6b7280",
-                          }}
-                        >
-                          {p.bloodType}
+                      </td>
+
+                      <td className="py-3.5 px-3">
+                        <span className="text-xs font-mono text-gray-600 bg-gray-100 px-2 py-1 rounded-lg">
+                          {p.nationalId ?? "—"}
                         </span>
-                      ) : (
-                        <span className="text-xs text-gray-400">—</span>
-                      )}
-                    </td>
-                    <td className="py-3.5 pl-3 pr-5">
-                      <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-500 transition-colors ml-auto" />
-                    </td>
-                  </tr>
-                ))
+                      </td>
+
+                      <td className="py-3.5 px-3 text-sm text-gray-600">
+                        {calcAge(p.dateOfBirth)}
+                      </td>
+
+                      <td className="py-3.5 px-3">
+                        <span className="text-xs font-semibold px-2.5 py-1 rounded-full capitalize bg-gray-100 text-gray-600">
+                          {p.gender ?? "—"}
+                        </span>
+                      </td>
+
+                      <td className="py-3.5 px-3">
+                        {p.bloodType && p.bloodType !== "unknown" ? (
+                          <span
+                            className="text-xs font-bold px-2.5 py-1 rounded-full text-white"
+                            style={{
+                              backgroundColor:
+                                BLOOD_COLOR[p.bloodType] ?? "#6b7280",
+                            }}
+                          >
+                            {p.bloodType}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-300">—</span>
+                        )}
+                      </td>
+
+                      <td className="py-3.5 pl-3 pr-5">
+                        <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-purple-600 transition-colors ml-auto" />
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
+
         {totalPages > 1 && (
-          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100">
+          <div className="flex items-center justify-between px-5 py-3.5 border-t border-gray-100 bg-gray-50/30">
             <p className="text-xs text-gray-400">
-              Page {page} of {totalPages} · {total} total
+              Showing{" "}
+              <span className="font-semibold text-gray-600">
+                {(page - 1) * PER_PAGE + 1}–{Math.min(page * PER_PAGE, total)}
+              </span>{" "}
+              of <span className="font-semibold text-gray-600">{total}</span>{" "}
+              patients
             </p>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-1.5">
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 disabled:opacity-40 hover:bg-gray-50"
+                className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 disabled:opacity-40 hover:bg-gray-50 transition-colors"
               >
                 Previous
               </button>
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                const pageNum =
+                  totalPages <= 5
+                    ? i + 1
+                    : page <= 3
+                      ? i + 1
+                      : page >= totalPages - 2
+                        ? totalPages - 4 + i
+                        : page - 2 + i;
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setPage(pageNum)}
+                    className={`w-8 h-7 rounded-lg text-xs font-medium transition-colors ${
+                      pageNum === page
+                        ? "bg-purple-700 text-white border border-purple-700"
+                        : "border border-gray-200 text-gray-600 hover:bg-gray-50"
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
-                className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 disabled:opacity-40 hover:bg-gray-50"
+                className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 disabled:opacity-40 hover:bg-gray-50 transition-colors"
               >
                 Next
               </button>
@@ -277,5 +384,3 @@ function PatientsList() {
     </div>
   );
 }
-
-export default PatientsList;

@@ -19,6 +19,20 @@ import {
   BarChart3,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Cell,
+} from "recharts";
+
+const MED_COLORS = ["#166534", "#16a34a", "#22c55e", "#4ade80", "#86efac"];
 
 function getGreeting() {
   const h = new Date().getHours();
@@ -261,6 +275,102 @@ export default function PharmacyOverviewPage() {
           </div>
         ))}
       </div>
+
+      {/* Charts */}
+      {!loading && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+          <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <BarChart3 className="w-3.5 h-3.5 text-gray-400" />
+              <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
+                Weekly Activity
+              </p>
+            </div>
+            {stats?.weeklyActivity?.length ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <AreaChart data={stats.weeklyActivity}>
+                  <defs>
+                    <linearGradient id="prescribedFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#d97706" stopOpacity={0.25} />
+                      <stop offset="100%" stopColor="#d97706" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="dispensedFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#166534" stopOpacity={0.3} />
+                      <stop offset="100%" stopColor="#166534" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 10 }}
+                    tickFormatter={(v) => (v ? format(new Date(v), "EEE") : v)}
+                  />
+                  <YAxis tick={{ fontSize: 10 }} allowDecimals={false} />
+                  <Tooltip
+                    labelFormatter={(v) => (v ? format(new Date(v), "MMM d") : v)}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="prescribed"
+                    name="Prescribed"
+                    stroke="#d97706"
+                    fill="url(#prescribedFill)"
+                    strokeWidth={2}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="dispensed"
+                    name="Dispensed"
+                    stroke="#166534"
+                    fill="url(#dispensedFill)"
+                    strokeWidth={2}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[200px] flex items-center justify-center text-xs text-gray-400">
+                No activity in the last 7 days
+              </div>
+            )}
+          </div>
+
+          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
+            <div className="flex items-center gap-2 mb-3">
+              <Pill className="w-3.5 h-3.5 text-gray-400" />
+              <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
+                Top Medications
+              </p>
+            </div>
+            {stats?.topMedications?.length ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart
+                  data={stats.topMedications}
+                  layout="vertical"
+                  margin={{ left: 8 }}
+                >
+                  <XAxis type="number" tick={{ fontSize: 10 }} allowDecimals={false} />
+                  <YAxis
+                    type="category"
+                    dataKey="medicationName"
+                    tick={{ fontSize: 10 }}
+                    width={90}
+                  />
+                  <Tooltip />
+                  <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+                    {stats.topMedications.map((_: any, i: number) => (
+                      <Cell key={i} fill={MED_COLORS[i % MED_COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[200px] flex items-center justify-center text-xs text-gray-400">
+                No dispenses in the last 7 days
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Main grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">

@@ -3,228 +3,300 @@ import { useEffect, useState, useCallback } from "react";
 import { useAuthStore } from "@/lib/store";
 import { api } from "@/lib/api";
 import {
-  BarChart,
-  Bar,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
+  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
+  XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
 import {
-  FileText,
-  Activity,
-  Building2,
-  Users,
-  Download,
-  RefreshCw,
-  TrendingUp,
-  FlaskConical,
-  Scan,
-  Pill,
-  Stethoscope,
-  ClipboardList,
-  AlertTriangle,
-  CheckCircle2,
-  Calendar,
-  Shield,
+  FileText, Activity, Building2, Users, Download, RefreshCw,
+  TrendingUp, FlaskConical, Scan, Pill, Stethoscope, ClipboardList,
+  AlertTriangle, CheckCircle2, Calendar, Shield, Clock, BarChart2,
+  HeartPulse, UserCheck,
 } from "lucide-react";
-import { format, subDays } from "date-fns";
+import { format, subDays, differenceInDays } from "date-fns";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Types ──────────────────────────────────────────────────────────────────────
 type Tab = "clinical" | "operational" | "administrative";
 
-// ── Constants ─────────────────────────────────────────────────────────────────
+// ── Colour constants ───────────────────────────────────────────────────────────
+const C = {
+  green:  "#166534",
+  teal:   "#0e7490",
+  blue:   "#2563eb",
+  purple: "#7c3aed",
+  amber:  "#d97706",
+  red:    "#dc2626",
+  orange: "#ea580c",
+  slate:  "#374151",
+  gray:   "#6b7280",
+  pink:   "#db2777",
+};
+
 const PRIORITY_COLORS: Record<string, string> = {
-  critical: "#dc2626",
-  emergency: "#ea580c",
-  urgent: "#f59e0b",
-  routine: "#16a34a",
+  critical: C.red, emergency: C.orange, urgent: C.amber, routine: C.green,
 };
 const ROLE_COLORS: Record<string, string> = {
-  practitioner: "#2563eb",
-  nurse: "#0e7490",
-  lab_technician: "#d97706",
-  radiologist: "#7c3aed",
-  pharmacist: "#166534",
-  receptionist: "#0369a1",
-  admin: "#dc2626",
+  practitioner: C.blue, nurse: C.teal, lab_technician: C.amber,
+  radiologist: C.purple, pharmacist: C.green, receptionist: "#0369a1", admin: C.red,
 };
-const CHART_COLORS = [
-  "#166534",
-  "#2563eb",
-  "#d97706",
-  "#dc2626",
-  "#7c3aed",
-  "#0e7490",
-  "#ea580c",
-];
+const GENDER_COLORS: Record<string, string> = { male: C.blue, female: C.pink, other: C.gray };
+const CHART_COLORS = [C.green, C.blue, C.amber, C.red, C.purple, C.teal, C.orange];
 
-// ── Reusable components ───────────────────────────────────────────────────────
+// ── Reusable UI primitives ────────────────────────────────────────────────────
+
 function StatBox({
-  label,
-  value,
-  sub,
-  icon: Icon,
-  color,
+  label, value, sub, icon: Icon, color, highlight,
 }: {
-  label: string;
-  value: any;
-  sub?: string;
-  icon: any;
-  color: string;
+  label: string; value: any; sub?: string; icon: any; color: string; highlight?: boolean;
 }) {
   return (
-    <div
-      style={{
-        background: "#fff",
-        borderRadius: 14,
-        border: "1px solid #eaecf0",
-        padding: "18px 20px",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          marginBottom: 12,
-        }}
-      >
-        <div
-          style={{
-            width: 32,
-            height: 32,
-            borderRadius: 8,
-            background: `${color}15`,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
+    <div style={{
+      background: highlight ? `${color}08` : "#fff",
+      borderRadius: 14,
+      border: `1px solid ${highlight ? `${color}30` : "#eaecf0"}`,
+      padding: "18px 20px",
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+        <div style={{
+          width: 32, height: 32, borderRadius: 8, background: `${color}15`,
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }}>
           <Icon size={15} style={{ color }} />
         </div>
-        <p
-          style={{
-            fontSize: 12,
-            fontWeight: 600,
-            color: "#9ca3af",
-            textTransform: "uppercase",
-            letterSpacing: "0.06em",
-          }}
-        >
+        <p style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em" }}>
           {label}
         </p>
       </div>
-      <p style={{ fontSize: 28, fontWeight: 800, color, lineHeight: 1 }}>
-        {value?.toLocaleString() ?? "—"}
+      <p style={{ fontSize: 26, fontWeight: 800, color, lineHeight: 1 }}>
+        {value != null ? String(value) : "—"}
       </p>
-      {sub && (
-        <p style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 4 }}>{sub}</p>
-      )}
+      {sub && <p style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 4 }}>{sub}</p>}
     </div>
   );
 }
 
-function SectionCard({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
+function SectionCard({ title, children, action }: {
+  title: string; children: React.ReactNode; action?: React.ReactNode;
 }) {
   return (
-    <div
-      style={{
-        background: "#fff",
-        borderRadius: 16,
-        border: "1px solid #eaecf0",
-        overflow: "hidden",
-        marginBottom: 20,
-      }}
-    >
-      <div style={{ padding: "14px 20px", borderBottom: "1px solid #f3f4f6" }}>
-        <p style={{ fontSize: 13.5, fontWeight: 700, color: "#111" }}>
-          {title}
-        </p>
+    <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #eaecf0", overflow: "hidden", marginBottom: 20 }}>
+      <div style={{ padding: "14px 20px", borderBottom: "1px solid #f3f4f6", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <p style={{ fontSize: 13.5, fontWeight: 700, color: "#111" }}>{title}</p>
+        {action}
       </div>
       <div style={{ padding: 20 }}>{children}</div>
     </div>
   );
 }
 
-function Skeleton() {
+function SectionDivider({ title }: { title: string }) {
   return (
-    <div
-      style={{
-        height: 200,
-        background: "#f1f5f9",
-        borderRadius: 12,
-        animation: "pulse 1.5s ease-in-out infinite",
-      }}
-    />
+    <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "28px 0 16px" }}>
+      <div style={{ height: 1, flex: 1, background: "#e5e7eb" }} />
+      <p style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.12em", whiteSpace: "nowrap" }}>
+        {title}
+      </p>
+      <div style={{ height: 1, flex: 1, background: "#e5e7eb" }} />
+    </div>
   );
 }
 
-// ── Main Page ─────────────────────────────────────────────────────────────────
+function ExecSummary({ lines }: { lines: string[] }) {
+  return (
+    <div style={{
+      background: "#f8fafc", borderLeft: "4px solid #166534",
+      borderRadius: "0 12px 12px 0", padding: "16px 20px", marginBottom: 24,
+    }}>
+      <p style={{ fontSize: 10, fontWeight: 700, color: "#166534", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
+        Executive Summary
+      </p>
+      {lines.map((line, i) => (
+        <p key={i} style={{ fontSize: 13, color: "#374151", lineHeight: 1.7, marginBottom: i < lines.length - 1 ? 8 : 0 }}>
+          {line}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function Skeleton() {
+  return (
+    <div style={{ height: 200, background: "#f1f5f9", borderRadius: 12, animation: "pulse 1.5s ease-in-out infinite" }} />
+  );
+}
+
+function EmptyState({ message }: { message: string }) {
+  return (
+    <p style={{ fontSize: 13, color: "#9ca3af", textAlign: "center", padding: "32px 0" }}>{message}</p>
+  );
+}
+
+// ── Clinical sub-components ───────────────────────────────────────────────────
+
+function TopDiagnosesTable({ diagnoses, totalVisits }: { diagnoses: any[]; totalVisits: number }) {
+  if (!diagnoses?.length) return <EmptyState message="No diagnosis records for this period" />;
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+        <thead>
+          <tr style={{ borderBottom: "2px solid #f3f4f6" }}>
+            {["#", "ICD Code", "Diagnosis", "Cases", "% of Visits"].map(h => (
+              <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10.5, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {diagnoses.map((diag: any, i: number) => {
+            const pct = totalVisits > 0 ? ((diag.count / totalVisits) * 100).toFixed(1) : "0.0";
+            const barPct = diagnoses[0]?.count > 0 ? Math.round((diag.count / diagnoses[0].count) * 100) : 0;
+            return (
+              <tr key={i} style={{ borderBottom: i < diagnoses.length - 1 ? "1px solid #f9fafb" : "none", background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
+                <td style={{ padding: "10px 12px", fontWeight: 700, color: "#d1d5db", fontSize: 12, width: 36 }}>
+                  {i + 1}
+                </td>
+                <td style={{ padding: "10px 12px", width: 100 }}>
+                  {diag.icdCode
+                    ? <span style={{ fontFamily: "monospace", fontSize: 11.5, fontWeight: 700, color: C.green, background: "#f0fdf4", padding: "2px 7px", borderRadius: 4 }}>{diag.icdCode}</span>
+                    : <span style={{ color: "#d1d5db" }}>—</span>}
+                </td>
+                <td style={{ padding: "10px 12px", fontWeight: 600, color: "#111827" }}>{diag.name}</td>
+                <td style={{ padding: "10px 12px", fontWeight: 700, color: C.green, minWidth: 60 }}>
+                  {Number(diag.count).toLocaleString()}
+                </td>
+                <td style={{ padding: "10px 12px", minWidth: 160 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ flex: 1, height: 6, background: "#f1f5f9", borderRadius: 999, minWidth: 70 }}>
+                      <div style={{ height: "100%", width: `${barPct}%`, background: C.green, borderRadius: 999 }} />
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: C.slate, minWidth: 42, textAlign: "right" }}>{pct}%</span>
+                  </div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function PatientDemographics({ data }: { data: { gender: string; count: number }[] }) {
+  if (!data?.length) return <EmptyState message="No patient data for this period" />;
+  const total = data.reduce((s, r) => s + r.count, 0);
+  return (
+    <div style={{ display: "flex", gap: 32, alignItems: "center" }}>
+      <div style={{ flex: 1 }}>
+        {data.map(row => {
+          const pct = total > 0 ? Math.round((row.count / total) * 100) : 0;
+          const color = GENDER_COLORS[row.gender] ?? C.gray;
+          return (
+            <div key={row.gender} style={{ marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5 }}>
+                <p style={{ fontSize: 13, fontWeight: 600, color: C.slate, textTransform: "capitalize" }}>{row.gender}</p>
+                <p style={{ fontSize: 13, fontWeight: 700, color }}>{pct}% &nbsp;({row.count.toLocaleString()})</p>
+              </div>
+              <div style={{ height: 8, background: "#f1f5f9", borderRadius: 999 }}>
+                <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 999, transition: "width 0.5s" }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ textAlign: "center", flexShrink: 0 }}>
+        <p style={{ fontSize: 32, fontWeight: 800, color: "#111827", lineHeight: 1 }}>{total.toLocaleString()}</p>
+        <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 5 }}>unique patients</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Executive summary builders ─────────────────────────────────────────────────
+
+function getClinicalSummary(d: any): string[] {
+  const rate = d.visits.completionRate ?? (d.visits.total > 0 ? Math.round(d.visits.completed / d.visits.total * 100) : 0);
+  const los = Number(d.avgLengthOfStay ?? 0);
+  const top = d.topDiagnoses?.[0];
+  const labRate = d.laboratory.total > 0 ? Math.round(d.laboratory.completed / d.laboratory.total * 100) : 0;
+  const lines: string[] = [];
+  lines.push(
+    `${(d.visits.total).toLocaleString()} patient visits were recorded during the reporting period with a ${rate}% completion rate. ` +
+    `${d.visits.active} visits remain active and ${d.visits.cancelled} were cancelled.`
+  );
+  if (los > 0) {
+    lines.push(
+      `Average length of stay for completed admissions: ${los.toFixed(1)} days. ` +
+      `Laboratory throughput: ${d.laboratory.completed} of ${d.laboratory.total} orders completed (${labRate}%).`
+    );
+  }
+  if (top) {
+    lines.push(
+      `Leading diagnosis: "${top.name}"${top.icdCode ? ` (ICD: ${top.icdCode})` : ""} — ${top.count} recorded cases. ` +
+      `${d.pharmacy.dispensed} of ${d.pharmacy.total} prescriptions dispensed.`
+    );
+  }
+  return lines;
+}
+
+function getOperationalSummary(d: any): string[] {
+  const docs = d.staffActivity?.totalActiveDoctors ?? 0;
+  const avgV = d.staffActivity?.avgVisitsPerDoctor ?? 0;
+  return [
+    `${d.referrals.totalOutgoing} outgoing referrals processed — acceptance rate ${d.referrals.acceptanceRate}%. ` +
+    `${d.referrals.completed} referrals completed; ${d.referrals.rejected} rejected.`,
+    `Appointment compliance: ${d.appointments.attendanceRate}% attendance rate ` +
+    `(${d.appointments.attended} attended, ${d.appointments.cancelled} cancelled of ${d.appointments.total} scheduled).`,
+    docs > 0
+      ? `${docs} active physician${docs !== 1 ? "s" : ""} recorded an average of ${avgV} visits per physician during this period.`
+      : "No physician activity data recorded for this period.",
+  ];
+}
+
+function getAdminSummary(d: any): string[] {
+  const verRate = d.staff.verificationRate ?? 100;
+  const lines: string[] = [
+    `${d.patients.newInPeriod.toLocaleString()} new patients registered in the period, bringing the total to ${d.patients.total.toLocaleString()} active patients.`,
+    `Workforce: ${d.staff.total} active staff — ${d.staff.verified ?? (d.staff.total - d.staff.unverified)} verified (${verRate}% credential compliance). ${d.staff.unverified} account${d.staff.unverified !== 1 ? "s" : ""} pending verification.`,
+  ];
+  if (d.audit?.totalEvents > 0) {
+    lines.push(
+      `${d.audit.totalEvents.toLocaleString()} audit events logged across ${d.audit.byAction?.length ?? 0} distinct action types — full tamper-evident activity trail available.`
+    );
+  }
+  return lines;
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
 export default function ReportsPage() {
   const { user } = useAuthStore();
   const isSuperAdmin = !(user as any)?.institutionId;
 
   const [tab, setTab] = useState<Tab>("clinical");
-  const [fromDate, setFromDate] = useState(
-    format(subDays(new Date(), 30), "yyyy-MM-dd"),
-  );
+  const [fromDate, setFromDate] = useState(format(subDays(new Date(), 30), "yyyy-MM-dd"));
   const [toDate, setToDate] = useState(format(new Date(), "yyyy-MM-dd"));
-  const [data, setData] = useState<Record<Tab, any>>({
-    clinical: null,
-    operational: null,
-    administrative: null,
-  });
-  const [loading, setLoading] = useState<Record<Tab, boolean>>({
-    clinical: false,
-    operational: false,
-    administrative: false,
-  });
+  const [data, setData] = useState<Record<Tab, any>>({ clinical: null, operational: null, administrative: null });
+  const [loading, setLoading] = useState<Record<Tab, boolean>>({ clinical: false, operational: false, administrative: false });
   const [exporting, setExporting] = useState(false);
 
-  const fetchReport = useCallback(
-    async (type: Tab) => {
-      setLoading((l) => ({ ...l, [type]: true }));
-      try {
-        const res = await api.get(
-          `/api/reports/${type}?from=${fromDate}&to=${toDate}&format=json`,
-        );
-        setData((d) => ({ ...d, [type]: res.data.data }));
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading((l) => ({ ...l, [type]: false }));
-      }
-    },
-    [fromDate, toDate],
-  );
+  const fetchReport = useCallback(async (type: Tab) => {
+    setLoading(l => ({ ...l, [type]: true }));
+    try {
+      const res = await api.get(`/api/reports/${type}?from=${fromDate}&to=${toDate}&format=json`);
+      setData(d => ({ ...d, [type]: res.data.data }));
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(l => ({ ...l, [type]: false }));
+    }
+  }, [fromDate, toDate]);
 
-  useEffect(() => {
-    fetchReport(tab);
-  }, [tab, fromDate, toDate]);
+  useEffect(() => { fetchReport(tab); }, [tab, fromDate, toDate]);
 
   const handleExport = async () => {
     setExporting(true);
     try {
-      const res = await api.get(
-        `/api/reports/${tab}?from=${fromDate}&to=${toDate}&format=pdf`,
-        { responseType: "blob" },
-      );
-      const url = URL.createObjectURL(
-        new Blob([res.data], { type: "application/pdf" }),
-      );
+      const res = await api.get(`/api/reports/${tab}?from=${fromDate}&to=${toDate}&format=pdf`, { responseType: "blob" });
+      const url = URL.createObjectURL(new Blob([res.data], { type: "application/pdf" }));
       const a = document.createElement("a");
       a.href = url;
       a.download = `healthchain-${tab}-report-${fromDate}-to-${toDate}.pdf`;
@@ -239,10 +311,11 @@ export default function ReportsPage() {
 
   const d = data[tab];
   const isLoading = loading[tab];
+  const periodDays = differenceInDays(new Date(toDate), new Date(fromDate)) + 1;
 
   const TABS: { key: Tab; label: string; icon: any }[] = [
-    { key: "clinical", label: "Clinical", icon: Activity },
-    { key: "operational", label: "Operational", icon: TrendingUp },
+    { key: "clinical",       label: "Clinical",       icon: HeartPulse },
+    { key: "operational",    label: "Operational",    icon: TrendingUp },
     { key: "administrative", label: "Administrative", icon: Building2 },
   ];
 
@@ -250,999 +323,421 @@ export default function ReportsPage() {
     <div style={{ maxWidth: 1200, fontFamily: "'DM Sans', sans-serif" }}>
       <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }`}</style>
 
-      {/* Header */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "flex-start",
-          justifyContent: "space-between",
-          marginBottom: 24,
-          gap: 16,
-          flexWrap: "wrap",
-        }}
-      >
+      {/* ── Page Header ─────────────────────────────────────────────────────── */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20, gap: 16, flexWrap: "wrap" }}>
         <div>
-          <h1
-            style={{
-              fontSize: 22,
-              fontWeight: 700,
-              color: "#111827",
-              fontFamily: "'Playfair Display', serif",
-              marginBottom: 4,
-            }}
-          >
-            Reports
-          </h1>
-          <p style={{ fontSize: 13.5, color: "#9ca3af" }}>
-            {isSuperAdmin
-              ? "System-wide analytics"
-              : `Analytics for ${d?.institutionName ?? "your institution"}`}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+            <h1 style={{ fontSize: 22, fontWeight: 700, color: "#111827", fontFamily: "'Playfair Display', serif" }}>
+              Reports &amp; Analytics
+            </h1>
+          </div>
+          <p style={{ fontSize: 13, color: "#9ca3af" }}>
+            {isSuperAdmin ? "System-wide analytics — all institutions" : "Institution-scoped analytics"}
           </p>
         </div>
 
-        {/* Date range + export */}
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <input
-            type="date"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 10,
-              border: "1px solid #e5e7eb",
-              fontSize: 13,
-              outline: "none",
-              color: "#374151",
-            }}
-          />
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
+            style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #e5e7eb", fontSize: 13, outline: "none", color: "#374151" }} />
           <span style={{ fontSize: 13, color: "#9ca3af" }}>to</span>
-          <input
-            type="date"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-            style={{
-              padding: "8px 12px",
-              borderRadius: 10,
-              border: "1px solid #e5e7eb",
-              fontSize: 13,
-              outline: "none",
-              color: "#374151",
-            }}
-          />
-          <button
-            onClick={() => fetchReport(tab)}
-            disabled={isLoading}
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 9,
-              border: "1px solid #e5e7eb",
-              background: "#fff",
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#6b7280",
-            }}
-          >
+          <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
+            style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #e5e7eb", fontSize: 13, outline: "none", color: "#374151" }} />
+          <button onClick={() => fetchReport(tab)} disabled={isLoading}
+            style={{ width: 36, height: 36, borderRadius: 9, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#6b7280" }}>
             <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} />
           </button>
-          <button
-            onClick={handleExport}
-            disabled={exporting || isLoading}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "9px 18px",
-              borderRadius: 10,
-              background: "linear-gradient(135deg,#166534,#15803d)",
-              color: "#fff",
-              fontSize: 13,
-              fontWeight: 600,
-              border: "none",
-              cursor: "pointer",
-              opacity: exporting ? 0.7 : 1,
-            }}
-          >
+          <button onClick={handleExport} disabled={exporting || isLoading}
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 18px", borderRadius: 10, background: "linear-gradient(135deg,#166534,#15803d)", color: "#fff", fontSize: 13, fontWeight: 600, border: "none", cursor: "pointer", opacity: exporting ? 0.7 : 1 }}>
             <Download size={14} /> {exporting ? "Exporting…" : "Export PDF"}
           </button>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div
-        style={{
-          display: "flex",
-          gap: 4,
-          marginBottom: 24,
-          background: "#f1f5f9",
-          padding: 4,
-          borderRadius: 12,
-          width: "fit-content",
-        }}
-      >
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 7,
-              padding: "8px 18px",
-              borderRadius: 9,
-              border: "none",
-              cursor: "pointer",
-              fontSize: 13.5,
-              fontWeight: 600,
-              transition: "all 0.15s",
-              background: tab === t.key ? "#fff" : "transparent",
-              color: tab === t.key ? "#166534" : "#6b7280",
-              boxShadow: tab === t.key ? "0 1px 4px rgba(0,0,0,0.08)" : "none",
-            }}
-          >
+      {/* ── Institution scope badge ──────────────────────────────────────────── */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8, padding: "8px 14px",
+        background: isSuperAdmin ? "#fef2f2" : "#eff6ff",
+        border: `1px solid ${isSuperAdmin ? "#fecaca" : "#bfdbfe"}`,
+        borderRadius: 10, width: "fit-content", marginBottom: 20,
+      }}>
+        <Shield size={13} style={{ color: isSuperAdmin ? C.red : C.blue }} />
+        <p style={{ fontSize: 12.5, fontWeight: 700, color: isSuperAdmin ? C.red : C.blue }}>
+          {isSuperAdmin
+            ? "Super Admin — System-wide Report (All Institutions)"
+            : `Scoped to: ${d?.institutionName ?? "Your Institution"}`}
+        </p>
+      </div>
+
+      {/* ── Tabs ────────────────────────────────────────────────────────────── */}
+      <div style={{ display: "flex", gap: 4, marginBottom: 20, background: "#f1f5f9", padding: 4, borderRadius: 12, width: "fit-content" }}>
+        {TABS.map(t => (
+          <button key={t.key} onClick={() => setTab(t.key)}
+            style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 18px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 13.5, fontWeight: 600, transition: "all 0.15s", background: tab === t.key ? "#fff" : "transparent", color: tab === t.key ? C.green : "#6b7280", boxShadow: tab === t.key ? "0 1px 4px rgba(0,0,0,0.08)" : "none" }}>
             <t.icon size={14} /> {t.label}
           </button>
         ))}
       </div>
 
-      {/* Period badge */}
+      {/* ── Period badge ─────────────────────────────────────────────────────── */}
       {d && (
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginBottom: 20,
-            padding: "8px 14px",
-            background: "#f0fdf4",
-            border: "1px solid #bbf7d0",
-            borderRadius: 10,
-            width: "fit-content",
-          }}
-        >
-          <Calendar size={13} style={{ color: "#166534" }} />
-          <p style={{ fontSize: 12.5, color: "#166534", fontWeight: 600 }}>
-            {format(new Date(d.period.from), "dd MMM yyyy")} —{" "}
-            {format(new Date(d.period.to), "dd MMM yyyy")}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, padding: "7px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, width: "fit-content" }}>
+          <Calendar size={12} style={{ color: C.green }} />
+          <p style={{ fontSize: 12.5, color: C.green, fontWeight: 600 }}>
+            {format(new Date(d.period.from), "dd MMM yyyy")} — {format(new Date(d.period.to), "dd MMM yyyy")}
+            &nbsp;·&nbsp;{periodDays}-day period
           </p>
         </div>
       )}
 
-      {/* ── CLINICAL TAB ────────────────────────────────────────────────────── */}
-      {tab === "clinical" &&
-        (isLoading ? (
-          <Skeleton />
-        ) : !d ? null : (
-          <>
-            {/* Visit summary stats */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(4,1fr)",
-                gap: 12,
-                marginBottom: 20,
-              }}
-            >
-              <StatBox
-                label="Total Visits"
-                value={d.visits.total}
-                sub="in period"
-                icon={ClipboardList}
-                color="#166534"
-              />
-              <StatBox
-                label="Completed"
-                value={d.visits.completed}
-                sub="discharged"
-                icon={CheckCircle2}
-                color="#0e7490"
-              />
-              <StatBox
-                label="Active"
-                value={d.visits.active}
-                sub="in progress"
-                icon={Activity}
-                color="#2563eb"
-              />
-              <StatBox
-                label="Cancelled"
-                value={d.visits.cancelled}
-                sub="visits"
-                icon={AlertTriangle}
-                color="#dc2626"
-              />
-            </div>
+      {/* ════════════════════════════════════════════════════════════════════════
+          CLINICAL TAB
+      ═══════════════════════════════════════════════════════════════════════════ */}
+      {tab === "clinical" && (isLoading ? <Skeleton /> : !d ? null : (
+        <>
+          <ExecSummary lines={getClinicalSummary(d)} />
 
-            {/* Lab / Imaging / Pharmacy */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(3,1fr)",
-                gap: 12,
-                marginBottom: 20,
-              }}
-            >
-              <StatBox
-                label="Lab Orders"
-                value={d.laboratory.total}
-                sub={`${d.laboratory.pending} pending`}
-                icon={FlaskConical}
-                color="#d97706"
-              />
-              <StatBox
-                label="Imaging Orders"
-                value={d.imaging.total}
-                sub={`${d.imaging.pending} pending`}
-                icon={Scan}
-                color="#7c3aed"
-              />
-              <StatBox
-                label="Prescriptions"
-                value={d.pharmacy.total}
-                sub={`${d.pharmacy.dispensed} dispensed`}
-                icon={Pill}
-                color="#166534"
-              />
-            </div>
+          <SectionDivider title="Key Performance Indicators" />
 
-            {/* Charts row */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr 1fr",
-                gap: 16,
-                marginBottom: 20,
-              }}
-            >
-              {/* Visits trend */}
-              <SectionCard title="Visits Trend">
-                <ResponsiveContainer width="100%" height={160}>
-                  <LineChart data={d.visits.trend}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                    <XAxis
-                      dataKey="date"
-                      tick={{ fontSize: 10 }}
-                      tickFormatter={(v) => v?.slice(5)}
-                    />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip />
-                    <Line
-                      type="monotone"
-                      dataKey="count"
-                      stroke="#166534"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </SectionCard>
+          {/* KPI stats — row 1 */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 12 }}>
+            <StatBox label="Total Visits"    value={d.visits.total.toLocaleString()}     sub="in period"   icon={ClipboardList} color={C.green}  highlight />
+            <StatBox label="Completed"       value={d.visits.completed.toLocaleString()} sub="discharged"  icon={CheckCircle2} color={C.teal}         />
+            <StatBox label="Active"          value={d.visits.active.toLocaleString()}    sub="in progress" icon={Activity}     color={C.blue}         />
+            <StatBox label="Cancelled"       value={d.visits.cancelled.toLocaleString()} sub="visits"     icon={AlertTriangle} color={C.red}          />
+            <StatBox label="Completion Rate" value={`${d.visits.completionRate ?? 0}%`}  sub="discharged / total" icon={BarChart2} color={C.purple}  />
+          </div>
 
-              {/* By priority */}
-              <SectionCard title="By Priority">
-                <ResponsiveContainer width="100%" height={160}>
-                  <BarChart data={d.visits.byPriority}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                    <XAxis dataKey="priority" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip />
-                    <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                      {d.visits.byPriority.map((entry: any, i: number) => (
-                        <Cell
-                          key={i}
-                          fill={PRIORITY_COLORS[entry.priority] ?? "#166534"}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </SectionCard>
+          {/* KPI stats — row 2 */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
+            <StatBox label="Avg. Length of Stay"  value={`${Number(d.avgLengthOfStay ?? 0).toFixed(1)} d`} sub="completed admissions" icon={Clock}       color={C.slate}  />
+            <StatBox label="Lab Orders"            value={d.laboratory.total.toLocaleString()}               sub={`${d.laboratory.pending} pending`}       icon={FlaskConical} color={C.amber} />
+            <StatBox label="Imaging Orders"        value={d.imaging.total.toLocaleString()}                  sub={`${d.imaging.pending} pending`}          icon={Scan}      color={C.purple} />
+            <StatBox label="Prescriptions"         value={d.pharmacy.total.toLocaleString()}                 sub={`${d.pharmacy.dispensed} dispensed`}     icon={Pill}      color={C.green}  />
+          </div>
 
-              {/* By type */}
-              <SectionCard title="By Visit Type">
-                <ResponsiveContainer width="100%" height={160}>
-                  <PieChart>
-                    <Pie
-                      data={d.visits.byType}
-                      dataKey="count"
-                      nameKey="type"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={60}
-                      label={({ type, percent }: any) =>
-                        `${type} ${(percent * 100).toFixed(0)}%`
-                      }
-                      labelLine={false}
-                      style={{ fontSize: 10 }}
-                    >
-                      {d.visits.byType.map((_: any, i: number) => (
-                        <Cell
-                          key={i}
-                          fill={CHART_COLORS[i % CHART_COLORS.length]}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </SectionCard>
-            </div>
+          <SectionDivider title="Visit Analytics" />
 
-            {/* Lab / Imaging / Pharmacy breakdown */}
-            <SectionCard title="Department Completion Rates">
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "repeat(3,1fr)",
-                  gap: 20,
-                }}
-              >
-                {[
-                  {
-                    label: "Laboratory",
-                    total: d.laboratory.total,
-                    completed: d.laboratory.completed,
-                    color: "#d97706",
-                  },
-                  {
-                    label: "Imaging",
-                    total: d.imaging.total,
-                    completed: d.imaging.completed,
-                    color: "#7c3aed",
-                  },
-                  {
-                    label: "Pharmacy",
-                    total: d.pharmacy.total,
-                    completed: d.pharmacy.dispensed,
-                    color: "#166534",
-                  },
-                ].map((item) => {
-                  const pct =
-                    item.total > 0
-                      ? Math.round((item.completed / item.total) * 100)
-                      : 0;
-                  return (
-                    <div key={item.label}>
-                      <div
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          marginBottom: 6,
-                        }}
-                      >
-                        <p
-                          style={{
-                            fontSize: 13,
-                            fontWeight: 600,
-                            color: "#374151",
-                          }}
-                        >
-                          {item.label}
-                        </p>
-                        <p
-                          style={{
-                            fontSize: 13,
-                            fontWeight: 700,
-                            color: item.color,
-                          }}
-                        >
-                          {pct}%
-                        </p>
-                      </div>
-                      <div
-                        style={{
-                          height: 8,
-                          background: "#f1f5f9",
-                          borderRadius: 999,
-                        }}
-                      >
-                        <div
-                          style={{
-                            height: "100%",
-                            width: `${pct}%`,
-                            background: item.color,
-                            borderRadius: 999,
-                            transition: "width 0.5s",
-                          }}
-                        />
-                      </div>
-                      <p
-                        style={{
-                          fontSize: 11.5,
-                          color: "#9ca3af",
-                          marginTop: 4,
-                        }}
-                      >
-                        {item.completed} of {item.total}
-                      </p>
+          {/* Charts row */}
+          <div style={{ display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr", gap: 16, marginBottom: 20 }}>
+            <SectionCard title="Visits Trend">
+              <ResponsiveContainer width="100%" height={170}>
+                <LineChart data={d.visits.trend}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                  <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={v => v?.slice(5)} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="count" stroke={C.green} strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </SectionCard>
+
+            <SectionCard title="By Priority">
+              <ResponsiveContainer width="100%" height={170}>
+                <BarChart data={d.visits.byPriority}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                  <XAxis dataKey="priority" tick={{ fontSize: 10 }} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip />
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                    {d.visits.byPriority.map((e: any, i: number) => (
+                      <Cell key={i} fill={PRIORITY_COLORS[e.priority] ?? C.green} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </SectionCard>
+
+            <SectionCard title="By Visit Type">
+              <ResponsiveContainer width="100%" height={170}>
+                <PieChart>
+                  <Pie data={d.visits.byType} dataKey="count" nameKey="type" cx="50%" cy="50%" outerRadius={62}
+                    label={({ type, percent }: any) => `${type} ${(percent * 100).toFixed(0)}%`}
+                    labelLine={false} style={{ fontSize: 9 }}>
+                    {d.visits.byType.map((_: any, i: number) => (
+                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip />
+                </PieChart>
+              </ResponsiveContainer>
+            </SectionCard>
+          </div>
+
+          <SectionDivider title="Department Performance" />
+
+          <SectionCard title="Completion Rates by Department">
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 28 }}>
+              {[
+                { label: "Laboratory",       total: d.laboratory.total, completed: d.laboratory.completed, color: C.amber  },
+                { label: "Imaging / Radiology", total: d.imaging.total, completed: d.imaging.completed,   color: C.purple },
+                { label: "Pharmacy",         total: d.pharmacy.total,   completed: d.pharmacy.dispensed,  color: C.green  },
+              ].map(item => {
+                const pct = item.total > 0 ? Math.round((item.completed / item.total) * 100) : 0;
+                return (
+                  <div key={item.label}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: C.slate }}>{item.label}</p>
+                      <p style={{ fontSize: 15, fontWeight: 800, color: item.color }}>{pct}%</p>
                     </div>
-                  );
-                })}
-              </div>
-            </SectionCard>
-          </>
-        ))}
-
-      {/* ── OPERATIONAL TAB ─────────────────────────────────────────────────── */}
-      {tab === "operational" &&
-        (isLoading ? (
-          <Skeleton />
-        ) : !d ? null : (
-          <>
-            {/* Referrals stats */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(4,1fr)",
-                gap: 12,
-                marginBottom: 20,
-              }}
-            >
-              <StatBox
-                label="Outgoing Referrals"
-                value={d.referrals.totalOutgoing}
-                sub="sent out"
-                icon={TrendingUp}
-                color="#166534"
-              />
-              <StatBox
-                label="Incoming Referrals"
-                value={d.referrals.totalIncoming}
-                sub="received"
-                icon={Activity}
-                color="#2563eb"
-              />
-              <StatBox
-                label="Acceptance Rate"
-                value={`${d.referrals.acceptanceRate}%`}
-                sub="accepted+completed"
-                icon={CheckCircle2}
-                color="#0e7490"
-              />
-              <StatBox
-                label="Appointments"
-                value={d.appointments.total}
-                sub={`${d.appointments.attendanceRate}% attended`}
-                icon={Calendar}
-                color="#7c3aed"
-              />
-            </div>
-
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 16,
-                marginBottom: 20,
-              }}
-            >
-              {/* Referral status breakdown */}
-              <SectionCard title="Referral Status Breakdown">
-                <ResponsiveContainer width="100%" height={180}>
-                  <BarChart
-                    data={[
-                      { status: "Pending", count: d.referrals.pending },
-                      { status: "Accepted", count: d.referrals.accepted },
-                      { status: "Completed", count: d.referrals.completed },
-                      { status: "Rejected", count: d.referrals.rejected },
-                    ]}
-                  >
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                    <XAxis dataKey="status" tick={{ fontSize: 11 }} />
-                    <YAxis tick={{ fontSize: 11 }} />
-                    <Tooltip />
-                    <Bar dataKey="count" radius={[4, 4, 0, 0]}>
-                      {["#f59e0b", "#16a34a", "#2563eb", "#dc2626"].map(
-                        (c, i) => (
-                          <Cell key={i} fill={c} />
-                        ),
-                      )}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </SectionCard>
-
-              {/* Appointment compliance */}
-              <SectionCard title="Appointment Compliance">
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "center",
-                    alignItems: "center",
-                    height: 180,
-                  }}
-                >
-                  <ResponsiveContainer width="100%" height={180}>
-                    <PieChart>
-                      <Pie
-                        data={[
-                          { name: "Attended", value: d.appointments.attended },
-                          {
-                            name: "Cancelled",
-                            value: d.appointments.cancelled,
-                          },
-                          {
-                            name: "Other",
-                            value: Math.max(
-                              0,
-                              d.appointments.total -
-                                d.appointments.attended -
-                                d.appointments.cancelled,
-                            ),
-                          },
-                        ]}
-                        dataKey="value"
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={45}
-                        outerRadius={70}
-                      >
-                        {["#166534", "#dc2626", "#e5e7eb"].map((c, i) => (
-                          <Cell key={i} fill={c} />
-                        ))}
-                      </Pie>
-                      <Tooltip />
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </SectionCard>
-            </div>
-
-            {/* Top doctors table */}
-            <SectionCard title="Top Doctors by Visit Count">
-              {!d.staffActivity.topDoctors?.length ? (
-                <p
-                  style={{
-                    fontSize: 13,
-                    color: "#9ca3af",
-                    textAlign: "center",
-                    padding: "20px 0",
-                  }}
-                >
-                  No data for this period
-                </p>
-              ) : (
-                <div>
-                  {/* Table header */}
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "2fr 1.5fr 1fr",
-                      gap: 12,
-                      padding: "8px 16px",
-                      borderBottom: "1px solid #f3f4f6",
-                    }}
-                  >
-                    {["Doctor", "Specialization", "Visits"].map((h) => (
-                      <p
-                        key={h}
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          color: "#9ca3af",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.06em",
-                        }}
-                      >
-                        {h}
-                      </p>
-                    ))}
+                    <div style={{ height: 9, background: "#f1f5f9", borderRadius: 999 }}>
+                      <div style={{ height: "100%", width: `${pct}%`, background: item.color, borderRadius: 999, transition: "width 0.5s" }} />
+                    </div>
+                    <p style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 4 }}>
+                      {item.completed.toLocaleString()} completed of {item.total.toLocaleString()} total
+                    </p>
                   </div>
-                  {d.staffActivity.topDoctors
-                    .slice(0, 10)
-                    .map((doc: any, i: number) => (
-                      <div
-                        key={doc.doctorId}
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "2fr 1.5fr 1fr",
-                          gap: 12,
-                          padding: "12px 16px",
-                          borderBottom: i < 9 ? "1px solid #f9fafb" : "none",
-                          alignItems: "center",
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 10,
-                          }}
-                        >
-                          <div
-                            style={{
-                              width: 30,
-                              height: 30,
-                              borderRadius: 8,
-                              background:
-                                "linear-gradient(135deg,#1e293b,#334155)",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              fontSize: 11,
-                              fontWeight: 700,
-                              color: "#fff",
-                            }}
-                          >
-                            {doc.name
-                              ?.split(" ")
-                              .map((n: string) => n[0])
-                              .join("")
-                              .slice(0, 2)}
-                          </div>
-                          <p
-                            style={{
-                              fontSize: 13,
-                              fontWeight: 600,
-                              color: "#111",
-                            }}
-                          >
-                            {doc.name}
-                          </p>
-                        </div>
-                        <p style={{ fontSize: 12.5, color: "#6b7280" }}>
-                          {doc.specialization ?? "—"}
-                        </p>
-                        <div
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 8,
-                          }}
-                        >
-                          <div
-                            style={{
-                              flex: 1,
-                              height: 6,
-                              background: "#f1f5f9",
-                              borderRadius: 999,
-                            }}
-                          >
-                            <div
-                              style={{
-                                height: "100%",
-                                width: `${Math.min(100, (doc.visitCount / (d.staffActivity.topDoctors[0]?.visitCount || 1)) * 100)}%`,
-                                background: "#166534",
-                                borderRadius: 999,
-                              }}
-                            />
-                          </div>
-                          <p
-                            style={{
-                              fontSize: 13,
-                              fontWeight: 700,
-                              color: "#166534",
-                              minWidth: 30,
-                              textAlign: "right",
-                            }}
-                          >
-                            {doc.visitCount}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              )}
-            </SectionCard>
-          </>
-        ))}
-
-      {/* ── ADMINISTRATIVE TAB ──────────────────────────────────────────────── */}
-      {tab === "administrative" &&
-        (isLoading ? (
-          <Skeleton />
-        ) : !d ? null : (
-          <>
-            {/* Top stats */}
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: isSuperAdmin
-                  ? "repeat(4,1fr)"
-                  : "repeat(3,1fr)",
-                gap: 12,
-                marginBottom: 20,
-              }}
-            >
-              <StatBox
-                label="Total Patients"
-                value={d.patients.total}
-                sub="registered"
-                icon={Users}
-                color="#2563eb"
-              />
-              <StatBox
-                label="New This Period"
-                value={d.patients.newInPeriod}
-                sub="registrations"
-                icon={TrendingUp}
-                color="#166534"
-              />
-              <StatBox
-                label="Total Staff"
-                value={d.staff.total}
-                sub={`${d.staff.unverified} unverified`}
-                icon={Stethoscope}
-                color="#7c3aed"
-              />
-              {isSuperAdmin && (
-                <StatBox
-                  label="Institutions"
-                  value={d.institutions?.total}
-                  sub={`${d.institutions?.active} active`}
-                  icon={Building2}
-                  color="#0369a1"
-                />
-              )}
+                );
+              })}
             </div>
+          </SectionCard>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "1fr 1fr",
-                gap: 16,
-                marginBottom: 20,
-              }}
-            >
-              {/* Patient registration trend */}
-              <SectionCard title="Patient Registration Trend">
-                {d.patients.registrationTrend?.length ? (
-                  <ResponsiveContainer width="100%" height={180}>
+          <SectionDivider title="Top Diagnoses" />
+          <SectionCard title="Most Frequently Recorded Diagnoses"
+            action={<span style={{ fontSize: 11, color: "#9ca3af" }}>Top 10 by case count</span>}>
+            <TopDiagnosesTable diagnoses={d.topDiagnoses ?? []} totalVisits={d.visits.total} />
+          </SectionCard>
+
+          <SectionDivider title="Patient Demographics" />
+          <SectionCard title="Patient Gender Distribution">
+            <PatientDemographics data={d.patientsByGender ?? []} />
+          </SectionCard>
+        </>
+      ))}
+
+      {/* ════════════════════════════════════════════════════════════════════════
+          OPERATIONAL TAB
+      ═══════════════════════════════════════════════════════════════════════════ */}
+      {tab === "operational" && (isLoading ? <Skeleton /> : !d ? null : (
+        <>
+          <ExecSummary lines={getOperationalSummary(d)} />
+
+          <SectionDivider title="Referral & Appointment KPIs" />
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
+            <StatBox label="Outgoing Referrals" value={d.referrals.totalOutgoing.toLocaleString()} sub="sent out"           icon={TrendingUp}  color={C.green} highlight />
+            <StatBox label="Incoming Referrals" value={d.referrals.totalIncoming.toLocaleString()} sub="received"           icon={Activity}    color={C.blue}  />
+            <StatBox label="Acceptance Rate"    value={`${d.referrals.acceptanceRate}%`}            sub="accepted+completed" icon={CheckCircle2} color={C.teal}  />
+            <StatBox label="Appointments"       value={d.appointments.total.toLocaleString()}        sub={`${d.appointments.attendanceRate}% attended`} icon={Calendar} color={C.purple} />
+          </div>
+
+          {/* Physician productivity */}
+          {(d.staffActivity?.totalActiveDoctors ?? 0) > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12, marginBottom: 20 }}>
+              <StatBox label="Active Physicians"        value={d.staffActivity.totalActiveDoctors}  sub="with visits in period" icon={Stethoscope} color={C.slate} />
+              <StatBox label="Avg. Visits / Physician" value={d.staffActivity.avgVisitsPerDoctor}   sub="visits per doctor"     icon={BarChart2}   color={C.teal}  />
+            </div>
+          )}
+
+          <SectionDivider title="Referral Analysis" />
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
+            <SectionCard title="Referral Status Breakdown">
+              <ResponsiveContainer width="100%" height={190}>
+                <BarChart data={[
+                  { status: "Pending",   count: d.referrals.pending },
+                  { status: "Accepted",  count: d.referrals.accepted },
+                  { status: "Completed", count: d.referrals.completed },
+                  { status: "Rejected",  count: d.referrals.rejected },
+                ]}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                  <XAxis dataKey="status" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Bar dataKey="count" radius={[4, 4, 0, 0]}>
+                    {[C.amber, C.green, C.blue, C.red].map((c, i) => <Cell key={i} fill={c} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </SectionCard>
+
+            <SectionCard title="Appointment Compliance">
+              <ResponsiveContainer width="100%" height={190}>
+                <PieChart>
+                  <Pie data={[
+                    { name: "Attended",  value: d.appointments.attended },
+                    { name: "Cancelled", value: d.appointments.cancelled },
+                    { name: "Other",     value: Math.max(0, d.appointments.total - d.appointments.attended - d.appointments.cancelled) },
+                  ]} dataKey="value" cx="50%" cy="50%" innerRadius={48} outerRadius={72}>
+                    {[C.green, C.red, "#e5e7eb"].map((c, i) => <Cell key={i} fill={c} />)}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </SectionCard>
+          </div>
+
+          <SectionDivider title="Physician Activity" />
+
+          <SectionCard title="Top Physicians by Visit Count"
+            action={<span style={{ fontSize: 11, color: "#9ca3af" }}>Top 10</span>}>
+            {!d.staffActivity.topDoctors?.length
+              ? <EmptyState message="No physician data for this period" />
+              : (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ borderBottom: "2px solid #f3f4f6" }}>
+                      {["#", "Physician", "Specialization", "Visits"].map(h => (
+                        <th key={h} style={{ padding: "8px 14px", textAlign: "left", fontSize: 10.5, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {d.staffActivity.topDoctors.slice(0, 10).map((doc: any, i: number) => (
+                      <tr key={doc.doctorId} style={{ borderBottom: i < 9 ? "1px solid #f9fafb" : "none", background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
+                        <td style={{ padding: "11px 14px", fontWeight: 700, color: "#d1d5db", fontSize: 12, width: 36 }}>{i + 1}</td>
+                        <td style={{ padding: "11px 14px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            <div style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(135deg,#1e293b,#334155)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
+                              {doc.name?.split(" ").map((n: string) => n[0]).join("").slice(0, 2)}
+                            </div>
+                            <span style={{ fontWeight: 600, color: "#111" }}>Dr. {doc.name}</span>
+                          </div>
+                        </td>
+                        <td style={{ padding: "11px 14px", color: C.gray }}>{doc.specialization ?? "—"}</td>
+                        <td style={{ padding: "11px 14px" }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={{ flex: 1, height: 6, background: "#f1f5f9", borderRadius: 999, minWidth: 60 }}>
+                              <div style={{ height: "100%", width: `${Math.min(100, (doc.visitCount / (d.staffActivity.topDoctors[0]?.visitCount || 1)) * 100)}%`, background: C.green, borderRadius: 999 }} />
+                            </div>
+                            <span style={{ fontWeight: 800, color: C.green, minWidth: 30, textAlign: "right" }}>{doc.visitCount}</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+          </SectionCard>
+        </>
+      ))}
+
+      {/* ════════════════════════════════════════════════════════════════════════
+          ADMINISTRATIVE TAB
+      ═══════════════════════════════════════════════════════════════════════════ */}
+      {tab === "administrative" && (isLoading ? <Skeleton /> : !d ? null : (
+        <>
+          <ExecSummary lines={getAdminSummary(d)} />
+
+          <SectionDivider title="Institution Overview" />
+
+          <div style={{ display: "grid", gridTemplateColumns: isSuperAdmin ? "repeat(4,1fr)" : "repeat(3,1fr)", gap: 12, marginBottom: 12 }}>
+            <StatBox label="Total Patients"  value={d.patients.total.toLocaleString()}       sub="registered"          icon={Users}     color={C.blue}   highlight />
+            <StatBox label="New This Period" value={d.patients.newInPeriod.toLocaleString()}  sub="registrations"       icon={TrendingUp} color={C.green} />
+            <StatBox label="Total Staff"     value={d.staff.total.toLocaleString()}           sub={`${d.staff.unverified} unverified`} icon={Stethoscope} color={C.purple} />
+            {isSuperAdmin && (
+              <StatBox label="Institutions" value={d.institutions?.total ?? 0} sub={`${d.institutions?.active ?? 0} active`} icon={Building2} color="#0369a1" />
+            )}
+          </div>
+
+          {/* Staff verification KPI */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12, marginBottom: 20 }}>
+            <StatBox label="Verified Staff"       value={`${d.staff.verified ?? (d.staff.total - d.staff.unverified)}`} sub="credentialed accounts" icon={UserCheck} color={C.green} />
+            <StatBox label="Credential Compliance" value={`${d.staff.verificationRate ?? 100}%`}                          sub="verified / total"      icon={Shield}    color={C.teal}  />
+          </div>
+
+          <SectionDivider title="Trends & Workforce" />
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
+            <SectionCard title="Patient Registration Trend">
+              {d.patients.registrationTrend?.length
+                ? (
+                  <ResponsiveContainer width="100%" height={190}>
                     <LineChart data={d.patients.registrationTrend}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                      <XAxis
-                        dataKey="date"
-                        tick={{ fontSize: 10 }}
-                        tickFormatter={(v) => v?.slice(5)}
-                      />
+                      <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={v => v?.slice(5)} />
                       <YAxis tick={{ fontSize: 10 }} />
                       <Tooltip />
-                      <Line
-                        type="monotone"
-                        dataKey="count"
-                        stroke="#2563eb"
-                        strokeWidth={2}
-                        dot={false}
-                      />
+                      <Line type="monotone" dataKey="count" stroke={C.blue} strokeWidth={2} dot={false} />
                     </LineChart>
                   </ResponsiveContainer>
-                ) : (
-                  <p
-                    style={{
-                      fontSize: 13,
-                      color: "#9ca3af",
-                      textAlign: "center",
-                      padding: "60px 0",
-                    }}
-                  >
-                    No registration data for this period
-                  </p>
-                )}
-              </SectionCard>
-
-              {/* Staff by role */}
-              <SectionCard title="Staff by Role">
-                <ResponsiveContainer width="100%" height={180}>
-                  <BarChart data={d.staff.byRole} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                    <XAxis type="number" tick={{ fontSize: 10 }} />
-                    <YAxis
-                      type="category"
-                      dataKey="role"
-                      tick={{ fontSize: 10 }}
-                      width={90}
-                    />
-                    <Tooltip />
-                    <Bar dataKey="count" radius={[0, 4, 4, 0]}>
-                      {d.staff.byRole.map((entry: any, i: number) => (
-                        <Cell
-                          key={i}
-                          fill={ROLE_COLORS[entry.role] ?? "#166534"}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </SectionCard>
-            </div>
-
-            {/* Audit events */}
-            <SectionCard
-              title={`Audit Log — ${d.audit.totalEvents.toLocaleString()} events`}
-            >
-              <div
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 1fr",
-                  gap: 20,
-                }}
-              >
-                <ResponsiveContainer width="100%" height={160}>
-                  <BarChart data={d.audit.byAction.slice(0, 8)}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
-                    <XAxis
-                      dataKey="action"
-                      tick={{ fontSize: 9 }}
-                      angle={-30}
-                      textAnchor="end"
-                      height={45}
-                    />
-                    <YAxis tick={{ fontSize: 10 }} />
-                    <Tooltip />
-                    <Bar dataKey="count" fill="#166534" radius={[4, 4, 0, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    gap: 8,
-                    justifyContent: "center",
-                  }}
-                >
-                  {d.audit.byAction.slice(0, 6).map((a: any, i: number) => (
-                    <div
-                      key={a.action}
-                      style={{ display: "flex", alignItems: "center", gap: 10 }}
-                    >
-                      <div
-                        style={{
-                          width: 10,
-                          height: 10,
-                          borderRadius: 2,
-                          background: CHART_COLORS[i % CHART_COLORS.length],
-                          flexShrink: 0,
-                        }}
-                      />
-                      <p
-                        style={{
-                          fontSize: 12.5,
-                          color: "#374151",
-                          flex: 1,
-                          textTransform: "capitalize",
-                        }}
-                      >
-                        {a.action?.replace(/_/g, " ")}
-                      </p>
-                      <p
-                        style={{
-                          fontSize: 12.5,
-                          fontWeight: 700,
-                          color: "#111",
-                        }}
-                      >
-                        {Number(a.count).toLocaleString()}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
+                ) : <EmptyState message="No registration data for this period" />}
             </SectionCard>
 
-            {/* Institution comparison (super admin only) */}
-            {isSuperAdmin && d.institutions?.list?.length > 0 && (
-              <SectionCard title="Institution Comparison">
+            <SectionCard title="Workforce Distribution by Role">
+              <ResponsiveContainer width="100%" height={190}>
+                <BarChart data={d.staff.byRole} layout="vertical">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                  <XAxis type="number" tick={{ fontSize: 10 }} />
+                  <YAxis type="category" dataKey="role" tick={{ fontSize: 10 }} width={90} />
+                  <Tooltip />
+                  <Bar dataKey="count" radius={[0, 4, 4, 0]}>
+                    {d.staff.byRole.map((e: any, i: number) => (
+                      <Cell key={i} fill={ROLE_COLORS[e.role] ?? C.green} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </SectionCard>
+          </div>
+
+          <SectionDivider title="Audit & Compliance" />
+
+          <SectionCard title={`System Audit Log — ${d.audit.totalEvents.toLocaleString()} events in period`}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={d.audit.byAction.slice(0, 8)}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                  <XAxis dataKey="action" tick={{ fontSize: 9 }} angle={-30} textAnchor="end" height={46} />
+                  <YAxis tick={{ fontSize: 10 }} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill={C.green} radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+
+              <div>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid #f3f4f6" }}>
+                      <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase" }}>Action</th>
+                      <th style={{ padding: "6px 10px", textAlign: "right", fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase" }}>Count</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {d.audit.byAction.slice(0, 8).map((a: any, i: number) => (
+                      <tr key={a.action} style={{ borderBottom: "1px solid #f9fafb", background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
+                        <td style={{ padding: "7px 10px", color: C.slate, textTransform: "capitalize" }}>
+                          {a.action?.replace(/_/g, " ")}
+                        </td>
+                        <td style={{ padding: "7px 10px", fontWeight: 700, color: C.green, textAlign: "right" }}>
+                          {Number(a.count).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </SectionCard>
+
+          {/* Institution comparison — super admin only */}
+          {isSuperAdmin && d.institutions?.list?.length > 0 && (
+            <>
+              <SectionDivider title="Institution Comparison" />
+              <SectionCard title="All Institutions">
                 <div style={{ overflowX: "auto" }}>
-                  <table
-                    style={{
-                      width: "100%",
-                      borderCollapse: "collapse",
-                      fontSize: 13,
-                    }}
-                  >
+                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                     <thead>
-                      <tr style={{ borderBottom: "1px solid #f3f4f6" }}>
-                        {[
-                          "Institution",
-                          "Type",
-                          "Patients",
-                          "Staff",
-                          "Total Visits",
-                          "Status",
-                        ].map((h) => (
-                          <th
-                            key={h}
-                            style={{
-                              padding: "8px 12px",
-                              textAlign: "left",
-                              fontSize: 11,
-                              fontWeight: 700,
-                              color: "#9ca3af",
-                              textTransform: "uppercase",
-                              letterSpacing: "0.06em",
-                            }}
-                          >
-                            {h}
-                          </th>
+                      <tr style={{ borderBottom: "2px solid #f3f4f6" }}>
+                        {["Institution", "Type", "Patients", "Staff", "Total Visits", "Status"].map(h => (
+                          <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10.5, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em" }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {d.institutions.list.map((inst: any, i: number) => (
-                        <tr
-                          key={inst.id}
-                          style={{
-                            borderBottom:
-                              i < d.institutions.list.length - 1
-                                ? "1px solid #f9fafb"
-                                : "none",
-                          }}
-                          onMouseEnter={(e) =>
-                            (e.currentTarget.style.background = "#fafbfc")
-                          }
-                          onMouseLeave={(e) =>
-                            (e.currentTarget.style.background = "none")
-                          }
-                        >
+                        <tr key={inst.id} style={{ borderBottom: "1px solid #f9fafb", background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
+                          <td style={{ padding: "12px 12px", fontWeight: 600, color: "#111" }}>{inst.name}</td>
                           <td style={{ padding: "12px 12px" }}>
-                            <p style={{ fontWeight: 600, color: "#111" }}>
-                              {inst.name}
-                            </p>
-                          </td>
-                          <td style={{ padding: "12px 12px" }}>
-                            <span
-                              style={{
-                                fontSize: 11.5,
-                                fontWeight: 600,
-                                padding: "2px 8px",
-                                borderRadius: 999,
-                                background: "#f0fdf4",
-                                color: "#166534",
-                                textTransform: "capitalize",
-                              }}
-                            >
+                            <span style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: "#f0fdf4", color: C.green, textTransform: "capitalize" }}>
                               {inst.type}
                             </span>
                           </td>
-                          <td
-                            style={{
-                              padding: "12px 12px",
-                              fontWeight: 600,
-                              color: "#2563eb",
-                            }}
-                          >
-                            {inst.totalPatients.toLocaleString()}
-                          </td>
-                          <td
-                            style={{
-                              padding: "12px 12px",
-                              fontWeight: 600,
-                              color: "#7c3aed",
-                            }}
-                          >
-                            {inst.totalStaff.toLocaleString()}
-                          </td>
-                          <td
-                            style={{
-                              padding: "12px 12px",
-                              fontWeight: 600,
-                              color: "#166534",
-                            }}
-                          >
-                            {inst.totalVisits.toLocaleString()}
-                          </td>
+                          <td style={{ padding: "12px 12px", fontWeight: 600, color: C.blue }}>{inst.totalPatients.toLocaleString()}</td>
+                          <td style={{ padding: "12px 12px", fontWeight: 600, color: C.purple }}>{inst.totalStaff.toLocaleString()}</td>
+                          <td style={{ padding: "12px 12px", fontWeight: 600, color: C.green }}>{inst.totalVisits.toLocaleString()}</td>
                           <td style={{ padding: "12px 12px" }}>
-                            <span
-                              style={{
-                                fontSize: 11.5,
-                                fontWeight: 700,
-                                padding: "2px 8px",
-                                borderRadius: 999,
-                                background: inst.isActive
-                                  ? "#f0fdf4"
-                                  : "#fef2f2",
-                                color: inst.isActive ? "#15803d" : "#dc2626",
-                              }}
-                            >
+                            <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: inst.isActive ? "#f0fdf4" : "#fef2f2", color: inst.isActive ? "#15803d" : C.red }}>
                               {inst.isActive ? "Active" : "Inactive"}
                             </span>
                           </td>
@@ -1252,24 +747,19 @@ export default function ReportsPage() {
                   </table>
                 </div>
               </SectionCard>
-            )}
-          </>
-        ))}
+            </>
+          )}
+        </>
+      ))}
 
-      {/* Generated at footer */}
+      {/* ── Footer ──────────────────────────────────────────────────────────── */}
       {d && (
-        <p
-          style={{
-            fontSize: 11.5,
-            color: "#d1d5db",
-            textAlign: "center",
-            marginTop: 24,
-          }}
-        >
-          Report generated at{" "}
-          {format(new Date(d.generatedAt), "dd MMM yyyy HH:mm")} · HealthChain
-          EMR
-        </p>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 32, paddingTop: 20, borderTop: "1px solid #f3f4f6" }}>
+          <FileText size={12} style={{ color: "#d1d5db" }} />
+          <p style={{ fontSize: 11.5, color: "#d1d5db" }}>
+            {isSuperAdmin ? "System-wide" : d.institutionName} · {tab.charAt(0).toUpperCase() + tab.slice(1)} Report · Generated {format(new Date(d.generatedAt), "dd MMM yyyy 'at' HH:mm")} · HealthChain EMR
+          </p>
+        </div>
       )}
     </div>
   );

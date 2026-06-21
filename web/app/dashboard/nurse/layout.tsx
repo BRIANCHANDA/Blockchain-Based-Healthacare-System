@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { ProfileDrawer } from "@/components/ProfileDrawer";
+import { Logo } from "@/components/Logo";
 import { useRouter, usePathname } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
 import {
@@ -11,11 +12,12 @@ import {
   LogOut,
   Menu,
   X,
-  Bell,
   ChevronRight,
-  Heart,
   Building2,
+  FileText,
+  BedDouble,
 } from "lucide-react";
+import { NotificationBell } from "@/components/NotificationBell";
 
 const navItems = [
   { label: "Overview", href: "/dashboard/nurse", icon: LayoutDashboard },
@@ -26,6 +28,8 @@ const navItems = [
   },
   { label: "Triage Patient", href: "/dashboard/nurse/triage", icon: Activity },
   { label: "My Patients", href: "/dashboard/nurse/patients", icon: Users },
+  { label: "Ward View",  href: "/dashboard/nurse/ward",    icon: BedDouble },
+  { label: "My Report",  href: "/dashboard/nurse/report",   icon: FileText },
 ];
 
 export default function NurseLayout({
@@ -101,14 +105,8 @@ export default function NurseLayout({
         {/* ── Logo / branding ── */}
         <div className="px-5 pt-6 pb-5 border-b border-white/[0.07]">
           <div className="flex items-center gap-3 mb-4">
-            <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-              style={{
-                background: "rgba(134,239,172,0.15)",
-                border: "1px solid rgba(134,239,172,0.2)",
-              }}
-            >
-              <Heart className="w-4 h-4 text-green-300" />
+            <div className="w-9 h-9 rounded-xl overflow-hidden flex-shrink-0">
+              <Logo size={36} />
             </div>
             <div className="flex-1 min-w-0">
               <p className="text-white font-bold text-sm leading-tight tracking-tight">
@@ -330,9 +328,7 @@ export default function NurseLayout({
               </div>
             )}
 
-            <button className="relative p-2 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
-              <Bell className="w-4 h-4" />
-            </button>
+            <NotificationBell />
 
             {/* Avatar + name */}
             <div className="flex items-center gap-2.5 pl-2 border-l border-gray-100">

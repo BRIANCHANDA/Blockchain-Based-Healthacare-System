@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
 import { api } from "@/lib/api";
+import { Logo } from "@/components/Logo";
 import { Eye, EyeOff, Loader2, AlertCircle, CheckCircle2 } from "lucide-react";
 
 export default function ChangePasswordPage() {
@@ -192,34 +193,10 @@ export default function ChangePasswordPage() {
                 width: 38,
                 height: 38,
                 borderRadius: 11,
-                background: "rgba(255,255,255,0.1)",
-                border: "1px solid rgba(255,255,255,0.15)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
+                overflow: "hidden",
               }}
             >
-              <svg width="18" height="18" viewBox="0 0 20 20" fill="none">
-                <rect
-                  x="8"
-                  y="2"
-                  width="4"
-                  height="16"
-                  rx="2"
-                  fill="white"
-                  opacity="0.9"
-                />
-                <rect
-                  x="2"
-                  y="8"
-                  width="16"
-                  height="4"
-                  rx="2"
-                  fill="white"
-                  opacity="0.9"
-                />
-                <circle cx="10" cy="10" r="2.5" fill="white" />
-              </svg>
+              <Logo size={38} />
             </div>
             <div>
               <p

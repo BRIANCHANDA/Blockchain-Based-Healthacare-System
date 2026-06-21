@@ -26,6 +26,13 @@ import {
   Loader2,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import {
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+} from "recharts";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface TodayStats {
@@ -34,6 +41,7 @@ interface TodayStats {
   completed: number;
   critical: number;
   urgent: number;
+  activePatients: number;
 }
 interface ActivityStats {
   consultations: number;
@@ -277,6 +285,15 @@ export default function DoctorOverview() {
     0,
   );
 
+  const caseloadByPriority = ["critical", "emergency", "urgent", "routine"]
+    .map((key) => ({
+      key,
+      label: getP(key).label,
+      value: queue.filter((v) => v.priority === key).length,
+      color: getP(key).dot,
+    }))
+    .filter((d) => d.value > 0);
+
   function Skel({ color }: { color: string }) {
     return (
       <span
@@ -373,8 +390,17 @@ export default function DoctorOverview() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
         {[
+          {
+            label: "Active Patients",
+            value: stats?.activePatients,
+            sub: "currently in my care",
+            color: "#0369a1",
+            bg: "linear-gradient(135deg,#f0f9ff,#e0f2fe)",
+            border: "#bae6fd",
+            icon: Stethoscope,
+          },
           {
             label: "Total Today",
             value: stats?.total,
@@ -562,6 +588,54 @@ export default function DoctorOverview() {
               />
             </button>
           ))}
+
+          {/* Caseload by priority */}
+          {!loadingQueue && caseloadByPriority.length > 0 && (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mt-1">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">
+                Caseload by Priority
+              </p>
+              <div className="flex items-center gap-3">
+                <div className="w-24 h-24 flex-shrink-0">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={caseloadByPriority}
+                        dataKey="value"
+                        nameKey="label"
+                        innerRadius={28}
+                        outerRadius={42}
+                        strokeWidth={0}
+                      >
+                        {caseloadByPriority.map((d) => (
+                          <Cell key={d.key} fill={d.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(v: any, n: any) => [`${v} patients`, n]}
+                      />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="flex-1 space-y-1.5 min-w-0">
+                  {caseloadByPriority.map((d) => (
+                    <div key={d.key} className="flex items-center gap-2">
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ background: d.color }}
+                      />
+                      <span className="text-xs text-gray-600 flex-1 truncate">
+                        {d.label}
+                      </span>
+                      <span className="text-xs font-bold text-gray-900">
+                        {d.value}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Right column */}
