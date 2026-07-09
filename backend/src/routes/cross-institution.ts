@@ -1,3 +1,4 @@
+import { handleError } from '../lib/errors';
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and, or, ilike, sql } from 'drizzle-orm';
 import { db } from '../db';
@@ -155,7 +156,7 @@ export const crossInstitutionRouter = createRouter<AppContext>()
             });
         } catch (err: any) {
             console.error('Patient search error:', err);
-            return c.json({ success: false, error: { message: err.message } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -250,7 +251,7 @@ export const crossInstitutionRouter = createRouter<AppContext>()
             }, 201);
         } catch (err: any) {
             console.error('Referral error:', err);
-            return c.json({ success: false, error: { message: err.message } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -333,7 +334,7 @@ export const crossInstitutionRouter = createRouter<AppContext>()
             }, 201);
         } catch (err: any) {
             console.error('Emergency access error:', err);
-            return c.json({ success: false, error: { message: err.message } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -377,7 +378,7 @@ export const crossInstitutionRouter = createRouter<AppContext>()
             });
         } catch (err: any) {
             console.error('Access check error:', err);
-            return c.json({ success: false, error: { message: err.message } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -413,6 +414,6 @@ export const crossInstitutionRouter = createRouter<AppContext>()
             });
         } catch (err: any) {
             console.error('Revoke access error:', err);
-            return c.json({ success: false, error: { message: err.message } }, 500);
+            return handleError(err, c);
         }
     });

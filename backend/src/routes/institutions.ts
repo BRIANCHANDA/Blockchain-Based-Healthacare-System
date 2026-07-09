@@ -1,3 +1,4 @@
+import { handleError } from '../lib/errors';
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and } from 'drizzle-orm';
 import crypto from 'crypto';
@@ -138,7 +139,7 @@ export const institutionRouter = createRouter()
             return c.json({ success: true, data: { institutions: result } });
         } catch (err: unknown) {
             console.error('List institutions error:', err);
-            return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -218,7 +219,7 @@ export const institutionRouter = createRouter()
             return c.json({ success: true, data: { institutionId: result[0].id, blockchainAddress } }, 201);
         } catch (err: unknown) {
             console.error('Create institution error:', err);
-            return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -289,7 +290,7 @@ export const institutionRouter = createRouter()
             return c.json({ success: true, data: result });
         } catch (err: unknown) {
             console.error('Get institution error:', err);
-            return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -357,7 +358,7 @@ export const institutionRouter = createRouter()
             return c.json({ success: true, data: { message: 'Institution updated successfully' } });
         } catch (err: unknown) {
             console.error('Update institution error:', err);
-            return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -402,7 +403,7 @@ export const institutionRouter = createRouter()
             return c.json({ success: true, data: { message: 'Institution deactivated successfully' } });
         } catch (err: unknown) {
             console.error('Deactivate institution error:', err);
-            return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -435,7 +436,7 @@ export const institutionRouter = createRouter()
             return c.json({ success: true, data: { departments: deptList } });
         } catch (err: unknown) {
             console.error('List departments error:', err);
-            return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -487,7 +488,7 @@ export const institutionRouter = createRouter()
             return c.json({ success: true, data: { departmentId: result[0].id } }, 201);
         } catch (err: unknown) {
             console.error('Create department error:', err);
-            return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -541,7 +542,7 @@ export const institutionRouter = createRouter()
             return c.json({ success: true, data: { message: 'Department updated successfully' } });
         } catch (err: unknown) {
             console.error('Update department error:', err);
-            return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -582,7 +583,7 @@ export const institutionRouter = createRouter()
             return c.json({ success: true, data: { message: 'Department deactivated successfully' } });
         } catch (err: unknown) {
             console.error('Deactivate department error:', err);
-            return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -610,7 +611,7 @@ export const institutionRouter = createRouter()
             return c.json({ success: true, data: { wards: wardList } });
         } catch (err: unknown) {
             console.error('List wards error:', err);
-            return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -669,7 +670,7 @@ export const institutionRouter = createRouter()
             return c.json({ success: true, data: { wardId: result[0].id } }, 201);
         } catch (err: unknown) {
             console.error('Create ward error:', err);
-            return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -722,7 +723,7 @@ export const institutionRouter = createRouter()
             return c.json({ success: true, data: { message: 'Ward updated successfully' } });
         } catch (err: unknown) {
             console.error('Update ward error:', err);
-            return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -763,7 +764,7 @@ export const institutionRouter = createRouter()
             return c.json({ success: true, data: { message: 'Ward deactivated successfully' } });
         } catch (err: unknown) {
             console.error('Deactivate ward error:', err);
-            return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -800,6 +801,6 @@ export const institutionRouter = createRouter()
             return c.json({ success: true, data: result });
         } catch (err: any) {
             console.error(err);
-            return c.json({ success: false, error: { message: err.message } }, 500);
+            return handleError(err, c);
         }
     });

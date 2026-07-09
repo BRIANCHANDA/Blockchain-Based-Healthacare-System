@@ -1,3 +1,4 @@
+import { handleError } from '../lib/errors';
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, desc, and, count, inArray, SQL } from 'drizzle-orm';
 import { db } from '../db';
@@ -247,7 +248,7 @@ export const auditRouter = createRouter()
       });
     } catch (err: unknown) {
       console.error('[AUDIT_MY_LOG]', err);
-      return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -305,7 +306,7 @@ export const auditRouter = createRouter()
       return c.json({ success: true, data: { dbLogs: enrichedLogs, blockchainLogs } });
     } catch (err: unknown) {
       console.error('[AUDIT_PATIENT]', err);
-      return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+      return handleError(err, c);
     }
   })
 

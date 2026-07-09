@@ -16,7 +16,7 @@ export const getPatientProfile = () =>
     client.get('/patients/me');
 
 export const getMyVitalsTrends = () =>
-    client.get("/api/patients/my-vitals-trends");
+    client.get("/patients/my-vitals-trends");
 
 export const getMyHealth = () =>
     client.get("/patients/my-health");

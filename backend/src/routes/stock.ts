@@ -1,3 +1,4 @@
+import { handleError } from '../lib/errors';
 // src/routes/stock.ts
 // Mount as: app.route('/api/stock', stockRouter)
 // Pharmacy inventory management — institution-scoped.

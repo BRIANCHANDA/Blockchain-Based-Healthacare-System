@@ -1,3 +1,4 @@
+import { handleError } from '../lib/errors';
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, desc, and, sql, ne } from 'drizzle-orm';
 import { db } from '../db';
@@ -180,7 +181,7 @@ export const visitRouter = createRouter()
       return c.json({ success: true, data: { patients: result, total: result.length } });
     } catch (err: unknown) {
       console.error('Inpatients error:', err);
-      return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -405,7 +406,7 @@ export const visitRouter = createRouter()
       await db.update(visits).set({ assignedNurseId: nurseId }).where(eq(visits.id, visitId));
       return c.json({ success: true, data: { message: 'Nurse assigned successfully' } });
     } catch (err: any) {
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -444,7 +445,7 @@ export const visitRouter = createRouter()
       await db.update(visits).set({ assignedDoctorId: doctorId }).where(eq(visits.id, visitId));
       return c.json({ success: true, data: { message: 'Doctor assigned successfully' } });
     } catch (err: any) {
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -565,7 +566,7 @@ export const visitRouter = createRouter()
       const result = await Promise.all(staff.map(async (s) => ({ id: s.id, name: `${await decrypt(s.firstNameEncrypted)} ${await decrypt(s.lastNameEncrypted)}` })));
       return c.json({ success: true, data: result });
     } catch (err: any) {
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -868,7 +869,7 @@ export const visitRouter = createRouter()
       });
     } catch (err: any) {
       console.error('Summary error:', err);
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -1089,7 +1090,7 @@ export const visitRouter = createRouter()
 
       return c.json({ success: true, data: { labOrders } });
     } catch (err: any) {
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -1298,7 +1299,7 @@ export const visitRouter = createRouter()
 
     } catch (err: any) {
       console.error('assigned-to-me error:', err);
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -1337,7 +1338,7 @@ export const visitRouter = createRouter()
       })));
       return c.json({ success: true, data: { orders: ordersWithNames } });
     } catch (err: any) {
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -1424,7 +1425,7 @@ export const visitRouter = createRouter()
       await auditAction(userId, userType, visitRow[0].patientId, patient[0].blockchainAddress, 'create', 'imaging_report', reportId, ip);
       return c.json({ success: true, data: { reportId, imageUrls } }, 201);
     } catch (err: any) {
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -1493,7 +1494,7 @@ export const visitRouter = createRouter()
       await auditAction(userId, userType, visitRow[0].patientId, patient[0].blockchainAddress, 'create', 'imaging_image', reportId, ip);
       return c.json({ success: true, data: { imageUrls, reportId } }, 201);
     } catch (err: any) {
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -1906,7 +1907,7 @@ export const visitRouter = createRouter()
       return c.json({ success: true, data: { message: 'Patient admitted to ward. Assign a bed from the ward view.' } });
     } catch (err: unknown) {
       console.error('Admit error:', err);
-      return c.json({ success: false, error: { message: err instanceof Error ? err.message : 'Internal server error' } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -2056,7 +2057,7 @@ export const visitRouter = createRouter()
         .orderBy(sql`CASE ${labTestOrders.urgency} WHEN 'critical' THEN 1 WHEN 'emergency' THEN 2 WHEN 'urgent' THEN 3 ELSE 4 END`, labTestOrders.orderedAt);
       return c.json({ success: true, data: { orders } });
     } catch (err: any) {
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 

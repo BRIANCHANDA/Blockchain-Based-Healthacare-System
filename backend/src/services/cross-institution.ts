@@ -58,7 +58,7 @@ export async function grantCrossInstitutionAccess(grant: AccessGrant): Promise<s
     })
     .returning({ id: crossInstitutionAccess.id });
 
-    await storeRecordHash(result[0].id, grant.sourceInstitutionId, hash, 'cross_institution_access');
+    await storeRecordHash(result[0].id, grant.patientId, hash, 'cross_institution_access');
 
     return result[0].id;
 }
@@ -175,7 +175,7 @@ export async function createEmergencyAccess(
         blockchainHash: hash,
     }).returning({ id: emergencyAccessLogs.id });
 
-    await storeRecordHash(result[0].id, accessedByInstitutionId, hash, 'emergency_access');
+    await storeRecordHash(result[0].id, patientId, hash, 'emergency_access');
 
     return result[0].id;
 }

@@ -39,11 +39,9 @@ export const wardRouter = createRouter()
     security: [{ bearerAuth: [] }],
     responses: { 200: { content: { 'application/json': { schema: ok } }, description: 'OK' } },
   }), async (c) => {
-    const userId       = (c as any).get('userId') as string;
-    const institutionId = await getStaffInstitution(userId);
-    if (!institutionId) return c.json({ success: false, error: { message: 'No institution' } }, 403);
+    const institutionId = (c as any).get('institutionId') as string | null;
 
-    // Wards for this institution with department name
+    // Wards for this institution (or all if SuperAdmin with no institution)
     const wardRows = await db
       .select({
         id:            wards.id,
@@ -57,20 +55,33 @@ export const wardRouter = createRouter()
       })
       .from(wards)
       .leftJoin(departments, eq(wards.departmentId, departments.id))
-      .where(and(eq(wards.institutionId, institutionId), eq(wards.isActive, true)));
+      .where(institutionId
+        ? and(eq(wards.institutionId, institutionId), eq(wards.isActive, true))
+        : eq(wards.isActive, true));
 
     // For each ward, count beds from ward_beds table
-    const bedCounts = await db.execute(sql`
-      SELECT
-        ward_id,
-        COUNT(*)                                               AS total_beds,
-        COUNT(*) FILTER (WHERE status = 'occupied')           AS occupied,
-        COUNT(*) FILTER (WHERE status = 'available')          AS available,
-        COUNT(*) FILTER (WHERE status = 'maintenance')        AS maintenance
-      FROM ward_beds
-      WHERE institution_id = ${institutionId}
-      GROUP BY ward_id
-    `);
+    const bedCounts = institutionId
+      ? await db.execute(sql`
+          SELECT
+            ward_id,
+            COUNT(*)                                               AS total_beds,
+            COUNT(*) FILTER (WHERE status = 'occupied')           AS occupied,
+            COUNT(*) FILTER (WHERE status = 'available')          AS available,
+            COUNT(*) FILTER (WHERE status = 'maintenance')        AS maintenance
+          FROM ward_beds
+          WHERE institution_id = ${institutionId}
+          GROUP BY ward_id
+        `)
+      : await db.execute(sql`
+          SELECT
+            ward_id,
+            COUNT(*)                                               AS total_beds,
+            COUNT(*) FILTER (WHERE status = 'occupied')           AS occupied,
+            COUNT(*) FILTER (WHERE status = 'available')          AS available,
+            COUNT(*) FILTER (WHERE status = 'maintenance')        AS maintenance
+          FROM ward_beds
+          GROUP BY ward_id
+        `);
 
     const bedMap: Record<string, any> = {};
     for (const r of bedCounts as any[]) {
@@ -97,8 +108,7 @@ export const wardRouter = createRouter()
     request: { params: z.object({ wardId: z.string() }) },
     responses: { 200: { content: { 'application/json': { schema: ok } }, description: 'OK' } },
   }), async (c) => {
-    const userId       = (c as any).get('userId') as string;
-    const institutionId = await getStaffInstitution(userId);
+    const institutionId = (c as any).get('institutionId') as string | null;
     if (!institutionId) return c.json({ success: false, error: { message: 'No institution' } }, 403);
 
     const { wardId } = c.req.valid('param');
@@ -198,8 +208,7 @@ export const wardRouter = createRouter()
     },
     responses: { 200: { content: { 'application/json': { schema: ok } }, description: 'OK' } },
   }), async (c) => {
-    const userId        = (c as any).get('userId') as string;
-    const institutionId = await getStaffInstitution(userId);
+    const institutionId = (c as any).get('institutionId') as string | null;
     if (!institutionId) return c.json({ success: false, error: { message: 'No institution' } }, 403);
 
     const { wardId } = c.req.valid('param');
@@ -254,8 +263,7 @@ export const wardRouter = createRouter()
       400: { content: { 'application/json': { schema: err } }, description: 'Error' },
     },
   }), async (c) => {
-    const userId        = (c as any).get('userId') as string;
-    const institutionId = await getStaffInstitution(userId);
+    const institutionId = (c as any).get('institutionId') as string | null;
     if (!institutionId) return c.json({ success: false, error: { message: 'No institution' } }, 403);
 
     const { bedId }  = c.req.valid('param');
@@ -325,8 +333,7 @@ export const wardRouter = createRouter()
     request: { params: z.object({ bedId: z.string() }) },
     responses: { 200: { content: { 'application/json': { schema: ok } }, description: 'OK' } },
   }), async (c) => {
-    const userId        = (c as any).get('userId') as string;
-    const institutionId = await getStaffInstitution(userId);
+    const institutionId = (c as any).get('institutionId') as string | null;
     if (!institutionId) return c.json({ success: false, error: { message: 'No institution' } }, 403);
 
     const { bedId } = c.req.valid('param');
@@ -374,8 +381,7 @@ export const wardRouter = createRouter()
     },
     responses: { 200: { content: { 'application/json': { schema: ok } }, description: 'OK' } },
   }), async (c) => {
-    const userId        = (c as any).get('userId') as string;
-    const institutionId = await getStaffInstitution(userId);
+    const institutionId = (c as any).get('institutionId') as string | null;
     if (!institutionId) return c.json({ success: false, error: { message: 'No institution' } }, 403);
 
     const { bedId }       = c.req.valid('param');
@@ -410,8 +416,7 @@ export const wardRouter = createRouter()
     security: [{ bearerAuth: [] }],
     responses: { 200: { content: { 'application/json': { schema: ok } }, description: 'OK' } },
   }), async (c) => {
-    const userId        = (c as any).get('userId') as string;
-    const institutionId = await getStaffInstitution(userId);
+    const institutionId = (c as any).get('institutionId') as string | null;
     if (!institutionId) return c.json({ success: false, error: { message: 'No institution' } }, 403);
 
     // Visits active but not currently assigned to any bed
@@ -507,11 +512,9 @@ export const wardRouter = createRouter()
       400: { content: { 'application/json': { schema: err } }, description: 'Error'   },
     },
   }), async (c) => {
-    const userId   = (c as any).get('userId') as string;
-    const userType = (c as any).get('userType') as string;
+    const userType      = (c as any).get('userType') as string;
+    const institutionId = (c as any).get('institutionId') as string | null;
     if (userType !== 'admin') return c.json({ success: false, error: { message: 'Admin only' } }, 403);
-
-    const institutionId = await getStaffInstitution(userId);
     if (!institutionId) return c.json({ success: false, error: { message: 'No institution assigned' } }, 403);
 
     const { departmentId, wardCode, wardName, wardType, bedCount } = c.req.valid('json');
@@ -644,11 +647,9 @@ export const wardRouter = createRouter()
     request: { params: z.object({ wardId: z.string() }) },
     responses: { 200: { content: { 'application/json': { schema: ok } }, description: 'OK' } },
   }), async (c) => {
-    const userId   = (c as any).get('userId') as string;
-    const userType = (c as any).get('userType') as string;
+    const userType      = (c as any).get('userType') as string;
+    const institutionId = (c as any).get('institutionId') as string | null;
     if (userType !== 'admin') return c.json({ success: false, error: { message: 'Admin only' } }, 403);
-
-    const institutionId = await getStaffInstitution(userId);
     if (!institutionId) return c.json({ success: false, error: { message: 'No institution assigned' } }, 403);
 
     const { wardId } = c.req.valid('param');

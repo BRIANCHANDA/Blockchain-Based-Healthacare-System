@@ -21,11 +21,26 @@ interface RecordHash {
   createdBy: string;
   creatorMSP: string;
   timestamp: string;
-  version: number;  // NEW — increments per update
+  version: number;
   previousTxId?: string;
 }
 
-const WRITER_MSPS = ['HospitalOrgMSP', 'PractitionerOrgMSP'];
+// Inline audit entry written atomically with every record write.
+// Because it is part of the same transaction, it cannot be skipped or falsified
+// by the backend — the ledger guarantees both are committed or neither is.
+interface InlineAuditLog {
+  logId: string;
+  patientId: string;
+  accessedBy: string;
+  accessorMSP: string;
+  action: string;
+  recordId: string;
+  timestamp: string;
+  success: true;
+  version: number;
+}
+
+const WRITER_MSPS = ['HospitalOrgMSP', 'PractitionerOrgMSP', 'PatientOrgMSP'];
 
 export class RecordContract extends Contract {
 
@@ -63,8 +78,22 @@ export class RecordContract extends Contract {
     if (existing && existing.length > 0) {
       const prev = JSON.parse(existing.toString()) as RecordHash;
       version = (prev.version ?? 1) + 1;
-      previousTxId = ctx.stub.getTxID();  // we'll see the prev tx via history
+      // Retrieve the previous tx ID from ledger history (not the current tx)
+      const histIter = await ctx.stub.getHistoryForKey(latestKey);
+      const firstEntry = await histIter.next();
+      if (!firstEntry.done) previousTxId = firstEntry.value.txId;
+      await histIter.close();
     }
+
+    if (!/^[a-fA-F0-9]{64}$/.test(sha256Hash)) {
+      throw new Error(`Invalid sha256Hash format: expected 64-character hex string`);
+    }
+
+    const txId = ctx.stub.getTxID();
+    const txTimestamp = ctx.stub.getTxTimestamp();
+    const timestamp = new Date(
+      txTimestamp.seconds.toNumber() * 1000 + Math.floor(txTimestamp.nanos / 1_000_000),
+    ).toISOString();
 
     const record: RecordHash = {
       recordId,
@@ -73,7 +102,7 @@ export class RecordContract extends Contract {
       recordType,
       createdBy: ctx.clientIdentity.getID(),
       creatorMSP: ctx.clientIdentity.getMSPID(),
-      timestamp: new Date().toISOString(),
+      timestamp,
       version,
       previousTxId,
     };
@@ -88,6 +117,24 @@ export class RecordContract extends Contract {
     const patientIndex = ctx.stub.createCompositeKey('PatientRecord', [patientId, recordId]);
     await ctx.stub.putState(patientIndex, payload);
 
+    // 3) Write an audit entry IN THE SAME TRANSACTION — this makes it impossible
+    //    for the backend to store a record without an immutable audit trail.
+    //    The backend's separate logAccess call covers read events; this covers writes.
+    const auditEntry: InlineAuditLog = {
+      logId: txId,
+      patientId,
+      accessedBy: record.createdBy,
+      accessorMSP: record.creatorMSP,
+      action: `WRITE_${recordType.toUpperCase()}`,
+      recordId,
+      timestamp,
+      success: true,
+      version,
+    };
+    const auditPayload = Buffer.from(JSON.stringify(auditEntry)) as unknown as Uint8Array;
+    await ctx.stub.putState(ctx.stub.createCompositeKey('PatientAudit', [patientId, txId]), auditPayload);
+    await ctx.stub.putState(`AUDIT_${patientId}_${txId}`, auditPayload);
+
     ctx.stub.setEvent('RecordStored', Buffer.from(JSON.stringify({
       recordId, patientId, recordType, version,
     })) as unknown as Uint8Array);
@@ -96,23 +143,26 @@ export class RecordContract extends Contract {
   }
 
   // ── verifyRecordHash ───────────────────────────────────────────────────────
-  // Returns false if not found (no throw), so callers don't need try/catch
-  // for "doesn't exist" cases.
-  async verifyRecordHash(ctx: Context, recordId: string, sha256Hash: string): Promise<boolean> {
+  // Returns JSON so the backend can distinguish three states:
+  //   { verified: true,  notFound: false } — hash matches
+  //   { verified: false, notFound: false } — record exists but hash differs (tampering)
+  //   { verified: false, notFound: true  } — record was never stored on chain
+  // This prevents a network timeout (which also returns false) from being
+  // silently misread as evidence of tampering.
+  async verifyRecordHash(ctx: Context, recordId: string, sha256Hash: string): Promise<string> {
     const recordBytes = await ctx.stub.getState(`RECORD_${recordId}`);
     if (!recordBytes || recordBytes.length === 0) {
-      // Emit forensic event — someone tried to verify a non-existent record
       ctx.stub.setEvent('RecordVerifyMissing', Buffer.from(JSON.stringify({ recordId })) as unknown as Uint8Array);
-      return false;
+      return JSON.stringify({ verified: false, notFound: true });
     }
     const record: RecordHash = JSON.parse(recordBytes.toString());
-    const matches = record.sha256Hash === sha256Hash;
-    if (!matches) {
+    const verified = record.sha256Hash === sha256Hash;
+    if (!verified) {
       ctx.stub.setEvent('RecordHashMismatch', Buffer.from(JSON.stringify({
         recordId, expectedHash: record.sha256Hash, providedHash: sha256Hash,
       })) as unknown as Uint8Array);
     }
-    return matches;
+    return JSON.stringify({ verified, notFound: false });
   }
 
   // ── getRecordHash ──────────────────────────────────────────────────────────

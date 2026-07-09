@@ -1,3 +1,4 @@
+import { handleError } from '../lib/errors';
 // src/routes/reports.ts
 // Mount as: app.route('/api/reports', reportsRouter)
 
@@ -68,7 +69,7 @@ function pdfResponse(c: any, data: any) {
         return c.body(pdf);
     } catch (err: any) {
         console.error('[PDF_GENERATE]', err);
-        return c.json({ success: false, error: { message: 'PDF generation failed: ' + err.message } }, 500);
+        return c.json({ success: false, error: { message: 'PDF generation failed. Please try again.' } }, 500);
     }
 }
 

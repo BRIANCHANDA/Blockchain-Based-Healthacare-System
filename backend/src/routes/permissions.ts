@@ -1,3 +1,4 @@
+import { handleError } from '../lib/errors';
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db';
@@ -32,6 +33,143 @@ const requestAccessSchema = z.object({
 });
 
 export const permissionRouter = createRouter()
+
+  // ── ADMIN: All active permissions for the institution ──────────────────────
+  .openapi(createRoute({
+    tags: ['Permissions'],
+    summary: 'Admin views all active permissions in the institution',
+    method: 'get',
+    path: '/all',
+    security: [{ bearerAuth: [] }],
+    middleware: [authMiddleware],
+    responses: {
+      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ permissions: z.array(z.any()) }) }) } }, description: 'OK' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+    },
+  }), async (c) => {
+    try {
+      const userType      = c.get('userType');
+      const institutionId = (c as any).get('institutionId') as string | null;
+      if (userType !== 'admin') {
+        return c.json({ success: false, error: { message: 'Admin only' } }, 403);
+      }
+
+      // Join with patients to filter by institution when institutionId is set
+      const rows = institutionId
+        ? await db
+            .select({
+              id: accessPermissions.id,
+              patientId: accessPermissions.patientId,
+              grantedToUserId: accessPermissions.grantedToUserId,
+              grantedToUserType: accessPermissions.grantedToUserType,
+              permissionType: accessPermissions.permissionType,
+              allowedRecordTypes: accessPermissions.allowedRecordTypes,
+              grantedAt: accessPermissions.grantedAt,
+              expiresAt: accessPermissions.expiresAt,
+              isActive: accessPermissions.isActive,
+              blockchainTransactionId: accessPermissions.blockchainTransactionId,
+            })
+            .from(accessPermissions)
+            .innerJoin(patients, eq(accessPermissions.patientId, patients.id))
+            .innerJoin(
+              patientInstitutionRegistrations,
+              and(
+                eq(patientInstitutionRegistrations.patientId, patients.id),
+                eq(patientInstitutionRegistrations.institutionId, institutionId),
+                eq(patientInstitutionRegistrations.isActive, true),
+              )
+            )
+            .orderBy(accessPermissions.grantedAt)
+        : await db
+            .select({
+              id: accessPermissions.id,
+              patientId: accessPermissions.patientId,
+              grantedToUserId: accessPermissions.grantedToUserId,
+              grantedToUserType: accessPermissions.grantedToUserType,
+              permissionType: accessPermissions.permissionType,
+              allowedRecordTypes: accessPermissions.allowedRecordTypes,
+              grantedAt: accessPermissions.grantedAt,
+              expiresAt: accessPermissions.expiresAt,
+              isActive: accessPermissions.isActive,
+              blockchainTransactionId: accessPermissions.blockchainTransactionId,
+            })
+            .from(accessPermissions)
+            .orderBy(accessPermissions.grantedAt);
+
+      return c.json({ success: true, data: { permissions: rows } });
+    } catch (err: any) {
+      return handleError(err, c);
+    }
+  })
+
+  // ── ADMIN: All access requests for the institution ──────────────────────────
+  .openapi(createRoute({
+    tags: ['Permissions'],
+    summary: 'Admin views all access requests in the institution',
+    method: 'get',
+    path: '/requests/all',
+    security: [{ bearerAuth: [] }],
+    middleware: [authMiddleware],
+    responses: {
+      200: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ requests: z.array(z.any()) }) }) } }, description: 'OK' },
+      403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
+    },
+  }), async (c) => {
+    try {
+      const userType      = c.get('userType');
+      const institutionId = (c as any).get('institutionId') as string | null;
+      if (userType !== 'admin') {
+        return c.json({ success: false, error: { message: 'Admin only' } }, 403);
+      }
+
+      const rows = institutionId
+        ? await db
+            .select({
+              id: accessRequests.id,
+              patientId: accessRequests.patientId,
+              requestedByUserId: accessRequests.requestedByUserId,
+              requestedByUserType: accessRequests.requestedByUserType,
+              visitId: accessRequests.visitId,
+              requestedPermissions: accessRequests.requestedPermissions,
+              reason: accessRequests.reason,
+              status: accessRequests.status,
+              expiresAt: accessRequests.expiresAt,
+              createdAt: accessRequests.createdAt,
+              respondedAt: accessRequests.respondedAt,
+            })
+            .from(accessRequests)
+            .innerJoin(patients, eq(accessRequests.patientId, patients.id))
+            .innerJoin(
+              patientInstitutionRegistrations,
+              and(
+                eq(patientInstitutionRegistrations.patientId, patients.id),
+                eq(patientInstitutionRegistrations.institutionId, institutionId),
+                eq(patientInstitutionRegistrations.isActive, true),
+              )
+            )
+            .orderBy(accessRequests.createdAt)
+        : await db
+            .select({
+              id: accessRequests.id,
+              patientId: accessRequests.patientId,
+              requestedByUserId: accessRequests.requestedByUserId,
+              requestedByUserType: accessRequests.requestedByUserType,
+              visitId: accessRequests.visitId,
+              requestedPermissions: accessRequests.requestedPermissions,
+              reason: accessRequests.reason,
+              status: accessRequests.status,
+              expiresAt: accessRequests.expiresAt,
+              createdAt: accessRequests.createdAt,
+              respondedAt: accessRequests.respondedAt,
+            })
+            .from(accessRequests)
+            .orderBy(accessRequests.createdAt);
+
+      return c.json({ success: true, data: { requests: rows } });
+    } catch (err: any) {
+      return handleError(err, c);
+    }
+  })
 
   // ── REVOKE PERMISSION (Patient only) ─────────────────
   .openapi(createRoute({
@@ -86,7 +224,7 @@ export const permissionRouter = createRouter()
       return c.json({ success: true, data: { message: 'Permission revoked successfully' } });
 
     } catch (err: any) {
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -117,7 +255,7 @@ export const permissionRouter = createRouter()
       const hasPermission = await checkPermission(patientBlockchainAddress, practitionerBlockchainAddress);
       return c.json({ success: true, data: { hasPermission } });
     } catch (err: any) {
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -168,7 +306,7 @@ export const permissionRouter = createRouter()
       return c.json({ success: true, data: { permissions: dbPerms, blockchainPermissions: blockchainPerms } });
 
     } catch (err: any) {
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -274,7 +412,7 @@ export const permissionRouter = createRouter()
       return c.json({ success: true, data: { requestId: result[0].id } }, 201);
     } catch (err: any) {
       console.error('Request access error:', err);
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -359,7 +497,7 @@ export const permissionRouter = createRouter()
       return c.json({ success: true, data: { requests: enriched } });
 
     } catch (err: any) {
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -421,7 +559,7 @@ export const permissionRouter = createRouter()
       return c.json({ success: true, data: r });
 
     } catch (err: any) {
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -586,7 +724,7 @@ export const permissionRouter = createRouter()
 
     } catch (err: any) {
       console.error('Approve request error:', err);
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -640,7 +778,7 @@ export const permissionRouter = createRouter()
       return c.json({ success: true, data: { message: 'Access request rejected' } });
 
     } catch (err: any) {
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -765,7 +903,7 @@ export const permissionRouter = createRouter()
       }, 201);
     } catch (err: any) {
       console.error('[EMERGENCY_OVERRIDE]', err);
-      return c.json({ success: false, error: { message: err.message } }, 500);
+      return handleError(err, c);
     }
   })
 

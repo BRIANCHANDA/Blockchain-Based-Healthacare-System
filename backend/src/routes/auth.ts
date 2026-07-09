@@ -1,3 +1,4 @@
+import { handleError } from '../lib/errors';
 // src/routes/auth.ts
 // Full auth router with 2FA OTP support
 // New endpoints:
@@ -18,6 +19,10 @@ import { encrypt, decrypt } from '../services/crypto';
 import { sendOTPEmail } from '../services/email';
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
+import {
+  loginLimiter, otpLimiter, resendOtpLimiter,
+  registerLimiter, passwordLimiter,
+} from '../middleware/rateLimit';
 import { sessionMiddleware } from '../middleware/session';
 import crypto from 'crypto';
 
@@ -91,6 +96,7 @@ export const authRouter = createRouter()
   .openapi(createRoute({
     tags: ['Auth'], summary: 'Register a new patient',
     method: 'post', path: '/register/patient',
+    middleware: [registerLimiter],
     request: { body: { content: { 'application/json': { schema: registerPatientSchema } } } },
     responses: {
       201: { content: { 'application/json': { schema: successSchema } }, description: 'Registered' },
@@ -132,7 +138,7 @@ export const authRouter = createRouter()
       }
       return c.json({ success: true, data: { patientId, blockchainAddress: result[0].blockchainAddress } }, 201);
     } catch (err: any) {
-      return c.json({ success: false, error: { message: err.message ?? 'Internal server error' } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -140,7 +146,7 @@ export const authRouter = createRouter()
   .openapi(createRoute({
     tags: ['Auth'], summary: 'Register a new staff member (admin only)',
     method: 'post', path: '/register/staff',
-    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware, registerLimiter],
     request: {
       body: {
         content: {
@@ -185,7 +191,7 @@ export const authRouter = createRouter()
       }).returning({ id: practitioners.id, blockchainAddress: practitioners.blockchainAddress });
       return c.json({ success: true, data: { staffId: result[0].id, blockchainAddress: result[0].blockchainAddress, role: body.role } }, 201);
     } catch (err: any) {
-      return c.json({ success: false, error: { message: err.message ?? 'Internal server error' } }, 500);
+      return handleError(err, c);
     }
   })
 
@@ -193,6 +199,7 @@ export const authRouter = createRouter()
   .openapi(createRoute({
     tags: ['Auth'], summary: 'Patient login — no 2FA',
     method: 'post', path: '/login/patient',
+    middleware: [loginLimiter],
     request: { body: { content: { 'application/json': { schema: loginPatientSchema } } } },
     responses: {
       200: { content: { 'application/json': { schema: successSchema } }, description: 'OK' },
@@ -211,10 +218,8 @@ export const authRouter = createRouter()
       const isClinicId = identifier.startsWith('HC-MINOR-');
 
       if (isClinicId) {
-        // Minor login — match directly by temporaryPatientId (plaintext, not encrypted)
         matched = allPatients.find(p => p.temporaryPatientId === identifier) ?? null;
       } else {
-        // Adult login — match by decrypting nationalIdEncrypted
         for (const p of allPatients) {
           try { if (p.nationalIdEncrypted && decrypt(p.nationalIdEncrypted) === identifier) { matched = p; break; } } catch { }
         }
@@ -222,17 +227,40 @@ export const authRouter = createRouter()
 
       if (!matched) return c.json({ success: false, error: { message: 'Invalid credentials' } }, 401);
       if (matched.isDeceased) return c.json({ success: false, error: { message: 'Account unavailable' } }, 401);
-      if (!await compare(password, matched.passwordHash)) return c.json({ success: false, error: { message: 'Invalid credentials' } }, 401);
+
+      let passwordOk: boolean;
+      try {
+        passwordOk = await compare(password, matched.passwordHash);
+      } catch (e: any) {
+        console.error('[LOGIN_PATIENT] bcrypt.compare failed:', e.message, 'hash:', matched.passwordHash?.slice(0, 10));
+        throw e;
+      }
+      if (!passwordOk) return c.json({ success: false, error: { message: 'Invalid credentials' } }, 401);
 
       const token = sign({ userId: matched.id, userType: 'patient', blockchainAddress: matched.blockchainAddress }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
-      await createSession(matched.id, 'patient', token, ip, userAgent);
+
+      try {
+        await createSession(matched.id, 'patient', token, ip, userAgent);
+      } catch (e: any) {
+        console.error('[LOGIN_PATIENT] createSession failed:', e.message);
+        throw e;
+      }
+
+      let firstName: string, lastName: string;
+      try {
+        firstName = decrypt(matched.firstNameEncrypted);
+        lastName = decrypt(matched.lastNameEncrypted);
+      } catch (e: any) {
+        console.error('[LOGIN_PATIENT] decrypt name failed:', e.message);
+        throw e;
+      }
 
       return c.json({ success: true, data: { token, user: {
         id: matched.id,
         type: 'patient',
         blockchainAddress: matched.blockchainAddress,
-        firstName: decrypt(matched.firstNameEncrypted),
-        lastName: decrypt(matched.lastNameEncrypted),
+        firstName,
+        lastName,
         isMinor: matched.isMinor,
         temporaryPatientId: matched.temporaryPatientId ?? undefined,
         institutionId: undefined,
@@ -240,6 +268,7 @@ export const authRouter = createRouter()
         mustChangePassword: matched.mustChangePassword ?? false,
       } } });
     } catch (err: any) {
+      console.error('[LOGIN_PATIENT] unhandled error:', err?.message ?? err);
       return c.json({ success: false, error: { message: 'Internal server error' } }, 500);
     }
   })
@@ -250,6 +279,7 @@ export const authRouter = createRouter()
   .openapi(createRoute({
     tags: ['Auth'], summary: 'Staff login — triggers OTP email (2FA)',
     method: 'post', path: '/login/staff',
+    middleware: [loginLimiter],
     request: { body: { content: { 'application/json': { schema: loginStaffSchema } } } },
     responses: {
       200: { content: { 'application/json': { schema: successSchema } }, description: 'OTP sent' },
@@ -321,6 +351,7 @@ export const authRouter = createRouter()
   .openapi(createRoute({
     tags: ['Auth'], summary: 'Verify OTP and receive JWT token',
     method: 'post', path: '/verify-otp',
+    middleware: [otpLimiter],
     request: { body: { content: { 'application/json': { schema: verifyOtpSchema } } } },
     responses: {
       200: { content: { 'application/json': { schema: successSchema } }, description: 'Token issued' },
@@ -369,6 +400,7 @@ export const authRouter = createRouter()
   .openapi(createRoute({
     tags: ['Auth'], summary: 'Resend OTP code',
     method: 'post', path: '/resend-otp',
+    middleware: [resendOtpLimiter],
     request: { body: { content: { 'application/json': { schema: z.object({ userId: z.string().uuid(), userType: z.enum(['staff', 'patient']) }) } } } },
     responses: {
       200: { content: { 'application/json': { schema: successSchema } }, description: 'Resent' },
@@ -436,7 +468,7 @@ export const authRouter = createRouter()
   .openapi(createRoute({
     tags: ['Auth'], summary: 'Change patient password',
     method: 'post', path: '/change-password/patient',
-    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware, passwordLimiter],
     request: { body: { content: { 'application/json': { schema: z.object({ oldPassword: z.string(), newPassword: z.string().min(8) }) } } } },
     responses: { 200: { content: { 'application/json': { schema: successSchema } }, description: 'Changed' }, 401: { content: { 'application/json': { schema: errorSchema } }, description: 'Wrong password' } },
   }), async (c) => {
@@ -460,7 +492,7 @@ export const authRouter = createRouter()
   .openapi(createRoute({
     tags: ['Auth'], summary: 'Change staff password',
     method: 'post', path: '/change-password/staff',
-    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware, passwordLimiter],
     request: { body: { content: { 'application/json': { schema: z.object({ oldPassword: z.string(), newPassword: z.string().min(8) }) } } } },
     responses: { 200: { content: { 'application/json': { schema: successSchema } }, description: 'Changed' }, 401: { content: { 'application/json': { schema: errorSchema } }, description: 'Wrong password' } },
   }), async (c) => {

@@ -1,3 +1,4 @@
+import { handleError } from '../../lib/errors';
 // backend/src/routes/ai/ai.ts
 //
 // Mount in index.ts:

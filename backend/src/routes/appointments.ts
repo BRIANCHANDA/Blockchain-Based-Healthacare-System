@@ -1,3 +1,4 @@
+import { handleError } from '../lib/errors';
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and, desc, asc, gte, lte, sql, inArray } from 'drizzle-orm';
 import { db } from '../db';

@@ -1,3 +1,4 @@
+import { handleError } from '../lib/errors';
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and, gte, count, sql, desc, ne } from 'drizzle-orm';
 import { db } from '../db';
@@ -159,7 +160,7 @@ export const labStatsRouter = createRouter<AppContext>()
             });
         } catch (err: any) {
             console.error('Lab overview error:', err);
-            return c.json({ success: false, error: { message: err.message } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -212,7 +213,7 @@ export const labStatsRouter = createRouter<AppContext>()
             });
         } catch (err: any) {
             console.error('My stats error:', err);
-            return c.json({ success: false, error: { message: err.message } }, 500);
+            return handleError(err, c);
         }
     })
 

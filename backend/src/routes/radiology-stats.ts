@@ -1,3 +1,4 @@
+import { handleError } from '../lib/errors';
 // src/routes/radiology-stats.ts
 // Replaces the misnamed receptionist stats file
 // Endpoints:

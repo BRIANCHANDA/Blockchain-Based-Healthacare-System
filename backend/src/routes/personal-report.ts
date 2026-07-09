@@ -1,3 +1,4 @@
+import { handleError } from '../lib/errors';
 // src/routes/personal-report.ts
 // GET /api/reports/personal?from=...&to=...&format=json|pdf
 // Returns a performance report for the authenticated staff member, scoped to their role.
@@ -44,7 +45,7 @@ function pdfResponse(c: any, data: any) {
         c.header('Content-Disposition', `attachment; filename="healthchain-personal-report.pdf"`);
         return c.body(pdf);
     } catch (err: any) {
-        return c.json({ success: false, error: { message: 'PDF generation failed: ' + err.message } }, 500);
+        return c.json({ success: false, error: { message: 'PDF generation failed. Please try again.' } }, 500);
     }
 }
 

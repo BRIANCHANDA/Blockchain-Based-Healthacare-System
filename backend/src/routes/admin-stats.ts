@@ -1,3 +1,4 @@
+import { handleError } from '../lib/errors';
 // src/routes/admin-stats.ts
 // Mount as: app.route('/api/dashboard/admin', adminStatsRouter)
 //

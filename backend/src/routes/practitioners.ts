@@ -1,3 +1,4 @@
+import { handleError } from '../lib/errors';
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and, desc, sql } from 'drizzle-orm';
 import { db } from '../db';
@@ -255,7 +256,7 @@ export const practitionerRouter = createRouter()
   }), async (c) => {
     try {
       const userType = c.get('userType');
-      if (userType !== 'practitioner') return c.json({ success: false, error: { message: 'Access denied' } }, 403);
+      if (!['practitioner', 'admin'].includes(userType)) return c.json({ success: false, error: { message: 'Access denied' } }, 403);
       const body = c.req.valid('json');
       const u: any = {};
       if (body.firstName) u.firstNameEncrypted = encrypt(body.firstName);

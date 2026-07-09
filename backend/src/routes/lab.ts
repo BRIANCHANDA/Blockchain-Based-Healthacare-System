@@ -1,3 +1,4 @@
+import { handleError } from '../lib/errors';
 // backend/src/routes/lab.ts
 //
 // Mount in backend/src/index.ts:
@@ -195,7 +196,7 @@ export const labRouter = createRouter()
             });
         } catch (err: any) {
             console.error('[LAB_PATIENT_CONTEXT]', err);
-            return c.json({ success: false, error: { message: err.message ?? 'Server error' } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -307,7 +308,7 @@ export const labRouter = createRouter()
             });
         } catch (err: any) {
             console.error('[LAB_REJECT_SPECIMEN]', err);
-            return c.json({ success: false, error: { message: err.message ?? 'Server error' } }, 500);
+            return handleError(err, c);
         }
     })
 
@@ -407,6 +408,6 @@ export const labRouter = createRouter()
             });
         } catch (err: any) {
             console.error('[LAB_MY_RESULTS]', err);
-            return c.json({ success: false, error: { message: err.message ?? 'Server error' } }, 500);
+            return handleError(err, c);
         }
     });

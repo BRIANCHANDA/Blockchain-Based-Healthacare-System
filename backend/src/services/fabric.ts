@@ -175,7 +175,7 @@ function categorizeError(err: any): string {
   if (reason.includes('timed out')) return 'timeout';
   if (reason.includes('UNAVAILABLE')) return 'peer_unreachable';
   if (reason.includes('Access denied')) return 'unauthorized';
-  if (reason.includes('endorsement')) return 'endorsement_failed';
+  if (reason.includes('endorsement') || reason.includes('endorse transaction')) return 'endorsement_failed';
   if (reason.includes('DEADLINE')) return 'peer_timeout';
   if (err?.code === 4) return 'peer_timeout';
   if (err?.code === 14) return 'peer_unreachable';
@@ -267,16 +267,21 @@ export async function storeRecordHash(
 ): Promise<{ success: boolean; category?: string; error?: string }> {
   try {
     const { contract } = getConnection('hospital');
-    const timer = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('Fabric submit timed out after 12s')), 12_000),
-    );
+    const TIMEOUT = 12_000;
+
+    // submitTransaction lets service discovery pick any 2 endorsing orgs.
+    // All 3 MSPs are now in WRITER_MSPS so any 2-of-3 combination satisfies
+    // both the endorsement policy and the chaincode requireMsp check.
     await Promise.race([
       contract.submitTransaction(
         'RecordContract:storeRecordHash',
         recordId, patientId, sha256Hash, recordType,
       ),
-      timer,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Fabric submit timed out after 12s')), TIMEOUT),
+      ),
     ]);
+
     console.log(`[FABRIC ✓] Anchored ${recordType}:${recordId}`);
     return { success: true };
   } catch (err: any) {

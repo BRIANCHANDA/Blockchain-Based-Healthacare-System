@@ -4,6 +4,8 @@ import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 import { serveStatic } from 'hono/bun';
 
+import { apiLimiter } from './middleware/rateLimit';
+import { globalErrorHandler } from './lib/errors';
 import { authRouter } from './routes/auth';
 import { patientRouter } from './routes/patients';
 import { practitionerRouter } from './routes/practitioners';
@@ -30,8 +32,7 @@ import { aiRouter } from './routes/ai/ai';
 import { labRouter } from './routes/lab';
 import { medicalRouter } from './routes/medical';
 import { guardiansRouter } from './routes/guardians';
-
-
+import { securityRouter } from './routes/security';
 
 
 const app = new OpenAPIHono();
@@ -47,8 +48,14 @@ app.use('*', cors({
 // ── Logger ────────────────────────────────────────────────────────────────────
 app.use('*', logger());
 
+// ── Global rate limit (DDoS backstop — 200 req/min per IP) ───────────────────
+app.use('/api/*', apiLimiter);
+
 // ── Static files (radiology uploads) ─────────────────────────────────────────
 app.use('/uploads/*', serveStatic({ root: './' }));
+
+// ── Global error handler ──────────────────────────────────────────────────────
+app.onError(globalErrorHandler);
 
 // ── Routes ────────────────────────────────────────────────────────────────────
 app.route('/api/auth', authRouter);
@@ -77,6 +84,7 @@ app.route('/api/lab', labRouter);
 app.route('/api/medical', medicalRouter);
 app.route('/api/guardians', guardiansRouter);
 app.route('/api/admin/blockchain', adminBlockchainRouter);
+app.route('/api/security', securityRouter);
 // ── OpenAPI docs ──────────────────────────────────────────────────────────────
 const serverUrl = process.env.RENDER_EXTERNAL_URL ?? `http://localhost:${process.env.PORT ?? 3000}`;
 

@@ -14,7 +14,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.RecordContract = void 0;
 const fabric_contract_api_1 = require("fabric-contract-api");
-const WRITER_MSPS = ['HospitalOrgMSP', 'PractitionerOrgMSP'];
+const WRITER_MSPS = ['HospitalOrgMSP', 'PractitionerOrgMSP', 'PatientOrgMSP'];
 class RecordContract extends fabric_contract_api_1.Contract {
     constructor() {
         super('RecordContract');
@@ -41,8 +41,19 @@ class RecordContract extends fabric_contract_api_1.Contract {
         if (existing && existing.length > 0) {
             const prev = JSON.parse(existing.toString());
             version = ((_a = prev.version) !== null && _a !== void 0 ? _a : 1) + 1;
-            previousTxId = ctx.stub.getTxID(); // we'll see the prev tx via history
+            // Retrieve the previous tx ID from ledger history (not the current tx)
+            const histIter = await ctx.stub.getHistoryForKey(latestKey);
+            const firstEntry = await histIter.next();
+            if (!firstEntry.done)
+                previousTxId = firstEntry.value.txId;
+            await histIter.close();
         }
+        if (!/^[a-fA-F0-9]{64}$/.test(sha256Hash)) {
+            throw new Error(`Invalid sha256Hash format: expected 64-character hex string`);
+        }
+        const txId = ctx.stub.getTxID();
+        const txTimestamp = ctx.stub.getTxTimestamp();
+        const timestamp = new Date(txTimestamp.seconds.toNumber() * 1000 + Math.floor(txTimestamp.nanos / 1000000)).toISOString();
         const record = {
             recordId,
             patientId,
@@ -50,7 +61,7 @@ class RecordContract extends fabric_contract_api_1.Contract {
             recordType,
             createdBy: ctx.clientIdentity.getID(),
             creatorMSP: ctx.clientIdentity.getMSPID(),
-            timestamp: new Date().toISOString(),
+            timestamp,
             version,
             previousTxId,
         };
@@ -61,29 +72,49 @@ class RecordContract extends fabric_contract_api_1.Contract {
         // 2) Also write a composite key so we can query by patient efficiently
         const patientIndex = ctx.stub.createCompositeKey('PatientRecord', [patientId, recordId]);
         await ctx.stub.putState(patientIndex, payload);
+        // 3) Write an audit entry IN THE SAME TRANSACTION — this makes it impossible
+        //    for the backend to store a record without an immutable audit trail.
+        //    The backend's separate logAccess call covers read events; this covers writes.
+        const auditEntry = {
+            logId: txId,
+            patientId,
+            accessedBy: record.createdBy,
+            accessorMSP: record.creatorMSP,
+            action: `WRITE_${recordType.toUpperCase()}`,
+            recordId,
+            timestamp,
+            success: true,
+            version,
+        };
+        const auditPayload = Buffer.from(JSON.stringify(auditEntry));
+        await ctx.stub.putState(ctx.stub.createCompositeKey('PatientAudit', [patientId, txId]), auditPayload);
+        await ctx.stub.putState(`AUDIT_${patientId}_${txId}`, auditPayload);
         ctx.stub.setEvent('RecordStored', Buffer.from(JSON.stringify({
             recordId, patientId, recordType, version,
         })));
         return JSON.stringify(record);
     }
     // ── verifyRecordHash ───────────────────────────────────────────────────────
-    // Returns false if not found (no throw), so callers don't need try/catch
-    // for "doesn't exist" cases.
+    // Returns JSON so the backend can distinguish three states:
+    //   { verified: true,  notFound: false } — hash matches
+    //   { verified: false, notFound: false } — record exists but hash differs (tampering)
+    //   { verified: false, notFound: true  } — record was never stored on chain
+    // This prevents a network timeout (which also returns false) from being
+    // silently misread as evidence of tampering.
     async verifyRecordHash(ctx, recordId, sha256Hash) {
         const recordBytes = await ctx.stub.getState(`RECORD_${recordId}`);
         if (!recordBytes || recordBytes.length === 0) {
-            // Emit forensic event — someone tried to verify a non-existent record
             ctx.stub.setEvent('RecordVerifyMissing', Buffer.from(JSON.stringify({ recordId })));
-            return false;
+            return JSON.stringify({ verified: false, notFound: true });
         }
         const record = JSON.parse(recordBytes.toString());
-        const matches = record.sha256Hash === sha256Hash;
-        if (!matches) {
+        const verified = record.sha256Hash === sha256Hash;
+        if (!verified) {
             ctx.stub.setEvent('RecordHashMismatch', Buffer.from(JSON.stringify({
                 recordId, expectedHash: record.sha256Hash, providedHash: sha256Hash,
             })));
         }
-        return matches;
+        return JSON.stringify({ verified, notFound: false });
     }
     // ── getRecordHash ──────────────────────────────────────────────────────────
     async getRecordHash(ctx, recordId) {

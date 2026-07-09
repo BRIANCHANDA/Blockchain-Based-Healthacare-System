@@ -1,3 +1,4 @@
+import { handleError } from '../lib/errors';
 // backend/src/routes/admin/blockchain.ts
 
 import { createRoute, z } from '@hono/zod-openapi';
