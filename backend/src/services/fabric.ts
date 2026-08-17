@@ -1,9 +1,13 @@
 // backend/src/services/fabric.ts
-// REPLACE your existing fabric.ts with this version.
-// Adds failure tracking + diagnostic logging for the admin dashboard.
+// Separate identity/peer connection support.
+//
+// The channel's endorsement policy is OutOf(2, HospitalOrgMSP.peer,
+// PractitionerOrgMSP.peer, PatientOrgMSP.peer). Endorsement plans are built by
+// the peer's own discovery service, so no client-side discovery config is
+// needed here — the peer we dial finds the second endorser via gossip.
 
 import * as grpc from '@grpc/grpc-js';
-import { connect, Contract, Gateway, Identity, Signer, signers } from '@hyperledger/fabric-gateway';
+import { connect, Contract, Gateway, Identity, Signer, signers, StatusCode } from '@hyperledger/fabric-gateway';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -54,9 +58,6 @@ function orgConfig(org: OrgKey): OrgConfig {
 }
 
 // ── Connection pool ───────────────────────────────────────────────────────────
-// Each entry carries a createdAt timestamp. getConnection evicts and reconnects
-// entries older than POOL_TTL_MS to prevent stale gRPC channels after a
-// network restart or peer certificate rotation.
 const POOL_TTL_MS = 5 * 60 * 1_000; // 5 minutes
 
 type PoolEntry = { client: grpc.Client; gateway: Gateway; contract: Contract; createdAt: number };
@@ -68,29 +69,25 @@ function getFirstFile(dirPath: string): string {
   return path.join(dirPath, files[0]);
 }
 
+// ── getConnection: same identity and peer org ──────────────────────────────
 function getConnection(org: OrgKey): PoolEntry {
-  const cached = pool.get(org);
+  const cacheKey = org;
+  const cached = pool.get(cacheKey);
+  if (cached && Date.now() - cached.createdAt < POOL_TTL_MS) return cached;
+  // Evict stale
   if (cached) {
-    if (Date.now() - cached.createdAt < POOL_TTL_MS) return cached;
-    // Evict stale connection before creating a new one
-    try { cached.gateway.close(); } catch {}
-    try { cached.client.close(); } catch {}
-    pool.delete(org);
-    console.log(`[FABRIC] Connection pool evicted stale entry for ${org} (TTL exceeded)`);
+    try { cached.gateway.close(); } catch { }
+    try { cached.client.close(); } catch { }
+    pool.delete(cacheKey);
   }
 
   const cfg = orgConfig(org);
   const tlsCert = fs.readFileSync(cfg.tlsCertPath);
   const credentials = grpc.credentials.createSsl(tlsCert);
-
   const client = new grpc.Client(cfg.peerEndpoint, credentials, {
     'grpc.ssl_target_name_override': cfg.hostAlias,
-    // Fabric peers reject pings more frequent than their server-side minimum
-    // (default 300 s). 120 s gives headroom while still catching dead connections.
     'grpc.keepalive_time_ms': 120_000,
     'grpc.keepalive_timeout_ms': 20_000,
-    // 0 = only ping when there are active RPC calls — stops idle connections
-    // from flooding all 3 peers with pings every 10 s.
     'grpc.keepalive_permit_without_calls': 0,
     'grpc.http2.max_pings_without_data': 0,
     'grpc.http2.min_time_between_pings_ms': 120_000,
@@ -99,9 +96,7 @@ function getConnection(org: OrgKey): PoolEntry {
   const certPath = getFirstFile(path.join(cfg.adminMspPath, 'signcerts'));
   const keyPath = getFirstFile(path.join(cfg.adminMspPath, 'keystore'));
   const identity: Identity = { mspId: cfg.mspId, credentials: fs.readFileSync(certPath) };
-  const signer: Signer = signers.newPrivateKeySigner(
-    crypto.createPrivateKey(fs.readFileSync(keyPath)),
-  );
+  const signer: Signer = signers.newPrivateKeySigner(crypto.createPrivateKey(fs.readFileSync(keyPath)));
 
   const gateway = connect({
     client, identity, signer,
@@ -113,10 +108,57 @@ function getConnection(org: OrgKey): PoolEntry {
 
   const contract = gateway.getNetwork(CHANNEL).getContract(CHAINCODE);
   const entry: PoolEntry = { client, gateway, contract, createdAt: Date.now() };
-  pool.set(org, entry);
+  pool.set(cacheKey, entry);
   return entry;
 }
 
+// ── getConnectionForIdentity: separate identity and peer org ──────────────
+// Useful when we need an identity from one org but want to connect through
+// a peer of another org (e.g., patient identity via hospital peer).
+function getConnectionForIdentity(identityOrg: OrgKey, peerOrg: OrgKey): PoolEntry {
+  const cacheKey = `${identityOrg}:${peerOrg}`;
+  const cached = pool.get(cacheKey);
+  if (cached && Date.now() - cached.createdAt < POOL_TTL_MS) return cached;
+  if (cached) {
+    try { cached.gateway.close(); } catch { }
+    try { cached.client.close(); } catch { }
+    pool.delete(cacheKey);
+  }
+
+  const idCfg = orgConfig(identityOrg);
+  const peerCfg = orgConfig(peerOrg);
+
+  const tlsCert = fs.readFileSync(peerCfg.tlsCertPath);
+  const credentials = grpc.credentials.createSsl(tlsCert);
+  const client = new grpc.Client(peerCfg.peerEndpoint, credentials, {
+    'grpc.ssl_target_name_override': peerCfg.hostAlias,
+    'grpc.keepalive_time_ms': 120_000,
+    'grpc.keepalive_timeout_ms': 20_000,
+    'grpc.keepalive_permit_without_calls': 0,
+    'grpc.http2.max_pings_without_data': 0,
+    'grpc.http2.min_time_between_pings_ms': 120_000,
+  });
+
+  const certPath = getFirstFile(path.join(idCfg.adminMspPath, 'signcerts'));
+  const keyPath = getFirstFile(path.join(idCfg.adminMspPath, 'keystore'));
+  const identity: Identity = { mspId: idCfg.mspId, credentials: fs.readFileSync(certPath) };
+  const signer: Signer = signers.newPrivateKeySigner(crypto.createPrivateKey(fs.readFileSync(keyPath)));
+
+  const gateway = connect({
+    client, identity, signer,
+    evaluateOptions: () => ({ deadline: Date.now() + 10_000 }),
+    endorseOptions: () => ({ deadline: Date.now() + 15_000 }),
+    submitOptions: () => ({ deadline: Date.now() + 15_000 }),
+    commitStatusOptions: () => ({ deadline: Date.now() + 60_000 }),
+  });
+
+  const contract = gateway.getNetwork(CHANNEL).getContract(CHAINCODE);
+  const entry: PoolEntry = { client, gateway, contract, createdAt: Date.now() };
+  pool.set(cacheKey, entry);
+  return entry;
+}
+
+// ── Timeout helper ───────────────────────────────────────────────────────────
 async function withTimeout<T>(fn: () => Promise<T>, timeoutMs: number, label: string, onTimeout: () => T): Promise<T> {
   const timer = new Promise<T>(resolve => setTimeout(() => resolve(onTimeout()), timeoutMs));
   try {
@@ -135,9 +177,6 @@ async function withTimeout<T>(fn: () => Promise<T>, timeoutMs: number, label: st
 // ══════════════════════════════════════════════════════════════════════════════
 // ── FAILURE TRACKING ──────────────────────────────────────────────────────────
 // ══════════════════════════════════════════════════════════════════════════════
-//
-// Every blockchain write goes through here. Failures are categorised and kept
-// in an in-memory ring buffer, accessible from the admin dashboard.
 
 type FailureEntry = {
   recordId: string;
@@ -183,22 +222,61 @@ function categorizeError(err: any): string {
 }
 
 // ── ACCESS CONTROL ────────────────────────────────────────────────────────────
+
+// StatusCode maps name -> numeric code; invert it so a commit failure reports
+// e.g. "ENDORSEMENT_POLICY_FAILURE" instead of a bare 10.
+const STATUS_NAME_BY_CODE: Record<number, string> = Object.fromEntries(
+  Object.entries(StatusCode).map(([name, code]) => [code as number, name]),
+);
+function statusName(code: number): string {
+  return STATUS_NAME_BY_CODE[code] ?? 'UNKNOWN';
+}
+
+// Submits a transaction and returns both the chaincode payload and the Fabric
+// transaction ID. submitTransaction() alone discards the tx ID, which is what
+// we need to persist in access_permissions.blockchain_transaction_id so a grant
+// can be traced back to its block.
+async function submitWithTxId(
+  contract: Contract,
+  transactionName: string,
+  ...args: string[]
+): Promise<{ payload: any; txId: string }> {
+  const proposal = contract.newProposal(transactionName, { arguments: args });
+  const transaction = await proposal.endorse();
+  const commit = await transaction.submit();
+  const status = await commit.getStatus();
+
+  if (!status.successful) {
+    throw new Error(
+      `Transaction ${status.transactionId} failed to commit: ${statusName(status.code)} (code ${status.code})`,
+    );
+  }
+
+  return {
+    payload: JSON.parse(Buffer.from(transaction.getResult()).toString()),
+    txId: status.transactionId,
+  };
+}
+
 export async function grantPermission(patientId: string, practitionerId: string, durationHours: string): Promise<object> {
-  const { contract } = getConnection('patient');
-  const result = await contract.submitTransaction(
+  // Use patient identity but connect to hospital peer (which is online)
+  const { contract } = getConnectionForIdentity('patient', 'hospital');
+  const { payload, txId } = await submitWithTxId(
+    contract,
     'AccessControlContract:grantPermission',
     patientId, practitionerId, durationHours,
   );
-  return JSON.parse(Buffer.from(result).toString());
+  return { ...payload, txId };
 }
 
 export async function revokePermission(patientId: string, practitionerId: string): Promise<object> {
-  const { contract } = getConnection('patient');
-  const result = await contract.submitTransaction(
+  const { contract } = getConnectionForIdentity('patient', 'hospital');
+  const { payload, txId } = await submitWithTxId(
+    contract,
     'AccessControlContract:revokePermission',
     patientId, practitionerId,
   );
-  return JSON.parse(Buffer.from(result).toString());
+  return { ...payload, txId };
 }
 
 export async function checkPermission(patientId: string, practitionerId: string): Promise<boolean> {
@@ -218,7 +296,9 @@ export async function checkPermission(patientId: string, practitionerId: string)
 export async function getPatientPermissions(patientAddress: string): Promise<any[]> {
   return withTimeout(
     async () => {
-      const { contract } = getConnection('patient');
+      // This is a query, we can use patient identity via patient peer (or hospital if offline)
+      // For safety, use hospital peer with patient identity.
+      const { contract } = getConnectionForIdentity('patient', 'hospital');
       const result = await contract.evaluateTransaction(
         'AccessControlContract:getPatientPermissions',
         patientAddress,
@@ -269,9 +349,6 @@ export async function storeRecordHash(
     const { contract } = getConnection('hospital');
     const TIMEOUT = 12_000;
 
-    // submitTransaction lets service discovery pick any 2 endorsing orgs.
-    // All 3 MSPs are now in WRITER_MSPS so any 2-of-3 combination satisfies
-    // both the endorsement policy and the chaincode requireMsp check.
     await Promise.race([
       contract.submitTransaction(
         'RecordContract:storeRecordHash',
@@ -330,6 +407,23 @@ export async function getRecordHash(recordId: string): Promise<any | null> {
       return JSON.parse(Buffer.from(result).toString());
     },
     8_000, 'getRecordHash', () => null,
+  );
+}
+
+// ── ADDITIONAL: getRecordHistory ────────────────────────────────────────────
+export async function getRecordHistory(recordId: string): Promise<any[]> {
+  return withTimeout(
+    async () => {
+      const { contract } = getConnection('hospital');
+      const result = await contract.evaluateTransaction(
+        'RecordContract:getRecordHistory',
+        recordId,
+      );
+      return JSON.parse(Buffer.from(result).toString());
+    },
+    10_000,
+    `getRecordHistory(${recordId})`,
+    () => [],
   );
 }
 
@@ -414,27 +508,4 @@ export async function getNetworkOverview() {
     peers,
     organizations: ORGS,
   };
-}
-
-
-// ── Append to backend/src/services/fabric.ts ─────────────────────────────────
-//
-// Add this function alongside the other RecordContract wrappers
-// (next to getRecordHash). Uses the new getRecordHistory chaincode method
-// to return every version of a record from the ledger's built-in key history.
-
-export async function getRecordHistory(recordId: string): Promise<any[]> {
-  return withTimeout(
-    async () => {
-      const { contract } = getConnection('hospital');
-      const result = await contract.evaluateTransaction(
-        'RecordContract:getRecordHistory',
-        recordId,
-      );
-      return JSON.parse(Buffer.from(result).toString());
-    },
-    10_000,
-    `getRecordHistory(${recordId})`,
-    () => [],
-  );
 }

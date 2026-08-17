@@ -8,7 +8,6 @@ import {
   Users,
   ClipboardList,
   Clock,
-  CheckCircle2,
   AlertCircle,
   Activity,
   ChevronRight,
@@ -23,6 +22,13 @@ import {
   Droplets,
 } from "lucide-react";
 import { formatDistanceToNow, format, getHours } from "date-fns";
+import {
+  KpiCard,
+  Panel,
+  PanelHeader,
+  EmptyState,
+  PageHeading,
+} from "@/components/dashboard/primitives";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface QueueItem {
@@ -42,6 +48,13 @@ interface QueueItem {
   } | null;
   assignedNurseId?: string;
   assignedNurseName?: string;
+  /*
+   * Supplied by /api/visits/today. That endpoint returns only visits whose
+   * status is "in-progress", so `status` cannot distinguish a patient still
+   * waiting from one already in care — this flag is what actually separates
+   * them: no vitals recorded yet means triage has not happened.
+   */
+  hasVitals?: boolean;
 }
 
 interface Nurse {
@@ -121,11 +134,6 @@ const BLOOD: Record<string, string> = {
   "O+": "#10b981",
   "O-": "#14b8a6",
 };
-
-function greeting() {
-  const h = new Date().getHours();
-  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
-}
 
 function getInitials(name: string) {
   return (
@@ -288,15 +296,15 @@ function VisitSparkline({ queue }: { queue: QueueItem[] }) {
 }
 
 // ── Donut chart ───────────────────────────────────────────────────────────────
+// Only the active queue is available from /api/visits/today, so the donut
+// splits it by triage state rather than including a discharged slice.
 function StatusDonut({
   waiting,
   inProgress,
-  done,
   total,
 }: {
   waiting: number;
   inProgress: number;
-  done: number;
   total: number;
 }) {
   const R = 28,
@@ -306,8 +314,7 @@ function StatusDonut({
   const circumference = 2 * Math.PI * R;
 
   const segments = [
-    { value: done, color: T.green, label: "Done" },
-    { value: inProgress, color: T.blue, label: "Active" },
+    { value: inProgress, color: T.blue, label: "In care" },
     { value: waiting, color: T.amber, label: "Waiting" },
   ];
 
@@ -377,10 +384,10 @@ function StatusDonut({
               className="w-2 h-2 rounded-full flex-shrink-0"
               style={{ background: s.color }}
             />
-            <span className="text-xs text-gray-500 font-medium w-12">
+            <span className="text-[13px] text-gray-500 font-medium w-12">
               {s.label}
             </span>
-            <span className="text-xs font-bold text-gray-800 tabular-nums">
+            <span className="text-[13px] font-bold text-gray-800 tabular-nums">
               {s.value}
             </span>
           </div>
@@ -412,7 +419,7 @@ function QueueRow({
 }) {
   const p = PRIORITY[item.priority] ?? PRIORITY.routine;
   const isActive = item.status === "in-progress";
-  const isWaiting = item.status === "waiting";
+  const isWaiting = !item.hasVitals;
   const name = getPatientName(item);
   const bloodType = item.patient?.bloodType;
   const waitMins = Math.floor(
@@ -443,7 +450,7 @@ function QueueRow({
 
       {/* Avatar */}
       <div
-        className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+        className="w-8 h-8 rounded-xl flex items-center justify-center text-[13px] font-bold text-white flex-shrink-0"
         style={{ background: `${p.dot}cc` }}
       >
         {getInitials(name)}
@@ -452,10 +459,10 @@ function QueueRow({
       {/* Info */}
       <div className="min-w-0">
         <div className="flex items-center gap-2 mb-0.5">
-          <p className="text-sm font-semibold text-gray-900 truncate">{name}</p>
+          <p className="text-[15px] font-semibold text-gray-900 truncate">{name}</p>
           {bloodType && bloodType !== "unknown" && (
             <span
-              className="text-[9px] font-bold px-1.5 py-0.5 rounded-full text-white flex-shrink-0 flex items-center gap-0.5"
+              className="text-[10.5px] font-bold px-1.5 py-0.5 rounded-full text-white flex-shrink-0 flex items-center gap-0.5"
               style={{ background: BLOOD[bloodType] ?? "#6b7280" }}
             >
               <Droplets className="w-2 h-2" />
@@ -463,11 +470,11 @@ function QueueRow({
             </span>
           )}
         </div>
-        <p className="text-xs text-gray-400 truncate">
+        <p className="text-[13px] text-gray-400 truncate">
           {item.chiefComplaint || "—"}
         </p>
         {item.assignedNurseName && (
-          <p className="text-xs text-green-600 mt-0.5 flex items-center gap-1">
+          <p className="text-[13px] text-green-600 mt-0.5 flex items-center gap-1">
             <UserCheck className="w-2.5 h-2.5" />
             {item.assignedNurseName}
           </p>
@@ -477,7 +484,7 @@ function QueueRow({
       {/* Wait time */}
       <div className="text-right">
         <p
-          className="text-xs font-semibold tabular-nums"
+          className="text-[13px] font-semibold tabular-nums"
           style={{
             color:
               waitMins > 60 ? T.coral : waitMins > 30 ? T.amber : T.inkMuted,
@@ -487,14 +494,14 @@ function QueueRow({
             ? `${waitMins}m`
             : `${Math.floor(waitMins / 60)}h${waitMins % 60}m`}
         </p>
-        <p className="text-[10px] text-gray-300">
+        <p className="text-[11.5px] text-gray-300">
           {format(new Date(item.admissionDate), "HH:mm")}
         </p>
       </div>
 
       {/* Priority pill */}
       <span
-        className="text-[10px] font-bold px-2 py-1 rounded-full text-center capitalize leading-none"
+        className="text-[11.5px] font-bold px-2 py-1 rounded-full text-center capitalize leading-none"
         style={{
           background: p.bg,
           color: p.color,
@@ -509,13 +516,13 @@ function QueueRow({
         {isWaiting ? (
           <div className="relative">
             {showDropdownFor === item.id ? (
-              <div className="absolute right-0 top-0 mt-8 z-20 bg-white rounded-xl shadow-xl border border-gray-100 w-48">
+              <div className="absolute right-0 top-0 mt-8 z-20 bg-white rounded-xl shadow-xl border border-slate-200 w-48">
                 <div className="p-2">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 px-2 py-1">
+                  <p className="text-[11.5px] font-bold uppercase tracking-widest text-gray-400 px-2 py-1">
                     Assign nurse
                   </p>
                   {onlineNurses.length === 0 ? (
-                    <p className="text-xs text-gray-400 px-2 py-2">
+                    <p className="text-[13px] text-gray-400 px-2 py-2">
                       No nurses online
                     </p>
                   ) : (
@@ -527,10 +534,10 @@ function QueueRow({
                           assignNurse(item.id, nurse.id);
                         }}
                         disabled={assigningVisitId === item.id}
-                        className="w-full text-left px-2 py-2 text-sm rounded-lg hover:bg-gray-50 flex items-center gap-2 transition-colors"
+                        className="w-full text-left px-2 py-2 text-[15px] rounded-lg hover:bg-gray-50 flex items-center gap-2 transition-colors"
                       >
                         <div className="w-6 h-6 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
-                          <span className="text-[9px] font-bold text-green-700">
+                          <span className="text-[10.5px] font-bold text-green-700">
                             {nurse.firstName[0]}
                             {nurse.lastName[0]}
                           </span>
@@ -544,10 +551,10 @@ function QueueRow({
                       </button>
                     ))
                   )}
-                  <div className="border-t border-gray-100 mt-1 pt-1">
+                  <div className="border-t border-slate-100 mt-1 pt-1">
                     <button
                       onClick={() => setShowDropdownFor(null)}
-                      className="w-full text-xs text-gray-400 px-2 py-1.5 hover:bg-gray-50 rounded-lg text-left"
+                      className="w-full text-[13px] text-gray-400 px-2 py-1.5 hover:bg-gray-50 rounded-lg text-left"
                     >
                       Cancel
                     </button>
@@ -558,7 +565,7 @@ function QueueRow({
               <button
                 onClick={() => setShowDropdownFor(item.id)}
                 disabled={assigningVisitId === item.id}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all border"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[13px] font-semibold transition-all border"
                 style={{
                   background: T.violetLight,
                   color: T.violet,
@@ -577,7 +584,7 @@ function QueueRow({
         ) : (
           <button
             onClick={() => onOpen(item.id)}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[13px] font-semibold transition-all"
             style={{
               background: T.greenGhost,
               color: T.green,
@@ -651,20 +658,24 @@ export default function ReceptionistOverviewPage() {
     return () => clearInterval(iv);
   }, [fetchData]);
 
-  // Derived
-  const waiting = queue.filter((q) => q.status === "waiting").length;
-  const inProgress = queue.filter((q) => q.status === "in-progress").length;
-  const done = queue.filter((q) =>
-    ["completed", "discharged"].includes(q.status),
-  ).length;
+  /*
+   * Derived counts.
+   *
+   * /api/visits/today returns only status === "in-progress", so filtering on
+   * "waiting" or "completed"/"discharged" always produced 0 — the Waiting and
+   * Discharged figures were permanently blank. Triage state is what separates
+   * them in practice, so "waiting" means checked in but not yet triaged.
+   */
+  const waiting = queue.filter((q) => !q.hasVitals).length;
+  const inProgress = queue.filter((q) => q.hasVitals).length;
   const urgent = queue.filter((q) =>
     ["critical", "emergency"].includes(q.priority),
   ).length;
 
+  // Every visit this endpoint returns is active, so the queue is the whole set.
   const liveQueue = useMemo(
     () =>
-      queue
-        .filter((q) => ["in-progress", "waiting"].includes(q.status))
+      [...queue]
         .sort((a, b) => {
           const o: Record<string, number> = {
             critical: 0,
@@ -696,247 +707,116 @@ export default function ReceptionistOverviewPage() {
   const barMax = Math.max(...hourlyBars.map((b) => b.count), 1);
 
   return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif" }} className="space-y-5">
-      {/* ── Header bar ────────────────────────────────────────────────────── */}
-      <div
-        className="rounded-2xl overflow-hidden"
-        style={{
-          background: `linear-gradient(135deg, ${T.forest} 0%, ${T.forestMid} 60%, #0a5c2e 100%)`,
-        }}
-      >
-        {/* Subtle grid texture overlay */}
-        <div
-          className="px-7 py-6 relative"
-          style={{
-            backgroundImage:
-              "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.03) 1px, transparent 0)",
-            backgroundSize: "24px 24px",
-          }}
+    <div className="w-full max-w-[1280px] mx-auto pb-8">
+      <PageHeading
+        eyebrow="Front Desk"
+        title={hasInstitution ? institutionName : "No institution assigned"}
+        actions={
+          <>
+            <button
+              onClick={() => router.push("/dashboard/receptionist/visits/new")}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[13px] font-semibold shadow-sm transition-colors"
+            >
+              <UserPlus className="w-3.5 h-3.5" />
+              New Visit
+            </button>
+
+            <button
+              onClick={() => router.push("/dashboard/receptionist/register")}
+              className="hidden sm:inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:border-emerald-200 text-slate-700 text-[13px] font-semibold transition-colors"
+            >
+              <User className="w-3.5 h-3.5" />
+              Register Patient
+            </button>
+
+            <button
+              onClick={() => fetchData(true)}
+              disabled={refreshing}
+              className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`}
+              />
+            </button>
+          </>
+        }
+      />
+
+      {/* Urgent arrivals are the one thing that cannot wait for a scroll. */}
+      {!loading && urgent > 0 && (
+        <button
+          onClick={() => router.push("/dashboard/receptionist/queue")}
+          className="w-full flex items-center gap-3 p-4 rounded-2xl mb-5 bg-red-50 border border-red-200 text-left hover:bg-red-100/60 transition-colors"
         >
-          {/* Glow blobs */}
-          <div
-            className="absolute top-0 right-0 w-96 h-40 pointer-events-none"
-            style={{
-              background:
-                "radial-gradient(ellipse at top right, rgba(134,239,172,0.08), transparent 60%)",
-            }}
-          />
-          <div
-            className="absolute bottom-0 left-20 w-64 h-24 pointer-events-none"
-            style={{
-              background:
-                "radial-gradient(ellipse, rgba(74,222,128,0.06), transparent 70%)",
-            }}
-          />
+          <Zap className="w-4 h-4 text-red-500 flex-shrink-0" />
+          <p className="text-[13px] font-semibold text-red-800 flex-1">
+            {urgent} patient{urgent > 1 ? "s" : ""} marked urgent or critical in
+            today's queue
+          </p>
+          <span className="text-[13px] font-bold text-red-700 flex items-center gap-1 whitespace-nowrap">
+            Open queue <ChevronRight className="w-3.5 h-3.5" />
+          </span>
+        </button>
+      )}
 
-          <div className="relative flex items-start justify-between gap-4 flex-wrap">
-            <div>
-              {/* Eyebrow */}
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-1.5 h-1.5 rounded-full bg-green-400" />
-                <span className="text-green-400/70 text-xs font-semibold tracking-widest uppercase">
-                  {format(new Date(), "EEEE, dd MMMM yyyy")}
-                </span>
-              </div>
-
-              <h1
-                className="text-white text-2xl font-bold leading-tight mb-1"
-                style={{
-                  fontFamily: "'Playfair Display', serif",
-                  letterSpacing: "-0.02em",
-                }}
-              >
-                {greeting()}, {user?.firstName}
-              </h1>
-
-              {/* Institution */}
-              {hasInstitution ? (
-                <div className="flex items-center gap-1.5 mt-1">
-                  <Building2 className="w-3.5 h-3.5 text-green-400/60 flex-shrink-0" />
-                  <span className="text-green-200/70 text-sm font-medium">
-                    {institutionName}
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1.5 mt-1">
-                  <Building2 className="w-3.5 h-3.5 text-red-400/60" />
-                  <span className="text-red-300/70 text-sm">
-                    No institution — contact admin
-                  </span>
-                </div>
-              )}
-
-              {/* Live counts */}
-              {!loading && (
-                <div className="flex flex-wrap items-center gap-4 mt-3">
-                  <div className="flex items-center gap-1.5">
-                    <span className="relative flex h-1.5 w-1.5">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-50" />
-                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-green-400" />
-                    </span>
-                    <span className="text-green-300/90 text-xs font-semibold">
-                      {inProgress} active · {waiting} waiting
-                    </span>
-                  </div>
-                  {urgent > 0 && (
-                    <div className="flex items-center gap-1.5 text-red-300 text-xs font-semibold">
-                      <Zap className="w-3 h-3" />
-                      {urgent} urgent/critical
-                    </div>
-                  )}
-                  {done > 0 && (
-                    <div className="flex items-center gap-1.5 text-green-400/70 text-xs">
-                      <CheckCircle2 className="w-3 h-3" />
-                      {done} discharged
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* Right actions */}
-            <div className="flex items-center gap-2 flex-shrink-0 mt-1">
-              {lastUpdated && (
-                <span className="text-green-400/30 text-xs hidden sm:block">
-                  {format(lastUpdated, "HH:mm")}
-                </span>
-              )}
-              <button
-                onClick={() => fetchData(true)}
-                disabled={refreshing}
-                className="p-2.5 rounded-xl transition-all disabled:opacity-40"
-                style={{
-                  background: "rgba(255,255,255,0.07)",
-                  border: "1px solid rgba(255,255,255,0.09)",
-                }}
-              >
-                <RefreshCw
-                  className={`w-3.5 h-3.5 text-green-300 ${refreshing ? "animate-spin" : ""}`}
-                />
-              </button>
-              <button
-                onClick={() =>
-                  router.push("/dashboard/receptionist/visits/new")
-                }
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:-translate-y-px hover:shadow-lg"
-                style={{
-                  background: "linear-gradient(135deg, #16a34a, #15803d)",
-                }}
-              >
-                <UserPlus className="w-4 h-4" />
-                New Visit
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── KPI strip ─────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {[
-          {
-            icon: ClipboardList,
-            label: "Total Today",
-            value: queue.length,
-            color: T.forest,
-            bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
-            border: "#bbf7d0",
-            sub: "all encounters",
-          },
-          {
-            icon: Clock,
-            label: "Waiting",
-            value: waiting,
-            color: "#92400e",
-            bg: "linear-gradient(135deg,#fffbeb,#fef3c7)",
-            border: "#fde68a",
-            sub: `avg ${Math.max(0, Math.floor((Date.now() - (queue.find((q) => q.status === "waiting") ? new Date(queue.find((q) => q.status === "waiting")!.admissionDate).getTime() : Date.now())) / 60_000))}m`,
-          },
-          {
-            icon: Activity,
-            label: "In Progress",
-            value: inProgress,
-            color: T.blue,
-            bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
-            border: "#bfdbfe",
-            sub: "active right now",
-          },
-          {
-            icon: CheckCircle2,
-            label: "Completed",
-            value: done,
-            color: T.violet,
-            bg: "linear-gradient(135deg,#faf5ff,#ede9fe)",
-            border: "#ddd6fe",
-            sub: "discharged today",
-          },
-        ].map(({ icon: Icon, label, value, color, bg, border, sub }, i) => (
-          <div
-            key={label}
-            className="relative rounded-2xl p-4 border overflow-hidden"
-            style={{
-              background: bg,
-              borderColor: border,
-              animationDelay: `${i * 60}ms`,
-              opacity: mounted ? 1 : 0,
-              transform: mounted ? "none" : "translateY(6px)",
-              transition: `opacity 0.3s ${i * 60}ms, transform 0.3s ${i * 60}ms`,
-            }}
-          >
-            {/* Decorative circle */}
-            <div
-              className="absolute -right-3 -bottom-3 w-14 h-14 rounded-full opacity-[0.08]"
-              style={{ background: color }}
-            />
-            <Icon className="w-4 h-4 mb-3" style={{ color }} />
-            <p
-              className="text-3xl font-extrabold leading-none tabular-nums"
-              style={{ color }}
-            >
-              {loading ? (
-                <span className="inline-block w-8 h-7 rounded-lg bg-black/5 animate-pulse" />
-              ) : (
-                value
-              )}
-            </p>
-            <p
-              className="text-xs font-bold mt-1"
-              style={{ color, opacity: 0.8 }}
-            >
-              {label}
-            </p>
-            <p className="text-[10px] mt-0.5" style={{ color, opacity: 0.45 }}>
-              {sub}
-            </p>
-          </div>
-        ))}
-      </div>
+      {/* KPIs */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        <KpiCard
+          label="Total Today"
+          value={loading ? undefined : queue.length}
+          description="All encounters"
+          icon={ClipboardList}
+          iconClass="bg-emerald-50 text-emerald-600"
+          href="/dashboard/receptionist/queue"
+        />
+        <KpiCard
+          label="Waiting"
+          value={loading ? undefined : waiting}
+          description="Not yet triaged"
+          icon={Clock}
+          iconClass="bg-amber-50 text-amber-600"
+        />
+        <KpiCard
+          label="In Care"
+          value={loading ? undefined : inProgress}
+          description="Triaged and active"
+          icon={Activity}
+          iconClass="bg-blue-50 text-blue-600"
+        />
+        <KpiCard
+          label="Urgent"
+          value={loading ? undefined : urgent}
+          description="Critical or emergency"
+          icon={Zap}
+          iconClass="bg-red-50 text-red-600"
+        />
+      </section>
 
       {/* ── Main grid ─────────────────────────────────────────────────────── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* ── Queue table — 8 cols ────────────────────────────────────────── */}
-        <div className="lg:col-span-8 bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200 overflow-hidden">
           {/* Table header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-green-50">
                 <Activity className="w-4 h-4 text-green-700" />
               </div>
               <div>
-                <h2 className="text-sm font-bold text-gray-900">Live Queue</h2>
-                <p className="text-xs text-gray-400">
+                <h2 className="text-[15px] font-bold text-gray-900">Live Queue</h2>
+                <p className="text-[13px] text-gray-400">
                   Priority-sorted · auto-refresh 30s
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5 text-xs text-gray-400">
+              <div className="flex items-center gap-1.5 text-[13px] text-gray-400">
                 <span className="w-2 h-2 rounded-full bg-green-400" />
                 <span>{onlineNurses.length} nurses online</span>
               </div>
               <button
                 onClick={() => router.push("/dashboard/receptionist/queue")}
-                className="flex items-center gap-1 text-xs font-semibold text-green-700 hover:underline"
+                className="flex items-center gap-1 text-[13px] font-semibold text-green-700 hover:underline"
               >
                 Full queue <ChevronRight className="w-3.5 h-3.5" />
               </button>
@@ -946,7 +826,7 @@ export default function ReceptionistOverviewPage() {
           {/* Column headers */}
           {!loading && liveQueue.length > 0 && (
             <div
-              className="grid px-5 py-2 border-b border-gray-50 text-[10px] font-bold uppercase tracking-widest text-gray-400"
+              className="grid px-5 py-2 border-b border-gray-50 text-[11.5px] font-bold uppercase tracking-widest text-gray-400"
               style={{ gridTemplateColumns: "20px 36px 1fr 80px 72px 88px" }}
             >
               <div />
@@ -980,17 +860,17 @@ export default function ReceptionistOverviewPage() {
               <div className="w-12 h-12 rounded-2xl bg-green-50 flex items-center justify-center mx-auto mb-3">
                 <ClipboardList className="w-5 h-5 text-green-300" />
               </div>
-              <p className="text-sm font-semibold text-gray-500">
+              <p className="text-[15px] font-semibold text-gray-500">
                 Queue is clear
               </p>
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-[13px] text-gray-400 mt-1">
                 No active or waiting patients
               </p>
               <button
                 onClick={() =>
                   router.push("/dashboard/receptionist/visits/new")
                 }
-                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white"
+                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white"
                 style={{ background: T.forest }}
               >
                 <UserPlus className="w-3.5 h-3.5" /> Register first visit
@@ -1016,7 +896,7 @@ export default function ReceptionistOverviewPage() {
               {liveQueue.length > 8 && (
                 <button
                   onClick={() => router.push("/dashboard/receptionist/queue")}
-                  className="w-full py-3 text-xs font-semibold text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5 border-t border-gray-50"
+                  className="w-full py-3 text-[13px] font-semibold text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5 border-t border-gray-50"
                 >
                   +{liveQueue.length - 8} more in queue{" "}
                   <ChevronRight className="w-3.5 h-3.5" />
@@ -1029,15 +909,15 @@ export default function ReceptionistOverviewPage() {
         {/* ── Right column — 4 cols ───────────────────────────────────────── */}
         <div className="lg:col-span-4 space-y-4">
           {/* ── Analytics card ───────────────────────────────────────────── */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
             <div className="px-5 pt-5 pb-3">
               <div className="flex items-center justify-between mb-1">
-                <p className="text-sm font-bold text-gray-900">Today's Flow</p>
-                <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest">
+                <p className="text-[15px] font-bold text-gray-900">Today's Flow</p>
+                <span className="text-[11.5px] font-semibold text-gray-400 uppercase tracking-widest">
                   6AM – 6PM
                 </span>
               </div>
-              <p className="text-xs text-gray-400 mb-4">
+              <p className="text-[13px] text-gray-400 mb-4">
                 Visits by hour of arrival
               </p>
 
@@ -1050,7 +930,7 @@ export default function ReceptionistOverviewPage() {
 
             {/* Mini bar chart — last 6 hours */}
             <div className="px-5 pb-4 pt-1 border-t border-gray-50">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-3">
+              <p className="text-[11.5px] font-bold uppercase tracking-widest text-gray-400 mb-3">
                 Last 6 hours
               </p>
               <div className="flex items-end gap-1.5 h-10">
@@ -1069,7 +949,7 @@ export default function ReceptionistOverviewPage() {
                             : "#e5e7eb",
                       }}
                     />
-                    <span className="text-[8px] text-gray-400 tabular-nums">
+                    <span className="text-[10px] text-gray-400 tabular-nums">
                       {bar.label.slice(0, 5)}
                     </span>
                   </div>
@@ -1079,22 +959,21 @@ export default function ReceptionistOverviewPage() {
           </div>
 
           {/* ── Status donut ─────────────────────────────────────────────── */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <p className="text-sm font-bold text-gray-900 mb-4">Visit Status</p>
+          <div className="bg-white rounded-2xl border border-slate-200 p-5">
+            <p className="text-[15px] font-bold text-gray-900 mb-4">Visit Status</p>
             {loading ? (
               <div className="h-[72px] bg-gray-50 rounded-xl animate-pulse" />
             ) : (
               <StatusDonut
                 waiting={waiting}
                 inProgress={inProgress}
-                done={done}
                 total={queue.length}
               />
             )}
             {urgent > 0 && (
               <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50 border border-red-100">
                 <Zap className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
-                <p className="text-xs font-semibold text-red-700">
+                <p className="text-[13px] font-semibold text-red-700">
                   {urgent} critical/emergency patient{urgent !== 1 ? "s" : ""}
                 </p>
               </div>
@@ -1102,9 +981,9 @@ export default function ReceptionistOverviewPage() {
           </div>
 
           {/* ── Quick actions ─────────────────────────────────────────────── */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
             <div className="px-5 py-3.5 border-b border-gray-50">
-              <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
+              <p className="text-[13px] font-bold uppercase tracking-widest text-gray-400">
                 Quick actions
               </p>
             </div>
@@ -1144,10 +1023,10 @@ export default function ReceptionistOverviewPage() {
                     <Icon className="w-3.5 h-3.5" style={{ color }} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-800">
+                    <p className="text-[15px] font-semibold text-gray-800">
                       {label}
                     </p>
-                    <p className="text-xs text-gray-400">{sub}</p>
+                    <p className="text-[13px] text-gray-400">{sub}</p>
                   </div>
                   <ChevronRight className="w-3.5 h-3.5 text-gray-200 group-hover:text-gray-400 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
                 </button>

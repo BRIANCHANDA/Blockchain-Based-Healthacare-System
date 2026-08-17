@@ -8,6 +8,7 @@
 // 4. Better event emission with structured payload.
 
 import { Contract, Context } from 'fabric-contract-api';
+import { txTimeISO } from './txtime';
 
 interface AuditLog {
   logId: string;
@@ -37,7 +38,7 @@ export class AuditContract extends Contract {
     const txId = ctx.stub.getTxID();
     const clientId = ctx.clientIdentity.getID();
     const mspId = ctx.clientIdentity.getMSPID();
-    const timestamp = new Date().toISOString();
+    const timestamp = txTimeISO(ctx);
 
     const log: AuditLog = {
       logId: txId,

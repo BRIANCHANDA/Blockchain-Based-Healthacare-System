@@ -1,6 +1,6 @@
 import { handleError } from '../lib/errors';
 import { createRoute, z } from '@hono/zod-openapi';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../db';
 import { accessPermissions, accessRequests, auditLogs, crossInstitutionAccess, diagnoses, institutions, labTestOrders, patientInstitutionRegistrations, patients, patientGuardians, practitioners, visits } from '../db/schema';
 import { createRouter } from '../lib/create-app';
@@ -675,7 +675,7 @@ export const permissionRouter = createRouter()
           permissionType: 'read',
           allowedRecordTypes: req.requestedPermissions as any,
           expiresAt,
-          blockchainTransactionId: blockchainResult?.logId ?? null,
+          blockchainTransactionId: blockchainResult?.txId ?? null,
           isActive: true,
         });
 
@@ -688,7 +688,7 @@ export const permissionRouter = createRouter()
               console.error('CRITICAL: Blockchain grant compensation failed. Manual review required.', {
                 patientBlockchainAddress,
                 staffBlockchainAddress: staff[0].blockchainAddress,
-                blockchainTxId: blockchainResult?.logId,
+                blockchainTxId: blockchainResult?.txId,
                 revokeErr,
               })
             );
@@ -878,6 +878,32 @@ export const permissionRouter = createRouter()
         )
       );
 
+      const sourcesGranted = grants.filter((g) => g.status === 'fulfilled').length;
+      const failedGrants = grants.filter((g): g is PromiseRejectedResult => g.status === 'rejected');
+
+      // Never swallow these silently — a grant that fails here is the difference
+      // between the clinician seeing the records and staring at a blank page.
+      if (failedGrants.length) {
+        console.error('[EMERGENCY_OVERRIDE] cross-institution grant(s) failed', {
+          patientId,
+          targetInstitutionId: myInstitutionId,
+          failures: failedGrants.map((f) => f.reason?.message ?? String(f.reason)),
+        });
+      }
+
+      // Report what actually happened. Saying "access granted" when nothing was
+      // unlocked sends the clinician looking for records that will never load.
+      let message: string;
+      if (sourceRegistrations.length === 0) {
+        message = 'Override logged, but this patient has no records at any other institution — there was nothing to unlock.';
+      } else if (sourcesGranted === 0) {
+        message = `Override logged, but access could not be granted for ${failedGrants.length} institution(s). Please report this — the attempt is recorded.`;
+      } else if (failedGrants.length) {
+        message = `Emergency access granted for 24 hours at ${sourcesGranted} of ${sourceRegistrations.length} institutions; ${failedGrants.length} failed. This action is permanently recorded and visible to the patient.`;
+      } else {
+        message = 'Emergency access granted for 24 hours. This action is permanently recorded and visible to the patient.';
+      }
+
       // Audit log
       await db.insert(auditLogs).values({
         userId,
@@ -897,8 +923,10 @@ export const permissionRouter = createRouter()
         data: {
           emergencyLogId,
           expiresAt: expiresAt.toISOString(),
-          sourcesGranted: grants.filter((g) => g.status === 'fulfilled').length,
-          message: 'Emergency access granted for 24 hours. This action is permanently recorded and visible to the patient.',
+          sourcesGranted,
+          sourcesFound: sourceRegistrations.length,
+          sourcesFailed: failedGrants.length,
+          message,
         },
       }, 201);
     } catch (err: any) {
@@ -979,6 +1007,10 @@ export const permissionRouter = createRouter()
           eq(crossInstitutionAccess.patientId, patientId),
           eq(crossInstitutionAccess.targetInstitutionId, myInstitutionId),
           eq(crossInstitutionAccess.status, 'active'),
+          // Nothing sweeps these rows to 'expired', so an emergency grant would
+          // otherwise stay usable long past its 24 hours. A null expiry is
+          // open-ended (referrals/transfers); a set one must not have lapsed.
+          or(isNull(crossInstitutionAccess.expiresAt), gt(crossInstitutionAccess.expiresAt, new Date())),
         ));
 
       // Also allow view of records at any institution the patient is registered at,

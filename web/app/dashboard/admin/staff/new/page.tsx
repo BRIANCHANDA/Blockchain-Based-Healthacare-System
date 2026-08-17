@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { api, institutionApi } from "@/lib/api";
+import { useAuthStore } from "@/lib/store";
 import { PhoneInput } from "@/components/ui/PhoneInput";
 import {
   ArrowLeft,
@@ -115,11 +116,18 @@ export default function NewStaffPage() {
   const [success, setSuccess] = useState(false);
   const [emailError, setEmailError] = useState("");
 
-  // Institutions
+  // A hospital admin belongs to an institution and may only add staff to it.
+  // A super admin has no institution of their own, so they pick the target.
+  const { user } = useAuthStore();
+  const ownInstitutionId = (user as any)?.institutionId ?? null;
+  const ownInstitutionName = (user as any)?.institutionName ?? null;
+  const isSuperAdmin = !ownInstitutionId;
+
+  // Institutions — only the super admin needs the full list to choose from.
   const [institutions, setInstitutions] = useState<
     Array<{ id: string; name: string }>
   >([]);
-  const [loadingInstitutions, setLoadingInstitutions] = useState(true);
+  const [loadingInstitutions, setLoadingInstitutions] = useState(isSuperAdmin);
 
   // Form state
   const [form, setForm] = useState({
@@ -142,8 +150,14 @@ export default function NewStaffPage() {
   const setFormField = (key: string, value: string) =>
     setForm((prev) => ({ ...prev, [key]: value }));
 
-  // Fetch institutions
+  // Lock a hospital admin's new staff to their own institution.
   useEffect(() => {
+    if (ownInstitutionId) setFormField("institutionId", ownInstitutionId);
+  }, [ownInstitutionId]);
+
+  // Fetch institutions — super admin only; a hospital admin has nothing to choose.
+  useEffect(() => {
+    if (!isSuperAdmin) return;
     const fetchInstitutions = async () => {
       try {
         const res = await institutionApi.list();
@@ -162,7 +176,7 @@ export default function NewStaffPage() {
       }
     };
     fetchInstitutions();
-  }, []);
+  }, [isSuperAdmin]);
 
   const handleInstitutionSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
     setFormField("institutionId", e.target.value);
@@ -176,14 +190,13 @@ export default function NewStaffPage() {
     setError("");
 
     // Required fields validation
-    if (
-      !form.firstName ||
-      !form.lastName ||
-      !form.licenseNumber ||
-      !form.email ||
-      !form.institutionId
-    ) {
-      setError("Please fill in all required fields, including Hospital.");
+    if (!form.firstName || !form.lastName || !form.licenseNumber || !form.email) {
+      setError("Please fill in all required fields.");
+      return;
+    }
+    // Only the super admin picks a hospital; a hospital admin's is implied.
+    if (isSuperAdmin && !form.institutionId) {
+      setError("Please select the hospital this staff member belongs to.");
       return;
     }
 
@@ -282,7 +295,9 @@ export default function NewStaffPage() {
                   lastName: "",
                   licenseNumber: "",
                   institutionalId: "",
-                  institutionId: "",
+                  // Keep a hospital admin locked to their own hospital when
+                  // adding another staff member.
+                  institutionId: ownInstitutionId ?? "",
                   department: "",
                   specialization: "",
                   shift: "",
@@ -435,8 +450,16 @@ export default function NewStaffPage() {
             />
           </Field>
 
-          <Field label="Hospital / Institution" required>
-            {loadingInstitutions ? (
+          {/* Hospital admins add staff to their own hospital and cannot retarget
+              another one; only a super admin chooses. */}
+          <Field label="Hospital / Institution" required={isSuperAdmin}>
+            {!isSuperAdmin ? (
+              <div
+                className={`${inputClass} flex items-center bg-gray-50 text-gray-700 cursor-not-allowed`}
+              >
+                {ownInstitutionName ?? "Your hospital"}
+              </div>
+            ) : loadingInstitutions ? (
               <div className="flex items-center gap-2 text-gray-500">
                 <Loader2 className="w-4 h-4 animate-spin" /> Loading
                 hospitals...

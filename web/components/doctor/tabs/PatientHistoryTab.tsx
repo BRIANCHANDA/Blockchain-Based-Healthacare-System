@@ -159,6 +159,10 @@ interface AwayInstitution {
   institutionName: string;
   visitCount: number;
   hasPermission: boolean;
+  // Why these records are readable: patient consent, or a cross-institution
+  // grant from an emergency override / referral / transfer.
+  accessVia?: "patient_consent" | "emergency" | "referral" | "transfer" | null;
+  accessExpiresAt?: string | null;
   visits: VisitRecord[];
 }
 
@@ -882,8 +886,13 @@ function AwayInstitutionSection({
             <Building2 className="w-4 h-4 text-green-700" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-gray-900">
+            <p className="text-sm font-bold text-gray-900 flex items-center gap-2">
               {institution.institutionName}
+              {institution.accessVia === "emergency" && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
+                  EMERGENCY ACCESS
+                </span>
+              )}
             </p>
             <p className="text-xs text-gray-500">
               {institution.visitCount} visit

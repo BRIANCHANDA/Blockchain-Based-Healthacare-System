@@ -10,6 +10,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AuditContract = void 0;
 const fabric_contract_api_1 = require("fabric-contract-api");
+const txtime_1 = require("./txtime");
 class AuditContract extends fabric_contract_api_1.Contract {
     constructor() {
         super('AuditContract');
@@ -19,7 +20,7 @@ class AuditContract extends fabric_contract_api_1.Contract {
         const txId = ctx.stub.getTxID();
         const clientId = ctx.clientIdentity.getID();
         const mspId = ctx.clientIdentity.getMSPID();
-        const timestamp = new Date().toISOString();
+        const timestamp = (0, txtime_1.txTimeISO)(ctx);
         const log = {
             logId: txId,
             patientId,

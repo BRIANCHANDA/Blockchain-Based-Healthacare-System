@@ -40,6 +40,15 @@ export default function EmergencyOverrideModal({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [granted, setGranted] = useState(false);
+  // What the server actually unlocked. An override can succeed as an audited
+  // action while granting nothing (e.g. the patient has no records elsewhere),
+  // so we show the server's own account of it rather than assuming success.
+  const [result, setResult] = useState<{
+    sourcesGranted?: number;
+    sourcesFound?: number;
+    sourcesFailed?: number;
+    message?: string;
+  } | null>(null);
 
   if (!open) return null;
 
@@ -50,9 +59,15 @@ export default function EmergencyOverrideModal({
     setSubmitting(true);
     setError("");
     try {
-      await (permissionApi as any).emergencyOverride({ patientId, reason: reason.trim() });
+      const res = await (permissionApi as any).emergencyOverride({ patientId, reason: reason.trim() });
+      const data = res?.data?.data ?? {};
+      setResult(data);
       setGranted(true);
-      setTimeout(() => { onGranted(); setGranted(false); setReason(""); }, 1800);
+      // Only auto-dismiss when records were actually unlocked. If nothing was
+      // granted, leave the explanation on screen for the clinician to read.
+      if ((data.sourcesGranted ?? 0) > 0) {
+        setTimeout(() => { onGranted(); setGranted(false); setResult(null); setReason(""); }, 1800);
+      }
     } catch (err: any) {
       setError(err.response?.data?.error?.message ?? "Override failed");
     } finally {
@@ -88,11 +103,30 @@ export default function EmergencyOverrideModal({
         </div>
 
         {granted ? (
-          <div className="p-10 text-center">
-            <CheckCircle2 size={40} className="text-green-600 mx-auto mb-3" />
-            <p className="text-base font-bold text-gray-900">Access granted — 24 hours</p>
-            <p className="text-xs text-gray-500 mt-1">Permanently recorded on the audit trail.</p>
-          </div>
+          (result?.sourcesGranted ?? 0) > 0 ? (
+            <div className="p-10 text-center">
+              <CheckCircle2 size={40} className="text-green-600 mx-auto mb-3" />
+              <p className="text-base font-bold text-gray-900">Access granted — 24 hours</p>
+              <p className="text-xs text-gray-500 mt-1">
+                {result?.message ?? "Permanently recorded on the audit trail."}
+              </p>
+            </div>
+          ) : (
+            <div className="p-8 text-center">
+              <AlertTriangle size={40} className="text-amber-500 mx-auto mb-3" />
+              <p className="text-base font-bold text-gray-900">Nothing to unlock</p>
+              <p className="text-xs text-gray-600 mt-2 leading-relaxed">
+                {result?.message ??
+                  "The override was logged, but no records at other institutions were unlocked."}
+              </p>
+              <button
+                onClick={() => { setGranted(false); setResult(null); setReason(""); onClose(); }}
+                className="mt-5 px-4 py-2 rounded-xl text-xs font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-all"
+              >
+                Close
+              </button>
+            </div>
+          )
         ) : (
           <>
             <div className="p-6 space-y-4">

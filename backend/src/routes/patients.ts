@@ -1,12 +1,13 @@
 import { handleError } from '../lib/errors';
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq, and, desc, ne, or, isNull, sql, inArray } from 'drizzle-orm';
+import { eq, and, desc, ne, or, isNull, sql, inArray, gt } from 'drizzle-orm';
 import { db } from '../db';
 import {
   patients, institutions, patientInstitutionRegistrations,
   visits, consultations, diagnoses, imagingOrders, imagingReports,
   labTestOrders, labTestResults, prescriptionItems, prescriptions,
   vitalSigns, practitioners, allergies, patientGuardians,
+  crossInstitutionAccess,
 } from '../db/schema';
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
@@ -766,14 +767,39 @@ export const patientRouter = createRouter()
       const awayMap = new Map<string, typeof awayVisitRows>();
       for (const v of awayVisitRows) { if (!v.institutionId) continue; if (!awayMap.has(v.institutionId)) awayMap.set(v.institutionId, []); awayMap.get(v.institutionId)!.push(v); }
 
+      // There are two independent ways to be allowed to read another institution's
+      // records, and this endpoint must honour both:
+      //   1. The patient granted this practitioner consent on the blockchain.
+      //      That is patient-wide, so it is resolved once rather than per hospital.
+      //   2. An emergency override (or referral/transfer) created a
+      //      cross-institution grant from that specific hospital to ours.
+      // Checking only (1) is what left emergency access showing as locked.
+      let blockchainConsent = false;
+      try { if (staffBlockchainAddress) blockchainConsent = await checkPermission(p.blockchainAddress, staffBlockchainAddress); } catch { }
+
+      const now = new Date();
+      const grantRows = await db
+        .select({ sourceInstitutionId: crossInstitutionAccess.sourceInstitutionId, accessType: crossInstitutionAccess.accessType, expiresAt: crossInstitutionAccess.expiresAt })
+        .from(crossInstitutionAccess)
+        .where(and(
+          eq(crossInstitutionAccess.patientId, patientId),
+          eq(crossInstitutionAccess.targetInstitutionId, staffInstitutionId),
+          eq(crossInstitutionAccess.status, 'active'),
+          // A grant with no expiry is open-ended; otherwise it must not have lapsed.
+          or(isNull(crossInstitutionAccess.expiresAt), gt(crossInstitutionAccess.expiresAt, now)),
+        ));
+      const grantBySource = new Map(grantRows.map(g => [g.sourceInstitutionId, g]));
+
       const awayInstitutions = await Promise.all(Array.from(awayMap.entries()).map(async ([instId, rows]) => {
         let institutionName = 'Unknown Institution';
         try { const r = await db.select({ institutionName: institutions.institutionName }).from(institutions).where(eq(institutions.id, instId)).limit(1); if (r.length) institutionName = r[0].institutionName; } catch { }
-        let hasPermission = false;
-        try { if (staffBlockchainAddress) hasPermission = await checkPermission(p.blockchainAddress, staffBlockchainAddress); } catch { }
+        const grant = grantBySource.get(instId);
+        const hasPermission = blockchainConsent || !!grant;
+        // Lets the UI show *why* the records opened (e.g. an emergency override).
+        const accessVia = blockchainConsent ? 'patient_consent' : grant ? grant.accessType : null;
         let visitsData: any[] = [];
         if (hasPermission) { const fullRows = await db.select().from(visits).where(and(eq(visits.patientId, patientId), eq(visits.institutionId, instId))).orderBy(desc(visits.admissionDate)); visitsData = await Promise.all(fullRows.map(async v => ({ visit: v, ...(await buildVisitPayload(v.id)) }))); }
-        return { institutionId: instId, institutionName, visitCount: rows.length, hasPermission, visits: visitsData };
+        return { institutionId: instId, institutionName, visitCount: rows.length, hasPermission, accessVia, accessExpiresAt: grant?.expiresAt ?? null, visits: visitsData };
       }));
 
       awayInstitutions.sort((a, b) => (a.hasPermission === b.hasPermission ? 0 : a.hasPermission ? -1 : 1));

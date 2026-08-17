@@ -436,6 +436,66 @@ export const doctorStatsRouter = createRouter()
                 )
             ).filter(Boolean);
 
+            // ── Workflow data for the overview charts ─────────────────────────
+            // A 30-day series of this doctor's own output, so the dashboard can
+            // show throughput over time rather than only a snapshot of today.
+            // 30 days matches the reporting module's default window.
+            const TREND_DAYS = 30;
+            const since = new Date(Date.now() - (TREND_DAYS - 1) * 24 * 60 * 60 * 1000);
+            since.setHours(0, 0, 0, 0);
+
+            const [consultSeries, labSeries, imagingSeries, rxSeries] = await Promise.all([
+                db.execute(sql`
+                    SELECT DATE(created_at) AS d, COUNT(*)::int AS c FROM consultations
+                    WHERE practitioner_id = ${userId} AND created_at >= ${since.toISOString()}
+                    GROUP BY DATE(created_at)`),
+                db.execute(sql`
+                    SELECT DATE(created_at) AS d, COUNT(*)::int AS c FROM lab_test_orders
+                    WHERE ordered_by_practitioner_id = ${userId} AND created_at >= ${since.toISOString()}
+                    GROUP BY DATE(created_at)`),
+                db.execute(sql`
+                    SELECT DATE(created_at) AS d, COUNT(*)::int AS c FROM imaging_orders
+                    WHERE ordered_by_practitioner_id = ${userId} AND created_at >= ${since.toISOString()}
+                    GROUP BY DATE(created_at)`),
+                db.execute(sql`
+                    SELECT DATE(created_at) AS d, COUNT(*)::int AS c FROM prescriptions
+                    WHERE prescribed_by_practitioner_id = ${userId} AND created_at >= ${since.toISOString()}
+                    GROUP BY DATE(created_at)`),
+            ]);
+
+            const asMap = (rows: any) => new Map(
+                (rows as any[]).map(r => [String(r.d).slice(0, 10), Number(r.c)]),
+            );
+            const cMap = asMap(consultSeries), lMap = asMap(labSeries);
+            const iMap = asMap(imagingSeries), pMap = asMap(rxSeries);
+
+            // Emit every day in the window, including zeros, so the chart shows
+            // real gaps in activity instead of silently compressing them.
+            const trend: any[] = [];
+            for (let i = 0; i < TREND_DAYS; i++) {
+                const day = new Date(since.getTime() + i * 24 * 60 * 60 * 1000);
+                const key = day.toISOString().slice(0, 10);
+                trend.push({
+                    date: key,
+                    consultations: cMap.get(key) ?? 0,
+                    labOrders: lMap.get(key) ?? 0,
+                    imagingOrders: iMap.get(key) ?? 0,
+                    prescriptions: pMap.get(key) ?? 0,
+                });
+            }
+
+            // Today's patient flow, stage by stage.
+            const admittedToday = Number(todayAdmissions[0]?.cnt ?? 0);
+            const awaitingMe = Number(awaitingConsult[0]?.cnt ?? 0);
+            const seenToday = Number(consultedToday[0]?.cnt ?? 0);
+            const dischargedToday = Number(completedToday[0]?.cnt ?? 0);
+            const funnel = [
+                { stage: 'Admitted', count: admittedToday },
+                { stage: 'Awaiting Consult', count: awaitingMe },
+                { stage: 'Consulted', count: seenToday },
+                { stage: 'Discharged', count: dischargedToday },
+            ];
+
             return c.json({
                 success: true,
                 data: {
@@ -461,6 +521,8 @@ export const doctorStatsRouter = createRouter()
                         imagingOrders: Number(myImagingOrdersToday[0]?.cnt ?? 0),
                         prescriptions: Number(myPrescriptionsToday[0]?.cnt ?? 0),
                     },
+                    trend,
+                    funnel,
                     recentPatients,
                 },
             });

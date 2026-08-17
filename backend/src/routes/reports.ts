@@ -63,7 +63,12 @@ function generatePDF(data: object): Buffer {
 function pdfResponse(c: any, data: any) {
     try {
         const pdf = generatePDF(data);
-        const filename = `healthchain-${data.reportType}-report.pdf`;
+        // Dated filename so a user downloading several reports gets distinct,
+        // self-describing files rather than "(1)", "(2)" duplicates.
+        const stamp = new Date().toISOString().slice(0, 10);
+        const scope = String(data.institutionName ?? 'report')
+            .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        const filename = `medlink-${data.reportType}-${scope}-${stamp}.pdf`;
         c.header('Content-Type', 'application/pdf');
         c.header('Content-Disposition', `attachment; filename="${filename}"`);
         return c.body(pdf);

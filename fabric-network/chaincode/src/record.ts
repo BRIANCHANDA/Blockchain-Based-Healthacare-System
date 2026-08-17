@@ -12,6 +12,7 @@
 // 5. Emits a RecordVersioned event with version number.
 
 import { Contract, Context } from 'fabric-contract-api';
+import { txTimeISO } from './txtime';
 
 interface RecordHash {
   recordId: string;
@@ -90,10 +91,7 @@ export class RecordContract extends Contract {
     }
 
     const txId = ctx.stub.getTxID();
-    const txTimestamp = ctx.stub.getTxTimestamp();
-    const timestamp = new Date(
-      txTimestamp.seconds.toNumber() * 1000 + Math.floor(txTimestamp.nanos / 1_000_000),
-    ).toISOString();
+    const timestamp = txTimeISO(ctx);
 
     const record: RecordHash = {
       recordId,

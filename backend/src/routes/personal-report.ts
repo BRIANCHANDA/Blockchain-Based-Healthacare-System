@@ -41,8 +41,11 @@ function pdfResponse(c: any, data: any) {
         const pdf = execFileSync('python3', [scriptPath, JSON.stringify(data)], {
             maxBuffer: 10 * 1024 * 1024, timeout: 30_000,
         });
+        const stamp = new Date().toISOString().slice(0, 10);
+        const who = String(data.staffName ?? 'staff')
+            .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
         c.header('Content-Type', 'application/pdf');
-        c.header('Content-Disposition', `attachment; filename="healthchain-personal-report.pdf"`);
+        c.header('Content-Disposition', `attachment; filename="medlink-personal-${who}-${stamp}.pdf"`);
         return c.body(pdf);
     } catch (err: any) {
         return c.json({ success: false, error: { message: 'PDF generation failed. Please try again.' } }, 500);
@@ -71,8 +74,12 @@ async function buildPractitionerReport(userId: string, startDate: Date, endDate:
             .where(and(eq(consultations.practitionerId, userId), ...dateCond))
             .then(r => Number(r[0]?.c ?? 0)),
 
+        // `diagnoses` records its author as practitionerId. The previous
+        // `diagnoses.diagnosedBy as any` named a column that does not exist;
+        // the cast silenced the compiler and Drizzle emitted `where ( = $1)`,
+        // so every practitioner's report died with a SQL syntax error.
         db.select({ c: count() }).from(diagnoses)
-            .where(and(eq(diagnoses.diagnosedBy as any, userId),
+            .where(and(eq(diagnoses.practitionerId, userId),
                 gte(diagnoses.diagnosedAt, startDate), lte(diagnoses.diagnosedAt, endDate)))
             .then(r => Number(r[0]?.c ?? 0)),
 
@@ -378,6 +385,115 @@ async function buildReceptionistReport(userId: string, startDate: Date, endDate:
     };
 }
 
+// An administrator does not deliver care, so a "performance" report in the
+// clinical sense is meaningless for them. What is meaningful is stewardship of
+// the institution they run: who is on the roster, how much activity passed
+// through, and — importantly for an audited system — what consent bypasses and
+// audit volume occurred on their watch.
+//
+// A super admin has no institution of their own, so the same report is produced
+// system-wide.
+async function buildAdminReport(userId: string, startDate: Date, endDate: Date) {
+    const [row] = await db.select({ institutionId: practitioners.institutionId })
+        .from(practitioners).where(eq(practitioners.id, userId)).limit(1);
+    const institutionId = row?.institutionId ?? null;
+    const isSuperAdmin = institutionId === null;
+
+    // Scope every query to the admin's institution, or leave open for a super admin.
+    const instFilter = (col: any) => (isSuperAdmin ? sql`TRUE` : sql`${col} = ${institutionId}`);
+    const from = startDate.toISOString();
+    const to = endDate.toISOString();
+
+    const [
+        staffActive,
+        staffAdded,
+        staffByRole,
+        patientsRegistered,
+        visitsRecorded,
+        emergencyOverrides,
+        auditEvents,
+        trend,
+        recentOverrides,
+    ] = await Promise.all([
+        db.execute(sql`
+            SELECT COUNT(*)::int AS cnt FROM practitioners
+            WHERE is_active = TRUE AND ${instFilter(sql`institution_id`)}
+        `).then(r => Number((r as any[])[0]?.cnt ?? 0)),
+
+        db.execute(sql`
+            SELECT COUNT(*)::int AS cnt FROM practitioners
+            WHERE created_at >= ${from} AND created_at <= ${to}
+              AND ${instFilter(sql`institution_id`)}
+        `).then(r => Number((r as any[])[0]?.cnt ?? 0)),
+
+        db.execute(sql`
+            SELECT role, COUNT(*)::int AS cnt FROM practitioners
+            WHERE is_active = TRUE AND ${instFilter(sql`institution_id`)}
+            GROUP BY role ORDER BY cnt DESC
+        `),
+
+        db.execute(sql`
+            SELECT COUNT(*)::int AS cnt FROM patient_institution_registrations
+            WHERE created_at >= ${from} AND created_at <= ${to}
+              AND ${instFilter(sql`institution_id`)}
+        `).then(r => Number((r as any[])[0]?.cnt ?? 0)),
+
+        db.execute(sql`
+            SELECT COUNT(*)::int AS cnt FROM visits
+            WHERE admission_date >= ${from} AND admission_date <= ${to}
+              AND ${instFilter(sql`institution_id`)}
+        `).then(r => Number((r as any[])[0]?.cnt ?? 0)),
+
+        db.execute(sql`
+            SELECT COUNT(*)::int AS cnt FROM emergency_access_logs
+            WHERE created_at >= ${from} AND created_at <= ${to}
+              AND ${instFilter(sql`accessed_by_institution_id`)}
+        `).then(r => Number((r as any[])[0]?.cnt ?? 0)),
+
+        db.execute(sql`
+            SELECT COUNT(*)::int AS cnt FROM audit_logs a
+            WHERE a.timestamp >= ${from} AND a.timestamp <= ${to}
+              AND (${isSuperAdmin ? sql`TRUE` : sql`a.user_id IN (
+                    SELECT id FROM practitioners WHERE institution_id = ${institutionId})`})
+        `).then(r => Number((r as any[])[0]?.cnt ?? 0)),
+
+        db.execute(sql`
+            SELECT DATE(admission_date) AS date, COUNT(*)::int AS cnt FROM visits
+            WHERE admission_date >= ${from} AND admission_date <= ${to}
+              AND ${instFilter(sql`institution_id`)}
+            GROUP BY DATE(admission_date) ORDER BY date ASC
+        `),
+
+        db.execute(sql`
+            SELECT e.reason, e.created_at, e.expires_at
+            FROM emergency_access_logs e
+            WHERE e.created_at >= ${from} AND e.created_at <= ${to}
+              AND ${instFilter(sql`e.accessed_by_institution_id`)}
+            ORDER BY e.created_at DESC LIMIT 10
+        `),
+    ]);
+
+    return {
+        role: 'admin',
+        scope: isSuperAdmin ? 'system-wide' : 'institution',
+        summary: {
+            staffActive,
+            staffAdded,
+            patientsRegistered,
+            visitsRecorded,
+            emergencyOverrides,
+            auditEvents,
+        },
+        staffByRole: (staffByRole as any[]).map(r => ({ role: r.role, count: Number(r.cnt) })),
+        trend: (trend as any[]).map(r => ({ date: r.date, count: Number(r.cnt) })),
+        recentOverrides: (recentOverrides as any[]).map(r => ({
+            reason: r.reason,
+            at: r.created_at,
+            expiresAt: r.expires_at,
+        })),
+    };
+}
+
 // ── Router ────────────────────────────────────────────────────────────────────
 
 export const personalReportRouter = createRouter()
@@ -431,6 +547,7 @@ export const personalReportRouter = createRouter()
                 case 'radiologist':  roleData = await buildRadiologyReport(userId, startDate, endDate);   break;
                 case 'pharmacist':   roleData = await buildPharmacistReport(userId, startDate, endDate);  break;
                 case 'receptionist': roleData = await buildReceptionistReport(userId, startDate, endDate);break;
+                case 'admin':        roleData = await buildAdminReport(userId, startDate, endDate);      break;
                 default:             roleData = { role, summary: {} };
             }
 

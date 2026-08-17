@@ -12,9 +12,17 @@
 //    to the current-state pointer. Lets you prove "I revoked Dr X's access
 //    at exactly this timestamp" with full ledger history.
 // 6. Centralised MSP check helper.
+//
+// ADDITIONAL FIX (2026-08-05):
+// - All ledger timestamps now come from the transaction timestamp via
+//   ./txtime, which both handles the Long-typed protobuf fields correctly
+//   (the "Invalid time value" 500s) and stays deterministic across the
+//   multiple endorsers required by the OutOf(2, ...) policy.
+// - durationHours is validated before use.
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AccessControlContract = void 0;
 const fabric_contract_api_1 = require("fabric-contract-api");
+const txtime_1 = require("./txtime");
 class AccessControlContract extends fabric_contract_api_1.Contract {
     constructor() {
         super('AccessControlContract');
@@ -22,28 +30,28 @@ class AccessControlContract extends fabric_contract_api_1.Contract {
     // ── Helper: ensure caller is the patient ───────────────────────────────────
     requirePatientIdentity(ctx, patientId) {
         const mspId = ctx.clientIdentity.getMSPID();
-        const clientId = ctx.clientIdentity.getID();
         if (mspId !== 'PatientOrgMSP') {
             throw new Error(`Access denied: only patients can manage permissions. Your MSP: ${mspId}`);
         }
-        // Allow the chaincode admin to be permissive in dev — in prod, tighten this
-        // by matching the certificate's CN against the patientId.
-        //
-        // For now we record the caller in the event so any mismatch is auditable.
-        // To strictly enforce, uncomment:
-        //
-        // if (!clientId.includes(patientId)) {
-        //   throw new Error(`Caller ${clientId} is not patient ${patientId}`);
-        // }
+        const certPatientId = ctx.clientIdentity.getAttributeValue('patientId');
+        if (certPatientId !== null && certPatientId !== patientId) {
+            throw new Error(`Access denied: certificate identifies patient '${certPatientId}', cannot act as '${patientId}'`);
+        }
     }
     // ── grantPermission ────────────────────────────────────────────────────────
     async grantPermission(ctx, patientId, practitionerId, durationHours) {
         this.requirePatientIdentity(ctx, patientId);
+        const hours = parseInt(durationHours);
+        if (isNaN(hours) || hours <= 0) {
+            throw new Error(`Invalid durationHours: ${durationHours}. Must be a positive number.`);
+        }
+        // Deterministic: identical on every endorsing peer.
+        const nowMs = (0, txtime_1.txTimeMillis)(ctx);
+        const now = new Date(nowMs);
+        const expires = new Date(nowMs + hours * 60 * 60 * 1000);
         const clientId = ctx.clientIdentity.getID();
         const mspId = ctx.clientIdentity.getMSPID();
         const txId = ctx.stub.getTxID();
-        const now = new Date();
-        const expires = new Date(now.getTime() + parseInt(durationHours) * 60 * 60 * 1000);
         const permission = {
             patientId,
             practitionerId,
@@ -72,13 +80,12 @@ class AccessControlContract extends fabric_contract_api_1.Contract {
         return JSON.stringify(permission);
     }
     // ── revokePermission ───────────────────────────────────────────────────────
-    // Now checks that the caller is the patient before allowing the revoke.
     async revokePermission(ctx, patientId, practitionerId) {
         this.requirePatientIdentity(ctx, patientId);
         const clientId = ctx.clientIdentity.getID();
         const mspId = ctx.clientIdentity.getMSPID();
         const txId = ctx.stub.getTxID();
-        const now = new Date();
+        const now = new Date((0, txtime_1.txTimeMillis)(ctx)); // deterministic across endorsers
         const key = `PERM_${patientId}_${practitionerId}`;
         const permBytes = await ctx.stub.getState(key);
         if (!permBytes || permBytes.length === 0) {
@@ -103,9 +110,6 @@ class AccessControlContract extends fabric_contract_api_1.Contract {
         return JSON.stringify(permission);
     }
     // ── checkPermission ────────────────────────────────────────────────────────
-    // Pure read — no longer attempts a putState inside an evaluate call.
-    // Expiry is computed inline; backend can run a separate scheduled job to
-    // persist expired-state if needed.
     async checkPermission(ctx, patientId, practitionerId) {
         const key = `PERM_${patientId}_${practitionerId}`;
         const permBytes = await ctx.stub.getState(key);
@@ -114,15 +118,15 @@ class AccessControlContract extends fabric_contract_api_1.Contract {
         const permission = JSON.parse(permBytes.toString());
         if (!permission.active)
             return false;
-        const now = new Date();
-        const expires = new Date(permission.expiresAt);
-        if (now > expires)
-            return false; // expired — no state mutation here
+        // Transaction time, not wall-clock: keeps the answer identical on every peer
+        // so this stays safe to call from a submitted transaction too.
+        const nowMs = (0, txtime_1.txTimeMillis)(ctx);
+        const expiresMs = new Date(permission.expiresAt).getTime();
+        if (!Number.isFinite(expiresMs) || nowMs > expiresMs)
+            return false;
         return true;
     }
     // ── getPermission ──────────────────────────────────────────────────────────
-    // Returns "null" string when not found instead of throwing — cleaner caller
-    // semantics. The backend parses the JSON and treats null as "no record".
     async getPermission(ctx, patientId, practitionerId) {
         const key = `PERM_${patientId}_${practitionerId}`;
         const permBytes = await ctx.stub.getState(key);
@@ -143,10 +147,7 @@ class AccessControlContract extends fabric_contract_api_1.Contract {
         await iterator.close();
         return JSON.stringify(permissions);
     }
-    // ── NEW: getPermissionHistory ──────────────────────────────────────────────
-    // Returns every grant/revoke event for a patient-practitioner pair, ordered
-    // by transaction. Strong forensic value — patient can prove EXACTLY when
-    // they granted and revoked access.
+    // ── getPermissionHistory ──────────────────────────────────────────────────
     async getPermissionHistory(ctx, patientId, practitionerId) {
         const iterator = await ctx.stub.getStateByPartialCompositeKey('PermEvent', [patientId, practitionerId]);
         const events = [];

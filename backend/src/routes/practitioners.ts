@@ -364,7 +364,11 @@ export const practitionerRouter = createRouter()
         })
         .from(practitioners)
         .where(conditions.length ? and(...conditions) : undefined)
-        .orderBy(practitioners.createdAt);
+        // Newest first. Callers that ask for "the most recent N staff" pass a
+        // limit and expect the latest registrations; ascending order returned
+        // the oldest instead, so the admin dashboard's "Recent staff" panel was
+        // listing the earliest-registered accounts.
+        .orderBy(desc(practitioners.createdAt));
 
       // Decrypt + optionally join institution name
       let result = rows.map(p => {

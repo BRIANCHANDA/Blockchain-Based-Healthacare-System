@@ -151,6 +151,16 @@ function buildSummary(d: any): string[] {
       return [
         `${staffName} opened ${s.visitsCreated} patient visit${s.visitsCreated !== 1 ? 's' : ''} during this period — ${s.appointmentsCreated} appointment${s.appointmentsCreated !== 1 ? 's' : ''} and ${s.walkinVisits} walk-in${s.walkinVisits !== 1 ? 's' : ''}.`,
       ];
+    case 'admin': {
+      const scope = d.scope === 'system-wide' ? 'across all institutions' : 'at this institution';
+      return [
+        `${staffName} oversees ${s.staffActive} active staff member${s.staffActive !== 1 ? 's' : ''} ${scope}, with ${s.staffAdded} added during this period.`,
+        `${s.patientsRegistered} patient registration${s.patientsRegistered !== 1 ? 's' : ''} and ${s.visitsRecorded} visit${s.visitsRecorded !== 1 ? 's' : ''} were recorded, against ${s.auditEvents} audited action${s.auditEvents !== 1 ? 's' : ''}.`,
+        s.emergencyOverrides > 0
+          ? `${s.emergencyOverrides} emergency consent override${s.emergencyOverrides !== 1 ? 's were' : ' was'} invoked and ${s.emergencyOverrides !== 1 ? 'are' : 'is'} listed below for review.`
+          : 'No emergency consent overrides were invoked during this period.',
+      ];
+    }
     default:
       return ['No performance data available for this role.'];
   }
@@ -359,6 +369,74 @@ function ReceptionistContent({ d }: { d: any }) {
   );
 }
 
+function AdminContent({ d }: { d: any }) {
+  const s = d.summary;
+  const roster: Array<{ role: string; count: number }> = d.staffByRole ?? [];
+  const overrides: Array<{ reason: string; at: string }> = d.recentOverrides ?? [];
+  return (
+    <>
+      <Divider title="Institution Oversight" />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 12, marginBottom: 20 }}>
+        <KPICard label="Active Staff"        value={s.staffActive}        sub="on roster"    icon={UserCheck}     color={C.slate} />
+        <KPICard label="Staff Added"         value={s.staffAdded}         sub="this period"  icon={UserCheck}     color={C.blue}  />
+        <KPICard label="Patients Registered" value={s.patientsRegistered} sub="this period"  icon={ClipboardList} color={C.green} />
+        <KPICard label="Visits Recorded"     value={s.visitsRecorded}     sub="this period"  icon={Activity}      color={C.teal}  />
+        <KPICard label="Audited Actions"     value={s.auditEvents}        sub="logged"       icon={Activity}      color={C.purple} />
+        <KPICard label="Emergency Overrides" value={s.emergencyOverrides} sub="consent bypassed" icon={Activity}  color={C.red}   />
+      </div>
+
+      {roster.length > 0 && (
+        <>
+          <Divider title="Staff Roster by Role" />
+          <SectionCard title="Active Staff by Role">
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+              <tbody>
+                {roster.map((r) => (
+                  <tr key={r.role} style={{ borderBottom: "1px solid #f9fafb" }}>
+                    <td style={{ padding: "8px 4px", color: C.slate, textTransform: "capitalize" }}>
+                      {r.role.replace(/_/g, " ")}
+                    </td>
+                    <td style={{ padding: "8px 4px", textAlign: "right", fontWeight: 700, color: C.green }}>
+                      {r.count}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </SectionCard>
+        </>
+      )}
+
+      <Divider title="Admissions Trend" />
+      <SectionCard title="Visits Recorded Per Day">
+        <TrendChart data={d.trend} color={C.teal} label="Visits" />
+      </SectionCard>
+
+      {/* Consent bypasses are what an administrator answers for, so they are
+          itemised rather than reduced to a count. */}
+      {overrides.length > 0 && (
+        <>
+          <Divider title="Emergency Consent Overrides" />
+          <SectionCard title="Invoked During This Period">
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+              <tbody>
+                {overrides.map((o, i) => (
+                  <tr key={i} style={{ borderBottom: "1px solid #f9fafb" }}>
+                    <td style={{ padding: "8px 4px", color: C.red, whiteSpace: "nowrap", verticalAlign: "top" }}>
+                      {o.at ? format(new Date(o.at), "dd MMM yyyy HH:mm") : "—"}
+                    </td>
+                    <td style={{ padding: "8px 4px", color: C.slate }}>{o.reason || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </SectionCard>
+        </>
+      )}
+    </>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 export default function PersonalReportPage() {
   const { user } = useAuthStore();
@@ -411,6 +489,7 @@ export default function PersonalReportPage() {
       case 'radiologist':    return <RadiologistContent  d={data} />;
       case 'pharmacist':     return <PharmacistContent   d={data} />;
       case 'receptionist':   return <ReceptionistContent d={data} />;
+      case 'admin':          return <AdminContent        d={data} />;
       default: return <p style={{ color: C.gray, fontSize: 13, textAlign: "center", padding: "40px 0" }}>No performance data available.</p>;
     }
   }

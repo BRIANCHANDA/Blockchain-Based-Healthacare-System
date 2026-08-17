@@ -155,7 +155,9 @@ export const authRouter = createRouter()
               firstName: z.string().min(2), lastName: z.string().min(2),
               role: z.enum(['practitioner', 'nurse', 'receptionist', 'lab_technician', 'radiologist', 'pharmacist', 'admin']),
               licenseNumber: z.string().min(1), institutionalId: z.string().optional(),
-              institutionId: z.string().uuid(), specialization: z.string().optional(),
+              // Only honoured for super admins. A hospital admin's staff are always
+              // created at the admin's own institution, whatever is sent here.
+              institutionId: z.string().uuid().optional(), specialization: z.string().optional(),
               department: z.string().optional(), phoneNumber: z.string().min(10),
               email: z.string().email(), credentials: z.string().optional(),
               qualifications: z.string().optional(), password: z.string().min(8).optional(),
@@ -166,6 +168,7 @@ export const authRouter = createRouter()
     },
     responses: {
       201: { content: { 'application/json': { schema: successSchema } }, description: 'Registered' },
+      400: { content: { 'application/json': { schema: errorSchema } }, description: 'Missing or unknown institution' },
       403: { content: { 'application/json': { schema: errorSchema } }, description: 'Forbidden' },
       409: { content: { 'application/json': { schema: errorSchema } }, description: 'Duplicate' },
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Error' },
@@ -174,6 +177,29 @@ export const authRouter = createRouter()
     try {
       if (c.get('userType') !== 'admin') return c.json({ success: false, error: { message: 'Admin access required' } }, 403);
       const body = c.req.valid('json');
+
+      // ── Resolve which institution this staff member belongs to ─────────────
+      // A hospital admin can only ever create staff at their own institution, so
+      // their own institutionId wins and any value in the body is ignored — the
+      // client is not trusted to scope this. A super admin has no institution of
+      // their own, so they must name the target institution explicitly.
+      const [callerRow] = await db
+        .select({ institutionId: practitioners.institutionId })
+        .from(practitioners)
+        .where(eq(practitioners.id, c.get('userId')))
+        .limit(1);
+      const callerInstitutionId = callerRow?.institutionId ?? null;
+      const isSuperAdmin = callerInstitutionId === null;
+      const institutionId = isSuperAdmin ? body.institutionId : callerInstitutionId;
+
+      if (!institutionId) {
+        return c.json({ success: false, error: { message: 'institutionId is required — select the hospital this staff member belongs to' } }, 400);
+      }
+      if (isSuperAdmin) {
+        const [inst] = await db.select({ id: institutions.id }).from(institutions).where(eq(institutions.id, institutionId)).limit(1);
+        if (!inst) return c.json({ success: false, error: { message: 'Institution not found' } }, 400);
+      }
+
       const existing = await db.select({ id: practitioners.id }).from(practitioners).where(eq(practitioners.licenseNumber, body.licenseNumber)).limit(1);
       if (existing.length) return c.json({ success: false, error: { message: 'License number already registered' } }, 409);
       const rawPassword = body.password?.trim() || DEFAULT_PASSWORD;
@@ -182,7 +208,7 @@ export const authRouter = createRouter()
       const result = await db.insert(practitioners).values({
         blockchainAddress, firstNameEncrypted: encrypt(body.firstName), lastNameEncrypted: encrypt(body.lastName),
         licenseNumber: body.licenseNumber, institutionalId: body.institutionalId?.trim() || body.licenseNumber,
-        institutionId: body.institutionId, role: body.role as any,
+        institutionId, role: body.role as any,
         specialization: body.specialization ?? body.role, department: body.department ?? null,
         phoneNumberEncrypted: encrypt(body.phoneNumber), emailEncrypted: encrypt(body.email),
         credentialsEncrypted: body.credentials ? encrypt(body.credentials) : null,

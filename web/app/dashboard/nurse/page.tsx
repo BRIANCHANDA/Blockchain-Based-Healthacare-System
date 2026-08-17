@@ -10,24 +10,25 @@ import {
   AlertTriangle,
   Users,
   ArrowRight,
-  Zap,
   Clock,
-  TrendingUp,
   Stethoscope,
   Loader2,
   X,
   UserCheck,
-  User,
   CheckCircle2,
   RefreshCw,
+  BedDouble,
+  PieChart as PieIcon,
 } from "lucide-react";
+import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
 import {
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-} from "recharts";
+  KpiCard,
+  Panel,
+  PanelHeader,
+  SkeletonRow,
+  EmptyState,
+  PageHeading,
+} from "@/components/dashboard/primitives";
 
 interface AssignedPatient {
   id: string;
@@ -51,164 +52,131 @@ interface Doctor {
   specialization?: string | null;
 }
 
-const PRIORITY_CONFIG: Record<string, any> = {
-  critical: {
-    color: "#dc2626",
-    bg: "#fef2f2",
-    border: "#fecaca",
-    dot: "#ef4444",
-    label: "Critical",
-  },
-  emergency: {
-    color: "#ea580c",
-    bg: "#fff7ed",
-    border: "#fed7aa",
-    dot: "#f97316",
-    label: "Emergency",
-  },
-  urgent: {
-    color: "#d97706",
-    bg: "#fffbeb",
-    border: "#fde68a",
-    dot: "#f59e0b",
-    label: "Urgent",
-  },
-  routine: {
-    color: "#16a34a",
-    bg: "#f0fdf4",
-    border: "#bbf7d0",
-    dot: "#22c55e",
-    label: "Routine",
-  },
+const PRIORITY: Record<string, { color: string; bg: string; label: string }> = {
+  critical: { color: "#dc2626", bg: "#fef2f2", label: "Critical" },
+  emergency: { color: "#ea580c", bg: "#fff7ed", label: "Emergency" },
+  urgent: { color: "#d97706", bg: "#fffbeb", label: "Urgent" },
+  routine: { color: "#16a34a", bg: "#f0fdf4", label: "Routine" },
 };
-const getPriority = (p: string) =>
-  PRIORITY_CONFIG[p] ?? PRIORITY_CONFIG.routine;
+const getP = (p: string) => PRIORITY[p] ?? PRIORITY.routine;
 
-function timeSince(dateStr: string) {
-  const mins = Math.floor((Date.now() - new Date(dateStr).getTime()) / 60000);
+function timeSince(iso: string) {
+  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
   if (mins < 60) return `${mins}m`;
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
-function getGreeting() {
-  const h = new Date().getHours();
-  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
-}
+/* -------------------------------------------------------------------------- */
+/* Patient row                                                                */
+/* -------------------------------------------------------------------------- */
 
 function PatientRow({
   p,
+  isLast,
   onAssignDoctor,
   onTriage,
 }: {
   p: AssignedPatient;
+  isLast: boolean;
   onAssignDoctor: (p: AssignedPatient) => void;
   onTriage: (id: string) => void;
 }) {
-  const priority = getPriority(p.priority);
+  const priority = getP(p.priority);
   const hasDoctor = !!p.assignedDoctorId;
-  // hasVitals comes from the API — triage is complete when vitals exist
-  const triageDone = p.hasVitals === true;
-  const waitMins = Math.floor(
-    (Date.now() - new Date(p.admissionDate).getTime()) / 60_000,
-  );
-  const isUrgentPriority = ["critical", "emergency"].includes(p.priority);
-  const waitingLong = !triageDone && waitMins > 15;
+  const triageDone = p.hasVitals;
+  const waitingLong =
+    !triageDone && Date.now() - new Date(p.admissionDate).getTime() > 30 * 60_000;
 
   return (
     <div
-      className="px-5 py-4 flex items-start gap-3"
-      style={{
-        background: waitingLong ? "#fffbeb" : undefined,
-      }}
+      className={`flex items-start gap-3 px-5 py-4 ${
+        isLast ? "" : "border-b border-slate-50"
+      }`}
     >
-      <span className="relative flex h-2.5 w-2.5 mt-2 flex-shrink-0">
-        {!triageDone && isUrgentPriority && (
-          <span
-            className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-50"
-            style={{ background: priority.dot }}
-          />
-        )}
-        <span
-          className="relative inline-flex rounded-full h-2.5 w-2.5"
-          style={{ background: priority.dot }}
-        />
-      </span>
+      <div
+        className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+        style={{ background: priority.bg }}
+      >
+        <Activity className="w-4 h-4" style={{ color: priority.color }} />
+      </div>
 
       <div className="flex-1 min-w-0">
-        <div className="flex flex-wrap items-center gap-2 mb-1">
-          <span className="text-sm font-bold text-gray-900">
+        <div className="flex items-center gap-2 flex-wrap">
+          <p className="text-[13px] font-semibold text-slate-800 truncate">
             {p.patientName}
-          </span>
+          </p>
+
           <span
-            className="text-xs font-semibold px-2 py-0.5 rounded-full"
-            style={{
-              background: priority.bg,
-              color: priority.color,
-              border: `1px solid ${priority.border}`,
-            }}
+            className="px-2 py-0.5 rounded-full text-[11px] font-bold"
+            style={{ background: priority.bg, color: priority.color }}
           >
             {priority.label}
           </span>
+
           {hasDoctor && (
-            <span className="text-xs text-green-600 flex items-center gap-1">
-              <UserCheck size={12} /> Dr. {p.doctorName}
+            <span className="text-[11.5px] text-slate-500 flex items-center gap-1">
+              <UserCheck className="w-3 h-3" /> Dr. {p.doctorName}
             </span>
           )}
+
           {triageDone && (
-            <span className="text-xs text-green-700 flex items-center gap-1">
-              <CheckCircle2 size={12} /> Triage Done
+            <span className="text-[11.5px] text-emerald-700 flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3" /> Triaged
             </span>
           )}
+
           {waitingLong && (
-            <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-100">
               Waiting long
             </span>
           )}
         </div>
-        <p className="text-xs text-gray-500 truncate">
+
+        <p className="text-[12.5px] text-slate-400 truncate mt-0.5">
           {p.chiefComplaint || "No chief complaint recorded yet"}
         </p>
-        <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+
+        <div className="flex items-center gap-3 mt-1.5 text-[11.5px] text-slate-400">
           <span className="flex items-center gap-1">
-            <Clock size={11} /> {timeSince(p.admissionDate)}
+            <Clock className="w-3 h-3" /> {timeSince(p.admissionDate)}
           </span>
           <span>Visit #{p.visitNumber}</span>
         </div>
       </div>
 
-      <div className="flex flex-col items-end gap-2 flex-shrink-0">
-        {/* Assign doctor button */}
+      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
         <button
           onClick={() => onAssignDoctor(p)}
           disabled={hasDoctor}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
             hasDoctor
-              ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-              : "bg-purple-600 text-white hover:bg-purple-700"
+              ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+              : "bg-white border border-slate-200 text-slate-700 hover:border-emerald-200"
           }`}
         >
-          <Stethoscope size={12} />
+          <Stethoscope className="w-3 h-3" />
           {hasDoctor ? "Assigned" : "Assign Doctor"}
         </button>
 
-        {/* Triage button — disabled once vitals exist */}
         <button
           onClick={() => onTriage(p.id)}
           disabled={triageDone}
-          title={triageDone ? "Vitals already recorded for this visit" : "Record vitals"}
-          className={`flex items-center gap-1 text-xs font-semibold px-3 py-1.5 rounded-lg transition-colors ${
+          title={
+            triageDone ? "Vitals already recorded for this visit" : "Record vitals"
+          }
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
             triageDone
-              ? "bg-gray-100 text-gray-400 cursor-not-allowed"
-              : "bg-green-600 text-white hover:bg-green-700"
+              ? "bg-slate-100 text-slate-400 cursor-not-allowed"
+              : "bg-emerald-700 text-white hover:bg-emerald-800"
           }`}
         >
           {triageDone ? (
             <>
-              <CheckCircle2 size={12} /> Triaged
+              <CheckCircle2 className="w-3 h-3" /> Triaged
             </>
           ) : (
             <>
-              <Activity size={12} /> Triage
+              <Activity className="w-3 h-3" /> Triage
             </>
           )}
         </button>
@@ -216,6 +184,10 @@ function PatientRow({
     </div>
   );
 }
+
+/* -------------------------------------------------------------------------- */
+/* Overview                                                                   */
+/* -------------------------------------------------------------------------- */
 
 export default function NurseOverview() {
   const router = useRouter();
@@ -245,7 +217,7 @@ export default function NurseOverview() {
     else setLoading(true);
     try {
       const res = await api.get("/api/visits/assigned-to-me");
-      // Backend now returns hasVitals per visit — no extra calls needed
+      // Backend returns hasVitals per visit — no extra calls needed
       const raw: AssignedPatient[] = res.data.data ?? [];
       const sorted = [...raw].sort((a, b) => {
         // Patients still needing triage surface above already-triaged ones
@@ -322,465 +294,341 @@ export default function NurseOverview() {
     },
   ].filter((d) => d.value > 0);
 
+  /* triage/[visitId] is a dynamic route — the visit id goes in the path, not
+     a query string (the bare /triage page reads ?visitNumber= instead). */
+  const goTriage = (id: string) => router.push(`/dashboard/nurse/triage/${id}`);
+
   return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      {/* ── Hero banner ── */}
-      <div
-        className="relative rounded-3xl overflow-hidden mb-6 px-7 py-6"
-        style={{
-          background:
-            "linear-gradient(130deg, #0d4a1f 0%, #166534 55%, #15803d 100%)",
-        }}
-      >
-        <div
-          className="absolute -right-8 -top-8 w-40 h-40 rounded-full opacity-10"
-          style={{
-            background: "radial-gradient(circle, #bbf7d0, transparent)",
-          }}
-        />
-        <div
-          className="absolute right-20 bottom-0 w-28 h-28 rounded-full opacity-5"
-          style={{
-            background: "radial-gradient(circle, #dcfce7, transparent)",
-          }}
-        />
-        <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <p className="text-green-300/70 text-sm font-medium mb-1">
-              {getGreeting()},
-            </p>
-            <h1
-              className="text-white text-2xl font-bold leading-tight"
-              style={{ fontFamily: "'Playfair Display', serif" }}
-            >
-              {user?.firstName} {user?.lastName}
-            </h1>
-            <p className="text-green-200/50 text-sm mt-1.5">
-              {myPatients.length > 0
-                ? `${myPatients.length} assigned patient${myPatients.length !== 1 ? "s" : ""}`
-                : "No assigned patients"}
-              {unassignedPatients.length > 0 && (
-                <>
-                  {" "}
-                  ·{" "}
-                  <span className="text-amber-300">
-                    {unassignedPatients.length} unassigned
-                  </span>
-                </>
-              )}
-              {criticalCount > 0 ? ` · ${criticalCount} need immediate attention` : ""}
-            </p>
-          </div>
-          <div className="flex gap-2.5">
-            <button
-              onClick={() => router.push("/dashboard/nurse/triage")}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:scale-105"
-              style={{
-                background: "rgba(255,255,255,0.15)",
-                border: "1px solid rgba(255,255,255,0.2)",
-              }}
-            >
-              <Activity className="w-4 h-4" /> Start Triage
-            </button>
+    <div className="w-full max-w-[1280px] mx-auto pb-8">
+      <PageHeading
+        eyebrow="Nursing"
+        title={(user as any)?.institutionName || "Ward Overview"}
+        actions={
+          <>
             <button
               onClick={() => router.push("/dashboard/nurse/queue")}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
-              style={{
-                background: "rgba(0,0,0,0.2)",
-                color: "#bbf7d0",
-                border: "1px solid rgba(0,0,0,0.1)",
-              }}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[13px] font-semibold shadow-sm transition-colors"
             >
-              <ClipboardList className="w-4 h-4" /> View Queue
+              <ClipboardList className="w-3.5 h-3.5" />
+              Today's Queue
             </button>
-          </div>
-        </div>
-      </div>
 
-      {/* ── Stat cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        {[
-          {
-            label: "Assigned to Me",
-            value: myPatients.length,
-            color: "#166534",
-            bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
-            border: "#bbf7d0",
-            icon: Users,
-          },
-          {
-            label: "Critical/Emergency",
-            value: criticalCount,
-            color: "#dc2626",
-            bg: "linear-gradient(135deg,#fef2f2,#fee2e2)",
-            border: "#fecaca",
-            icon: AlertTriangle,
-          },
-          {
-            label: "Urgent",
-            value: urgentCount,
-            color: "#d97706",
-            bg: "linear-gradient(135deg,#fffbeb,#fef3c7)",
-            border: "#fde68a",
-            icon: Zap,
-          },
-          {
-            label: "Routine",
-            value: routineCount,
-            color: "#1d4ed8",
-            bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
-            border: "#bfdbfe",
-            icon: ClipboardList,
-          },
-        ].map(({ label, value, color, bg, border, icon: Icon }) => (
-          <div
-            key={label}
-            className="relative rounded-2xl border overflow-hidden p-4"
-            style={{ background: bg, borderColor: border }}
-          >
-            <div
-              className="absolute -right-2 -bottom-2 w-14 h-14 rounded-full opacity-10"
-              style={{ background: color }}
-            />
-            <div className="flex items-start justify-between mb-3">
-              <p
-                className="text-xs font-semibold uppercase tracking-wide"
-                style={{ color, opacity: 0.7 }}
-              >
-                {label}
-              </p>
-              <div
-                className="w-7 h-7 rounded-lg flex items-center justify-center"
-                style={{ background: `${color}18` }}
-              >
-                <Icon className="w-3.5 h-3.5" style={{ color }} />
-              </div>
-            </div>
-            <p
-              className="text-3xl font-extrabold leading-none"
-              style={{ color }}
-            >
-              {loading ? (
-                <span
-                  className="inline-block w-7 h-7 rounded-lg animate-pulse"
-                  style={{ background: `${color}20` }}
-                />
-              ) : (
-                value
-              )}
-            </p>
-          </div>
-        ))}
-      </div>
-
-      {/* ── Main content ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Patient lists */}
-        <div className="lg:col-span-2 space-y-5">
-          {/* My assigned patients */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
-                My Assigned Patients
-              </p>
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={() => fetchAssignedPatients(true)}
-                  disabled={refreshing || loading}
-                  className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all disabled:opacity-40"
-                >
-                  <RefreshCw
-                    className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`}
-                  />
-                </button>
-                {myPatients.length > 0 && (
-                  <button
-                    onClick={() => router.push("/dashboard/nurse/queue")}
-                    className="text-xs font-semibold flex items-center gap-1"
-                    style={{ color: "#166534" }}
-                  >
-                    View all <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              {loading ? (
-                <div className="divide-y divide-gray-50">
-                  {[...Array(3)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-3 px-5 py-4 animate-pulse"
-                    >
-                      <div className="w-2.5 h-2.5 rounded-full bg-gray-100" />
-                      <div className="flex-1">
-                        <div className="h-3.5 w-32 bg-gray-100 rounded" />
-                        <div className="h-3 w-48 bg-gray-100 rounded mt-1" />
-                      </div>
-                      <div className="w-16 h-6 bg-gray-100 rounded-full" />
-                    </div>
-                  ))}
-                </div>
-              ) : myPatients.length === 0 ? (
-                <div className="py-16 text-center">
-                  <div
-                    className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3"
-                    style={{ background: "#f0fdf4" }}
-                  >
-                    <TrendingUp className="w-5 h-5 text-green-400" />
-                  </div>
-                  <p className="text-sm font-semibold text-gray-500">
-                    No assigned patients
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    The receptionist will assign patients to you
-                  </p>
-                </div>
-              ) : (
-                <div className="divide-y divide-gray-50">
-                  {myPatients.map((p) => (
-                    <PatientRow
-                      key={p.id}
-                      p={p}
-                      onAssignDoctor={openAssignModal}
-                      onTriage={(id) =>
-                        router.push(`/dashboard/nurse/triage/${id}`)
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Unassigned patients — visible to every nurse at the institution */}
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
-                Unassigned Patients
-              </p>
-              {!loading && unassignedPatients.length > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-100">
-                  {unassignedPatients.length} need a nurse
-                </span>
-              )}
-            </div>
-
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              {loading ? (
-                <div className="divide-y divide-gray-50">
-                  {[...Array(2)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="flex items-center gap-3 px-5 py-4 animate-pulse"
-                    >
-                      <div className="w-2.5 h-2.5 rounded-full bg-gray-100" />
-                      <div className="flex-1">
-                        <div className="h-3.5 w-32 bg-gray-100 rounded" />
-                        <div className="h-3 w-48 bg-gray-100 rounded mt-1" />
-                      </div>
-                      <div className="w-16 h-6 bg-gray-100 rounded-full" />
-                    </div>
-                  ))}
-                </div>
-              ) : unassignedPatients.length === 0 ? (
-                <div className="py-10 text-center">
-                  <p className="text-sm font-semibold text-gray-500">
-                    No unassigned patients
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    Every active visit at your institution has a nurse
-                  </p>
-                </div>
-              ) : (
-                <div className="divide-y divide-gray-50">
-                  {unassignedPatients.map((p) => (
-                    <PatientRow
-                      key={p.id}
-                      p={p}
-                      onAssignDoctor={openAssignModal}
-                      onTriage={(id) =>
-                        router.push(`/dashboard/nurse/triage/${id}`)
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Quick actions sidebar */}
-        <div className="space-y-3">
-          {/* Triage progress */}
-          {!loading && triageProgress.length > 0 && (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-1">
-              <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-3">
-                Triage Progress
-              </p>
-              <div className="flex items-center gap-3">
-                <div className="w-20 h-20 flex-shrink-0">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={triageProgress}
-                        dataKey="value"
-                        nameKey="label"
-                        innerRadius={24}
-                        outerRadius={36}
-                        strokeWidth={0}
-                      >
-                        {triageProgress.map((d) => (
-                          <Cell key={d.key} fill={d.color} />
-                        ))}
-                      </Pie>
-                      <Tooltip
-                        formatter={(v: any, n: any) => [`${v} patients`, n]}
-                      />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="flex-1 space-y-1.5 min-w-0">
-                  {triageProgress.map((d) => (
-                    <div key={d.key} className="flex items-center gap-2">
-                      <span
-                        className="w-2 h-2 rounded-full flex-shrink-0"
-                        style={{ background: d.color }}
-                      />
-                      <span className="text-xs text-gray-600 flex-1 truncate">
-                        {d.label}
-                      </span>
-                      <span className="text-xs font-bold text-gray-900">
-                        {d.value}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
-
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1">
-            Quick Actions
-          </p>
-          {[
-            {
-              label: "Triage a Patient",
-              desc: "Enter visit number to record vitals",
-              href: "/dashboard/nurse/triage",
-              icon: Activity,
-              color: "#166534",
-              bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
-              border: "#bbf7d0",
-            },
-            {
-              label: "View Full Queue",
-              desc: "All visits sorted by priority",
-              href: "/dashboard/nurse/queue",
-              icon: ClipboardList,
-              color: "#1d4ed8",
-              bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
-              border: "#bfdbfe",
-            },
-            {
-              label: "My Patients",
-              desc: "Recently triaged patients",
-              href: "/dashboard/nurse/patients",
-              icon: Users,
-              color: "#7c3aed",
-              bg: "linear-gradient(135deg,#faf5ff,#ede9fe)",
-              border: "#ddd6fe",
-            },
-          ].map(({ label, desc, href, icon: Icon, color, bg, border }) => (
             <button
-              key={href}
-              onClick={() => router.push(href)}
-              className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border text-left transition-all hover:shadow-md hover:-translate-y-px group"
-              style={{ background: bg, borderColor: border }}
+              onClick={() => router.push("/dashboard/nurse/ward")}
+              className="hidden sm:inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:border-emerald-200 text-slate-700 text-[13px] font-semibold transition-colors"
             >
-              <div
-                className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ background: `${color}15` }}
-              >
-                <Icon className="w-4 h-4" style={{ color }} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900">{label}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
-              </div>
-              <ArrowRight
-                className="w-4 h-4 flex-shrink-0 transition-transform group-hover:translate-x-0.5"
-                style={{ color }}
+              <BedDouble className="w-3.5 h-3.5" />
+              Ward View
+            </button>
+
+            <button
+              onClick={() => fetchAssignedPatients(true)}
+              disabled={refreshing}
+              className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40"
+            >
+              <RefreshCw
+                className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`}
               />
             </button>
-          ))}
-        </div>
-      </div>
+          </>
+        }
+      />
 
-      {/* ── Doctor assignment modal ── */}
-      {showAssignModal && selectedVisit && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-lg font-bold">Assign Doctor</h3>
-              <button
-                onClick={() => setShowAssignModal(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X size={20} />
-              </button>
-            </div>
-            <p className="text-sm text-gray-600 mb-4">
-              Select a doctor for <strong>{selectedVisit.patientName}</strong>
-            </p>
-            {assignError && (
-              <div className="mb-3 p-2 rounded-lg bg-red-50 text-red-600 text-sm">
-                {assignError}
-              </div>
+      {/* Untriaged patients are the nurse's queue — surface them first. */}
+      {!loading && pendingTriageCount > 0 && (
+        <button
+          onClick={() => router.push("/dashboard/nurse/queue")}
+          className="w-full flex items-center gap-3 p-4 rounded-2xl mb-5 bg-amber-50 border border-amber-200 text-left hover:bg-amber-100/60 transition-colors"
+        >
+          <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+          <p className="text-[13px] font-semibold text-amber-800 flex-1">
+            {pendingTriageCount} patient{pendingTriageCount > 1 ? "s" : ""}{" "}
+            awaiting triage
+          </p>
+          <span className="text-[13px] font-bold text-amber-700 flex items-center gap-1 whitespace-nowrap">
+            Open queue <ChevronRight className="w-3.5 h-3.5" />
+          </span>
+        </button>
+      )}
+
+      {/* KPIs */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        <KpiCard
+          label="Assigned to Me"
+          value={loading ? undefined : myPatients.length}
+          description="In my care"
+          icon={Users}
+          iconClass="bg-blue-50 text-blue-600"
+          href="/dashboard/nurse/patients"
+        />
+        <KpiCard
+          label="Critical / Emergency"
+          value={loading ? undefined : criticalCount}
+          description="Highest priority"
+          icon={AlertTriangle}
+          iconClass="bg-red-50 text-red-600"
+        />
+        <KpiCard
+          label="Urgent"
+          value={loading ? undefined : urgentCount}
+          description="Needs prompt care"
+          icon={Clock}
+          iconClass="bg-amber-50 text-amber-600"
+        />
+        <KpiCard
+          label="Routine"
+          value={loading ? undefined : routineCount}
+          description="Standard priority"
+          icon={CheckCircle2}
+          iconClass="bg-emerald-50 text-emerald-600"
+        />
+      </section>
+
+      {/* Patients + triage progress */}
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="lg:col-span-2 space-y-4">
+          <Panel>
+            <PanelHeader
+              title="My Patients"
+              icon={Users}
+              meta={
+                !loading && myPatients.length > 0 ? (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
+                    {myPatients.length}
+                  </span>
+                ) : undefined
+              }
+              action="View all"
+              onAction={() => router.push("/dashboard/nurse/patients")}
+            />
+
+            {loading ? (
+              [...Array(3)].map((_, i) => <SkeletonRow key={i} />)
+            ) : myPatients.length === 0 ? (
+              <EmptyState
+                icon={Users}
+                message="No patients are currently assigned to you."
+              />
+            ) : (
+              myPatients.map((p, i) => (
+                <PatientRow
+                  key={p.id}
+                  p={p}
+                  isLast={i === myPatients.length - 1}
+                  onAssignDoctor={openAssignModal}
+                  onTriage={goTriage}
+                />
+              ))
             )}
-            <div className="max-h-64 overflow-y-auto space-y-2">
-              {doctors.map((doc) => (
-                <button
-                  key={doc.id}
-                  onClick={() => assignDoctor(doc.id)}
-                  disabled={assigning}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors text-left"
-                >
-                  <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center flex-shrink-0">
-                    <User size={14} className="text-purple-600" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-900">
-                      Dr. {doc.firstName} {doc.lastName}
-                    </p>
-                    {doc.specialization && (
-                      <p className="text-xs text-gray-400">
-                        {doc.specialization}
-                      </p>
-                    )}
-                  </div>
-                  {assigning && (
-                    <Loader2
-                      size={14}
-                      className="animate-spin text-gray-400 flex-shrink-0"
-                    />
-                  )}
-                </button>
-              ))}
-              {doctors.length === 0 && !assignError && (
-                <p className="text-center text-gray-400 text-sm py-4">
-                  No doctors online at the moment
+          </Panel>
+
+          <Panel>
+            <PanelHeader
+              title="Unassigned Patients"
+              icon={ClipboardList}
+              meta={
+                !loading && unassignedPatients.length > 0 ? (
+                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-100">
+                    {unassignedPatients.length}
+                  </span>
+                ) : undefined
+              }
+            />
+
+            {loading ? (
+              [...Array(2)].map((_, i) => <SkeletonRow key={i} />)
+            ) : unassignedPatients.length === 0 ? (
+              <EmptyState
+                icon={CheckCircle2}
+                message="Every patient has a nurse assigned."
+              />
+            ) : (
+              unassignedPatients.map((p, i) => (
+                <PatientRow
+                  key={p.id}
+                  p={p}
+                  isLast={i === unassignedPatients.length - 1}
+                  onAssignDoctor={openAssignModal}
+                  onTriage={goTriage}
+                />
+              ))
+            )}
+          </Panel>
+        </div>
+
+        <div className="space-y-4">
+          <Panel>
+            <PanelHeader title="Triage Progress" icon={PieIcon} />
+            <div className="p-5">
+              {loading ? (
+                <div className="h-24 rounded-xl bg-slate-50 animate-pulse" />
+              ) : triageProgress.length === 0 ? (
+                <p className="text-[13px] text-slate-400 text-center py-4">
+                  No patients to triage.
                 </p>
+              ) : (
+                <div className="flex items-center gap-4">
+                  <div className="w-24 h-24 flex-shrink-0">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={triageProgress}
+                          dataKey="value"
+                          nameKey="label"
+                          innerRadius={28}
+                          outerRadius={42}
+                          strokeWidth={0}
+                        >
+                          {triageProgress.map((d) => (
+                            <Cell key={d.key} fill={d.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip
+                          formatter={(v: any, n: any) => [`${v} patients`, n]}
+                          contentStyle={{
+                            borderRadius: 12,
+                            border: "1px solid #eaecf0",
+                            fontSize: 12,
+                          }}
+                        />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div className="flex-1 space-y-2 min-w-0">
+                    {triageProgress.map((d) => (
+                      <div key={d.key} className="flex items-center gap-2">
+                        <span
+                          className="w-2 h-2 rounded-full flex-shrink-0"
+                          style={{ background: d.color }}
+                        />
+                        <span className="text-[12.5px] text-slate-600 flex-1 truncate">
+                          {d.label}
+                        </span>
+                        <span className="text-[13px] font-bold text-slate-900">
+                          {d.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
             </div>
-            <div className="mt-5 flex justify-end">
+          </Panel>
+
+          <Panel>
+            <PanelHeader title="Quick Actions" icon={ArrowRight} />
+            <div className="p-3 space-y-2">
+              {[
+                {
+                  label: "Today's Queue",
+                  href: "/dashboard/nurse/queue",
+                  icon: ClipboardList,
+                  cls: "bg-emerald-50 text-emerald-600",
+                },
+                {
+                  label: "Triage Patient",
+                  href: "/dashboard/nurse/triage",
+                  icon: Activity,
+                  cls: "bg-blue-50 text-blue-600",
+                },
+                {
+                  label: "Ward View",
+                  href: "/dashboard/nurse/ward",
+                  icon: BedDouble,
+                  cls: "bg-violet-50 text-violet-600",
+                },
+              ].map(({ label, href, icon: Icon, cls }) => (
+                <button
+                  key={href}
+                  onClick={() => router.push(href)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-200 text-left hover:border-emerald-200 hover:shadow-sm transition-all group"
+                >
+                  <div
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${cls}`}
+                  >
+                    <Icon className="w-4 h-4" />
+                  </div>
+
+                  <p className="flex-1 text-[13px] font-semibold text-slate-800">
+                    {label}
+                  </p>
+
+                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 transition-colors" />
+                </button>
+              ))}
+            </div>
+          </Panel>
+        </div>
+      </section>
+
+      {/* ── Doctor assignment modal ─────────────────────────────────────────── */}
+      {showAssignModal && selectedVisit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-[2px]">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <h3 className="text-[15px] font-bold text-slate-900">
+                Assign Doctor
+              </h3>
               <button
                 onClick={() => setShowAssignModal(false)}
-                className="px-4 py-2 rounded-lg text-gray-600 hover:bg-gray-100 text-sm font-medium"
+                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
               >
-                Cancel
+                <X className="w-4 h-4" />
               </button>
+            </div>
+
+            <div className="p-5">
+              <p className="text-[13px] text-slate-600 mb-4">
+                Select a doctor for{" "}
+                <span className="font-semibold text-slate-900">
+                  {selectedVisit.patientName}
+                </span>
+              </p>
+
+              {assignError && (
+                <div className="mb-3 px-3 py-2 rounded-xl bg-red-50 border border-red-100 text-[12.5px] text-red-700">
+                  {assignError}
+                </div>
+              )}
+
+              {doctors.length === 0 ? (
+                <p className="text-[13px] text-slate-400 text-center py-6">
+                  No doctors are currently online.
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                  {doctors.map((d) => (
+                    <button
+                      key={d.id}
+                      onClick={() => assignDoctor(d.id)}
+                      disabled={assigning}
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-200 text-left hover:border-emerald-200 hover:bg-slate-50 transition-all disabled:opacity-50"
+                    >
+                      <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
+                        <Stethoscope className="w-4 h-4" />
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-semibold text-slate-800 truncate">
+                          Dr. {d.firstName} {d.lastName}
+                        </p>
+                        {d.specialization && (
+                          <p className="text-[11.5px] text-slate-400 truncate mt-0.5">
+                            {d.specialization}
+                          </p>
+                        )}
+                      </div>
+
+                      {assigning ? (
+                        <Loader2 className="w-4 h-4 text-slate-300 animate-spin" />
+                      ) : (
+                        <ChevronRight className="w-4 h-4 text-slate-300" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>

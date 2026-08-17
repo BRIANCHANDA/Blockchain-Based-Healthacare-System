@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-HealthChain EMR — Professional Report Generator
+MedLink EMR — Professional Report Generator
 Called by the backend: python3 generate_report.py <json_data>
 Outputs raw PDF bytes to stdout.
 """
@@ -69,6 +69,17 @@ def fmt(n):
 def pct(n):
     try:    return f"{int(n)}%"
     except: return "—"
+
+def qty(n, singular, plural=None):
+    """Bolded count followed by a correctly inflected noun.
+
+    Formal reports should not read "0 consultation(s)"; the count is always
+    known at render time, so the noun can simply agree with it.
+    """
+    try:    v = int(n)
+    except: v = 0
+    word = singular if v == 1 else (plural or singular + "s")
+    return f"<b>{fmt(v)}</b> {word}"
 
 def fdate(iso):
     try:    return datetime.fromisoformat(str(iso).replace("Z", "")).strftime("%d %b %Y")
@@ -215,7 +226,7 @@ def build_cover(story, data):
     # Accent strip bottom
     d.add(Rect(0, 0, BODY_W, 3, fillColor=colors.HexColor("#14532d"), strokeColor=None))
     # Title
-    d.add(String(18, h - 30, f"HealthChain EMR — {report_type} Report",
+    d.add(String(18, h - 30, f"MedLink EMR — {report_type} Report",
                  fontName="Helvetica-Bold", fontSize=17, fillColor=WHITE))
     d.add(String(18, h - 46, inst_name,
                  fontName="Helvetica", fontSize=10, fillColor=colors.HexColor("#bbf7d0")))
@@ -673,6 +684,7 @@ ROLE_LABELS = {
     "radiologist":    "Radiologist",
     "pharmacist":     "Pharmacist",
     "receptionist":   "Receptionist",
+    "admin":          "Administrator",
 }
 
 ROLE_COLORS = {
@@ -682,6 +694,7 @@ ROLE_COLORS = {
     "radiologist":    PURPLE,
     "pharmacist":     GREEN_MID,
     "receptionist":   SLATE,
+    "admin":          GREEN_DARK,
 }
 
 def build_personal_cover(story, data):
@@ -689,6 +702,12 @@ def build_personal_cover(story, data):
     role        = data.get("role", "")
     spec        = data.get("specialization", "")
     role_label  = ROLE_LABELS.get(role, "Staff")
+    # Suppress a specialisation that merely echoes the role or its label.
+    spec_display = spec.strip() if spec else ""
+    if spec_display.lower() in {role.lower(), role_label.lower(), ""}:
+        spec_display = "—"
+    else:
+        spec_display = spec_display[:1].upper() + spec_display[1:]
     role_color  = ROLE_COLORS.get(role, SLATE)
     period_from = fdate(data.get("period", {}).get("from", ""))
     period_to   = fdate(data.get("period", {}).get("to",   ""))
@@ -699,7 +718,7 @@ def build_personal_cover(story, data):
     d.add(Rect(0, 0, BODY_W, h, fillColor=GREEN_DARK, strokeColor=None, rx=10, ry=10))
     d.add(Rect(0, h - 5, BODY_W, 5, fillColor=GREEN_ACCENT, strokeColor=None, rx=2, ry=2))
     d.add(Rect(0, 0, BODY_W, 3, fillColor=colors.HexColor("#14532d"), strokeColor=None))
-    d.add(String(18, h - 30, "HealthChain EMR — Personal Performance Report",
+    d.add(String(18, h - 30, "MedLink EMR — Personal Performance Report",
                  fontName="Helvetica-Bold", fontSize=17, fillColor=WHITE))
     name_str = f"Dr. {staff_name}" if role == "practitioner" else staff_name
     d.add(String(18, h - 46, name_str,
@@ -720,7 +739,11 @@ def build_personal_cover(story, data):
     meta_data = [
         [Paragraph("Staff Member", LABEL), Paragraph(name_str, BODY),
          Paragraph("Role", LABEL),         Paragraph(role_label, BODY)],
-        [Paragraph("Specialization", LABEL), Paragraph(spec or "—", BODY),
+        # Staff created without an explicit specialisation inherit their role as
+        # one, which would print "Role: Administrator / Specialization: admin".
+        # Show a dash rather than repeat the role back at the reader.
+        [Paragraph("Specialization", LABEL),
+         Paragraph(spec_display, BODY),
          Paragraph("Period", LABEL),          Paragraph(f"{period_from} → {period_to}", BODY)],
         [Paragraph("Report Type", LABEL), Paragraph("Individual Performance Report", BODY),
          Paragraph("Classification", LABEL), Paragraph("CONFIDENTIAL — Authorised Personnel Only", BODY)],
@@ -746,42 +769,56 @@ def _personal_exec_summary(story, data):
 
     if role == "practitioner":
         lines = [
-            f"<b>Dr. {name}</b> conducted <b>{fmt(s.get('consultations', 0))}</b> consultation(s) and recorded "
-            f"<b>{fmt(s.get('diagnosesMade', 0))}</b> diagnoses during the reporting period.",
-            f"Orders placed: <b>{fmt(s.get('labOrdersPlaced', 0))}</b> laboratory, "
-            f"<b>{fmt(s.get('imagingOrdered', 0))}</b> imaging, "
-            f"<b>{fmt(s.get('prescriptionsWritten', 0))}</b> prescriptions — "
-            f"<b>{pct(s.get('dispensingRate', 0))}</b> dispensing rate.",
+            f"<b>Dr. {name}</b> conducted {qty(s.get('consultations', 0), 'consultation')} and recorded "
+            f"{qty(s.get('diagnosesMade', 0), 'diagnosis', 'diagnoses')} during the reporting period.",
+            f"Orders placed: {qty(s.get('labOrdersPlaced', 0), 'laboratory test')}, "
+            f"{qty(s.get('imagingOrdered', 0), 'imaging study', 'imaging studies')} and "
+            f"{qty(s.get('prescriptionsWritten', 0), 'prescription')} — "
+            f"<b>{pct(s.get('dispensingRate', 0))}</b> of prescriptions were subsequently dispensed.",
         ]
     elif role == "nurse":
         lines = [
-            f"<b>{name}</b> recorded <b>{fmt(s.get('vitalsRecorded', 0))}</b> set(s) of vital signs "
-            f"for <b>{fmt(s.get('distinctPatients', 0))}</b> unique patient(s) during the period.",
-            f"A total of <b>{fmt(s.get('assignedVisits', 0))}</b> visit(s) were assigned to this nurse.",
+            f"<b>{name}</b> recorded {qty(s.get('vitalsRecorded', 0), 'set', 'sets')} of vital signs "
+            f"for {qty(s.get('distinctPatients', 0), 'unique patient')} during the period.",
+            f"A total of {qty(s.get('assignedVisits', 0), 'visit')} were assigned to this nurse.",
         ]
     elif role == "lab_technician":
         lines = [
-            f"<b>{name}</b> resulted <b>{fmt(s.get('testsResulted', 0))}</b> laboratory test(s) during the reporting period.",
-            (f"<b>{fmt(s.get('pendingAssigned', 0))}</b> test order(s) are currently assigned and awaiting processing."
-             if s.get("pendingAssigned", 0) > 0 else "No tests currently pending assignment."),
+            f"<b>{name}</b> resulted {qty(s.get('testsResulted', 0), 'laboratory test')} during the reporting period.",
+            (f"{qty(s.get('pendingAssigned', 0), 'test order')} currently assigned and awaiting processing."
+             if s.get("pendingAssigned", 0) > 0 else "No tests are currently pending processing."),
         ]
     elif role == "radiologist":
         lines = [
-            f"<b>{name}</b> completed <b>{fmt(s.get('reportsCompleted', 0))}</b> imaging report(s) during this period.",
-            (f"<b>{fmt(s.get('pendingAssigned', 0))}</b> imaging study(s) are currently assigned and pending reporting."
-             if s.get("pendingAssigned", 0) > 0 else "No imaging studies currently pending."),
+            f"<b>{name}</b> completed {qty(s.get('reportsCompleted', 0), 'imaging report')} during this period.",
+            (f"{qty(s.get('pendingAssigned', 0), 'imaging study', 'imaging studies')} currently assigned and pending reporting."
+             if s.get("pendingAssigned", 0) > 0 else "No imaging studies are currently pending."),
         ]
     elif role == "pharmacist":
         lines = [
-            f"<b>{name}</b> dispensed <b>{fmt(s.get('itemsDispensed', 0))}</b> medication item(s) across "
-            f"<b>{fmt(s.get('prescriptionsDispensed', 0))}</b> prescription(s) during this period.",
-            f"<b>{fmt(s.get('stockMovementsDone', 0))}</b> stock movement record(s) (receipts, adjustments, dispensing) logged.",
+            f"<b>{name}</b> dispensed {qty(s.get('itemsDispensed', 0), 'medication item')} across "
+            f"{qty(s.get('prescriptionsDispensed', 0), 'prescription')} during this period.",
+            f"{qty(s.get('stockMovementsDone', 0), 'stock movement record')} "
+            f"(receipts, adjustments and dispensing) were logged.",
         ]
     elif role == "receptionist":
         lines = [
-            f"<b>{name}</b> opened <b>{fmt(s.get('visitsCreated', 0))}</b> patient visit(s) — "
-            f"<b>{fmt(s.get('appointmentsCreated', 0))}</b> scheduled appointment(s) and "
-            f"<b>{fmt(s.get('walkinVisits', 0))}</b> walk-in(s) — during the reporting period.",
+            f"<b>{name}</b> opened {qty(s.get('visitsCreated', 0), 'patient visit')} — "
+            f"{qty(s.get('appointmentsCreated', 0), 'scheduled appointment')} and "
+            f"{qty(s.get('walkinVisits', 0), 'walk-in')} — during the reporting period.",
+        ]
+    elif role == "admin":
+        scope = "across all institutions" if data.get("scope") == "system-wide" else "at this institution"
+        overrides = s.get("emergencyOverrides", 0)
+        lines = [
+            f"<b>{name}</b> oversees {qty(s.get('staffActive', 0), 'active staff member')} {scope}, "
+            f"with {qty(s.get('staffAdded', 0), 'addition')} during the reporting period.",
+            f"{qty(s.get('patientsRegistered', 0), 'patient registration')} and "
+            f"{qty(s.get('visitsRecorded', 0), 'visit')} were recorded, against "
+            f"{qty(s.get('auditEvents', 0), 'audited action')}.",
+            (f"{qty(overrides, 'emergency consent override')} invoked during this period, itemised below for review."
+             if overrides else
+             "No emergency consent overrides were invoked during this period."),
         ]
     else:
         lines = ["No performance data available for this role."]
@@ -998,6 +1035,53 @@ def build_personal(story, data):
         story.append(section("Daily Trend"))
         _trend_mini_table(story, data.get("trend", []), "Visits Opened")
 
+    elif role == "admin":
+        story.append(section("Institution Oversight"))
+        story.append(stat_grid([
+            ("Active Staff",        fmt(s.get("staffActive",         0)), SLATE),
+            ("Staff Added",         fmt(s.get("staffAdded",          0)), BLUE),
+            ("Patients Registered", fmt(s.get("patientsRegistered",  0)), GREEN_MID),
+            ("Visits Recorded",     fmt(s.get("visitsRecorded",      0)), TEAL),
+            ("Audited Actions",     fmt(s.get("auditEvents",         0)), PURPLE),
+            ("Emergency Overrides", fmt(s.get("emergencyOverrides",  0)), RED),
+        ]))
+
+        roster = data.get("staffByRole", [])
+        if roster:
+            story.append(section("Staff Roster by Role"))
+            rdata = [[Paragraph("Role", TH), Paragraph("Active Staff", TH)]]
+            for r in roster:
+                label = str(r.get("role", "—")).replace("_", " ").title()
+                rdata.append([Paragraph(label, BODY), Paragraph(fmt(r.get("count", 0)), TD_BOLD)])
+            story.append(make_table(rdata, [0.70, 0.30], extra_style=[
+                ("ALIGN",     (1, 0), (1, -1), "CENTER"),
+                ("FONTNAME",  (1, 1), (1, -1), "Helvetica-Bold"),
+                ("TEXTCOLOR", (1, 1), (1, -1), GREEN_MID),
+            ]))
+
+        story.append(section("Admissions Trend"))
+        _trend_mini_table(story, data.get("trend", []), "Visits")
+
+        # Consent bypasses are the events an administrator is answerable for, so
+        # they are itemised rather than reduced to a count.
+        overrides = data.get("recentOverrides", [])
+        if overrides:
+            story.append(section("Emergency Consent Overrides"))
+            odata = [[
+                Paragraph("#", TH),
+                Paragraph("Invoked", TH),
+                Paragraph("Stated Clinical Justification", TH),
+            ]]
+            for i, o in enumerate(overrides, 1):
+                odata.append([
+                    Paragraph(str(i), SMALL),
+                    Paragraph(fdatetime(o.get("at")), SMALL),
+                    Paragraph(o.get("reason") or "—", BODY),
+                ])
+            story.append(make_table(odata, [0.06, 0.24, 0.70], extra_style=[
+                ("TEXTCOLOR", (1, 1), (1, -1), RED),
+            ]))
+
     else:
         story.append(Paragraph("No role-specific data available.", BODY))
 
@@ -1008,7 +1092,7 @@ def add_footer(canvas, doc):
     canvas.saveState()
     canvas.setFont("Helvetica", 7)
     canvas.setFillColor(GRAY)
-    canvas.drawString(MARGIN, 10 * mm, "HealthChain EMR  ·  Copperbelt University  ·  CONFIDENTIAL — Authorised Personnel Only")
+    canvas.drawString(MARGIN, 10 * mm, "MedLink EMR  ·  Copperbelt University  ·  CONFIDENTIAL — Authorised Personnel Only")
     canvas.drawRightString(W - MARGIN, 10 * mm, f"Page {doc.page}")
     canvas.setStrokeColor(BORDER)
     canvas.setLineWidth(0.5)
@@ -1030,10 +1114,10 @@ def generate(data: dict) -> bytes:
         buf, pagesize=A4,
         leftMargin=MARGIN, rightMargin=MARGIN,
         topMargin=MARGIN, bottomMargin=22 * mm,
-        title=f"HealthChain — {rtype.title()} Report",
-        author="HealthChain EMR",
+        title=f"MedLink — {rtype.title()} Report",
+        author="MedLink EMR",
         subject=doc_subject,
-        creator="HealthChain EMR · Copperbelt University",
+        creator="MedLink EMR · Copperbelt University",
     )
 
     story: list = []

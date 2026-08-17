@@ -14,6 +14,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.RecordContract = void 0;
 const fabric_contract_api_1 = require("fabric-contract-api");
+const txtime_1 = require("./txtime");
 const WRITER_MSPS = ['HospitalOrgMSP', 'PractitionerOrgMSP', 'PatientOrgMSP'];
 class RecordContract extends fabric_contract_api_1.Contract {
     constructor() {
@@ -52,8 +53,7 @@ class RecordContract extends fabric_contract_api_1.Contract {
             throw new Error(`Invalid sha256Hash format: expected 64-character hex string`);
         }
         const txId = ctx.stub.getTxID();
-        const txTimestamp = ctx.stub.getTxTimestamp();
-        const timestamp = new Date(txTimestamp.seconds.toNumber() * 1000 + Math.floor(txTimestamp.nanos / 1000000)).toISOString();
+        const timestamp = (0, txtime_1.txTimeISO)(ctx);
         const record = {
             recordId,
             patientId,

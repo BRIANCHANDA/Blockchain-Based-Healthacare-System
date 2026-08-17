@@ -13,41 +13,34 @@ import {
   Clock,
   RefreshCw,
   TrendingUp,
+  Activity,
+  Users,
+  ScrollText,
 } from "lucide-react";
-import { formatDistanceToNow } from "date-fns";
+import { format } from "date-fns";
+import {
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+} from "recharts";
+import {
+  KpiCard,
+  Panel,
+  PanelHeader,
+  SkeletonRow,
+  EmptyState,
+  PageHeading,
+} from "@/components/dashboard/primitives";
 
-const URGENCY: Record<
-  string,
-  { color: string; bg: string; border: string; dot: string; label: string }
-> = {
-  critical: {
-    color: "#dc2626",
-    bg: "#fef2f2",
-    border: "#fecaca",
-    dot: "#ef4444",
-    label: "Critical",
-  },
-  emergency: {
-    color: "#ea580c",
-    bg: "#fff7ed",
-    border: "#fed7aa",
-    dot: "#f97316",
-    label: "Emergency",
-  },
-  urgent: {
-    color: "#d97706",
-    bg: "#fffbeb",
-    border: "#fde68a",
-    dot: "#f59e0b",
-    label: "Urgent",
-  },
-  routine: {
-    color: "#16a34a",
-    bg: "#f0fdf4",
-    border: "#bbf7d0",
-    dot: "#22c55e",
-    label: "Routine",
-  },
+const URGENCY: Record<string, { color: string; bg: string; label: string }> = {
+  critical: { color: "#dc2626", bg: "#fef2f2", label: "Critical" },
+  emergency: { color: "#ea580c", bg: "#fff7ed", label: "Emergency" },
+  urgent: { color: "#d97706", bg: "#fffbeb", label: "Urgent" },
+  routine: { color: "#16a34a", bg: "#f0fdf4", label: "Routine" },
 };
 
 const MODALITY: Record<string, { label: string; color: string; bg: string }> = {
@@ -63,11 +56,6 @@ const MODALITY: Record<string, { label: string; color: string; bg: string }> = {
 const getU = (u: string) => URGENCY[u] ?? URGENCY.routine;
 const getM = (m: string) =>
   MODALITY[m] ?? { label: m, color: "#374151", bg: "#f9fafb" };
-
-function getGreeting() {
-  const h = new Date().getHours();
-  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
-}
 
 function timeSince(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -146,593 +134,417 @@ export default function RadiologyOverviewPage() {
     (a, b) => (urgencyOrder[a.urgency] ?? 9) - (urgencyOrder[b.urgency] ?? 9),
   );
 
-  return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      {/* Hero banner with institution name */}
-      <div
-        className="relative rounded-3xl overflow-hidden mb-6 px-7 py-6"
-        style={{
-          background:
-            "linear-gradient(130deg, #0d4a1f 0%, #166534 55%, #15803d 100%)",
-        }}
-      >
-        <div
-          className="absolute -right-8 -top-8 w-40 h-40 rounded-full opacity-10"
-          style={{
-            background: "radial-gradient(circle, #bbf7d0, transparent)",
-          }}
-        />
-        <div
-          className="absolute right-20 bottom-0 w-28 h-28 rounded-full opacity-5"
-          style={{
-            background: "radial-gradient(circle, #dcfce7, transparent)",
-          }}
-        />
+  // The overview endpoint already coerces these counts to numbers.
+  const weekly = stats?.weeklyActivity ?? [];
 
-        <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div>
-            <p className="text-green-300/70 text-sm font-medium mb-1">
-              {user?.institutionName ? `${user.institutionName} · ` : ""}
-              {getGreeting()}
-            </p>
-            <h1
-              className="text-white text-2xl font-bold leading-tight"
-              style={{ fontFamily: "'Playfair Display', serif" }}
-            >
-              {user?.firstName} {user?.lastName}
-            </h1>
-            <p className="text-green-200/50 text-sm mt-1.5">
-              {totalPending > 0
-                ? `${totalPending} stud${totalPending !== 1 ? "ies" : "y"} pending${criticalCount > 0 ? ` · ${criticalCount} need immediate attention` : ""}`
-                : "Worklist is clear — great work!"}
-            </p>
-          </div>
-          <div className="flex gap-2.5 flex-wrap">
+  const byModality: Array<[string, number]> = Object.entries(
+    stats?.pendingByModality ?? {},
+  )
+    .map(([k, v]) => [k, Number(v ?? 0)] as [string, number])
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1]);
+
+  const topModality =
+    myStats?.modalityBreakdown && myStats.modalityBreakdown.length > 0
+      ? getM(myStats.modalityBreakdown[0].modality).label
+      : "—";
+
+  return (
+    <div className="w-full max-w-[1280px] mx-auto pb-8">
+      <PageHeading
+        eyebrow="Radiology"
+        title={(user as any)?.institutionName || "Radiology"}
+        actions={
+          <>
             <button
               onClick={() => router.push("/dashboard/radiology/queue")}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:scale-105"
-              style={{
-                background: "rgba(255,255,255,0.15)",
-                border: "1px solid rgba(255,255,255,0.2)",
-              }}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[13px] font-semibold shadow-sm transition-colors"
             >
-              <Scan className="w-4 h-4" /> Open Worklist
+              <Scan className="w-3.5 h-3.5" />
+              Open Worklist
             </button>
+
             <button
-              onClick={() => router.push("/dashboard/radiology/history")}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
-              style={{
-                background: "rgba(0,0,0,0.2)",
-                color: "#bbf7d0",
-                border: "1px solid rgba(0,0,0,0.1)",
-              }}
+              onClick={() => router.push("/dashboard/radiology/report")}
+              className="hidden sm:inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:border-emerald-200 text-slate-700 text-[13px] font-semibold transition-colors"
             >
-              <ClipboardList className="w-4 h-4" /> My Reports
+              <ScrollText className="w-3.5 h-3.5" />
+              My Report
             </button>
+
             <button
               onClick={() => fetchData(true)}
               disabled={refreshing}
-              className="flex items-center px-3 py-2.5 rounded-xl text-sm transition-all disabled:opacity-50"
-              style={{
-                background: "rgba(0,0,0,0.15)",
-                color: "rgba(255,255,255,0.6)",
-                border: "1px solid rgba(255,255,255,0.1)",
-              }}
+              className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40"
             >
               <RefreshCw
                 className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`}
               />
             </button>
-          </div>
-        </div>
-      </div>
-      {/* ── Critical alert ── */}
+          </>
+        }
+      />
+
       {!loading && criticalCount > 0 && (
-        <div
-          className="flex items-center justify-between px-4 py-3 rounded-2xl mb-5 gap-3"
-          style={{ background: "#fef2f2", border: "1px solid #fecaca" }}
+        <button
+          onClick={() => router.push("/dashboard/radiology/queue")}
+          className="w-full flex items-center gap-3 p-4 rounded-2xl mb-5 bg-red-50 border border-red-200 text-left hover:bg-red-100/60 transition-colors"
         >
-          <div className="flex items-center gap-3">
-            <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-60" />
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
-            </span>
-            <p className="text-sm font-bold text-red-800">
-              {criticalCount} critical / emergency stud
-              {criticalCount !== 1 ? "ies" : "y"} awaiting report
-            </p>
-          </div>
-          <button
-            onClick={() => router.push("/dashboard/radiology/queue")}
-            className="flex items-center gap-1.5 text-xs font-bold text-red-600 hover:text-red-800 transition-colors whitespace-nowrap"
-          >
-            Report now <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
+          <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
+          <p className="text-[13px] font-semibold text-red-800 flex-1">
+            {criticalCount} stud{criticalCount > 1 ? "ies" : "y"} marked critical
+            or urgent await reporting
+          </p>
+          <span className="text-[13px] font-bold text-red-700 flex items-center gap-1 whitespace-nowrap">
+            Open worklist <ChevronRight className="w-3.5 h-3.5" />
+          </span>
+        </button>
       )}
 
-      {/* ── Stat cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
-        {loading
-          ? [...Array(4)].map((_, i) => (
-              <div
-                key={i}
-                className="relative rounded-2xl border overflow-hidden p-4 animate-pulse"
-                style={{ background: "#f9fafb", borderColor: "#f3f4f6" }}
-              >
-                <div className="h-4 w-24 bg-gray-100 rounded mb-4" />
-                <div className="h-8 w-12 bg-gray-100 rounded" />
+      {/* KPIs */}
+      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+        <KpiCard
+          label="Pending Studies"
+          value={loading ? undefined : totalPending}
+          description="Awaiting a report"
+          icon={Scan}
+          iconClass="bg-amber-50 text-amber-600"
+          href="/dashboard/radiology/queue"
+        />
+        <KpiCard
+          label="Critical / Urgent"
+          value={loading ? undefined : criticalCount}
+          description="Need attention now"
+          icon={AlertTriangle}
+          iconClass="bg-red-50 text-red-600"
+          href="/dashboard/radiology/queue"
+        />
+        <KpiCard
+          label="Reported Today"
+          value={loading ? undefined : reportedToday}
+          description="Released to clinicians"
+          icon={CheckCircle2}
+          iconClass="bg-emerald-50 text-emerald-600"
+        />
+        <KpiCard
+          label="Reported This Week"
+          value={loading ? undefined : reportedWeek}
+          description="Last 7 days"
+          icon={TrendingUp}
+          iconClass="bg-violet-50 text-violet-600"
+        />
+      </section>
+
+      {/* Activity + modality mix */}
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+        <Panel className="lg:col-span-2">
+          <PanelHeader
+            title="7-Day Activity"
+            icon={Activity}
+            meta={
+              <div className="hidden sm:flex items-center gap-3">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-amber-400" />
+                  <span className="text-[11px] text-slate-500">Ordered</span>
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-600" />
+                  <span className="text-[11px] text-slate-500">Reported</span>
+                </span>
               </div>
-            ))
-          : [
-              {
-                label: "Pending Studies",
-                value: totalPending,
-                color: "#d97706",
-                bg: "linear-gradient(135deg,#fffbeb,#fef3c7)",
-                border: "#fde68a",
-                icon: Scan,
-                alert: totalPending > 0,
-              },
-              {
-                label: "Critical / Urgent",
-                value: criticalCount,
-                color: "#dc2626",
-                bg: "linear-gradient(135deg,#fef2f2,#fee2e2)",
-                border: "#fecaca",
-                icon: AlertTriangle,
-                alert: criticalCount > 0,
-              },
-              {
-                label: "Reported Today",
-                value: reportedToday,
-                color: "#166534",
-                bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
-                border: "#bbf7d0",
-                icon: CheckCircle2,
-                alert: false,
-              },
-              {
-                label: "Reported This Week",
-                value: reportedWeek,
-                color: "#1d4ed8",
-                bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
-                border: "#bfdbfe",
-                icon: TrendingUp,
-                alert: false,
-              },
-            ].map(({ label, value, color, bg, border, icon: Icon, alert }) => (
-              <div
-                key={label}
-                className="relative rounded-2xl border overflow-hidden p-4"
-                style={{
-                  background: bg,
-                  borderColor: alert ? color : border,
-                  boxShadow: alert ? `0 0 0 2px ${color}20` : undefined,
-                }}
-              >
-                <div
-                  className="absolute -right-2 -bottom-2 w-14 h-14 rounded-full opacity-10"
-                  style={{ background: color }}
-                />
-                <div className="flex items-start justify-between mb-3">
-                  <p
-                    className="text-xs font-semibold uppercase tracking-wide"
-                    style={{ color, opacity: 0.7 }}
-                  >
-                    {label}
-                  </p>
-                  <div
-                    className="w-7 h-7 rounded-lg flex items-center justify-center"
-                    style={{ background: `${color}18` }}
-                  >
-                    <Icon className="w-3.5 h-3.5" style={{ color }} />
-                  </div>
-                </div>
-                <p
-                  className="text-3xl font-extrabold leading-none"
-                  style={{ color }}
+            }
+          />
+          <div className="px-2 py-4" style={{ height: 224 }}>
+            {loading ? (
+              <div className="h-full mx-3 rounded-xl bg-slate-50 animate-pulse" />
+            ) : weekly.length ? (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={weekly}
+                  margin={{ top: 4, right: 12, left: -22, bottom: 0 }}
                 >
-                  {value}
-                </p>
-              </div>
-            ))}
-      </div>
-
-      {/* ── Main grid ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Left col: actions + breakdowns */}
-        <div className="space-y-3">
-          <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-1">
-            Quick Actions
-          </p>
-          {[
-            {
-              label: "Open Worklist",
-              desc: "All pending studies sorted by urgency",
-              href: "/dashboard/radiology/queue",
-              icon: Scan,
-              color: "#166534",
-              bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
-              border: "#bbf7d0",
-            },
-            {
-              label: "My Reports",
-              desc: "Studies you have already reported",
-              href: "/dashboard/radiology/history",
-              icon: ClipboardList,
-              color: "#1d4ed8",
-              bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
-              border: "#bfdbfe",
-            },
-          ].map(({ label, desc, href, icon: Icon, color, bg, border }) => (
-            <button
-              key={href}
-              onClick={() => router.push(href)}
-              className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl border text-left transition-all hover:shadow-md hover:-translate-y-px group"
-              style={{ background: bg, borderColor: border }}
-            >
-              <div
-                className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                style={{ background: `${color}15` }}
-              >
-                <Icon className="w-4 h-4" style={{ color }} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900">{label}</p>
-                <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
-              </div>
-              <ArrowRight
-                className="w-4 h-4 flex-shrink-0 transition-transform group-hover:translate-x-0.5"
-                style={{ color }}
-              />
-            </button>
-          ))}
-
-          {/* My performance */}
-          {myStats && !loading && (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 space-y-3">
-              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                My Performance
-              </p>
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  {
-                    label: "This month",
-                    value: myStats.monthReports ?? 0,
-                    color: "#166534",
-                  },
-                  {
-                    label: "Today",
-                    value: myStats.todayReports ?? 0,
-                    color: "#1d4ed8",
-                  },
-                  {
-                    label: "Avg turnaround",
-                    value: formatTA(myStats.avgTurnaroundMinutes ?? 0),
-                    color: "#7c3aed",
-                  },
-                  {
-                    label: "Top modality",
-                    value: (() => {
-                      const entries = Object.entries(
-                        myStats.modalityBreakdown ?? {},
-                      ).sort(([, a], [, b]) => (b as number) - (a as number));
-                      return entries[0] ? getM(entries[0][0]).label : "—";
-                    })(),
-                    color: "#d97706",
-                  },
-                ].map(({ label, value, color }) => (
-                  <div
-                    key={label}
-                    className="rounded-xl p-3"
-                    style={{ background: `${color}08` }}
-                  >
-                    <p
-                      className="text-lg font-extrabold leading-none"
-                      style={{ color }}
-                    >
-                      {value}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">{label}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Modality breakdown */}
-          {!loading &&
-            Object.keys(stats?.pendingByModality ?? {}).length > 0 && (
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-3">
-                  By Modality
-                </p>
-                <div className="space-y-2.5">
-                  {Object.entries(stats.pendingByModality)
-                    .sort(([, a], [, b]) => (b as number) - (a as number))
-                    .map(([mod, cnt]) => {
-                      const cfg = getM(mod);
-                      const pct =
-                        totalPending > 0
-                          ? Math.round(((cnt as number) / totalPending) * 100)
-                          : 0;
-                      return (
-                        <div key={mod}>
-                          <div className="flex items-center justify-between mb-1">
-                            <span
-                              className="text-xs font-semibold"
-                              style={{ color: cfg.color }}
-                            >
-                              {cfg.label}
-                            </span>
-                            <span className="text-xs font-bold text-gray-900">
-                              {cnt as number}
-                            </span>
-                          </div>
-                          <div
-                            className="h-1.5 rounded-full overflow-hidden"
-                            style={{ background: cfg.bg }}
-                          >
-                            <div
-                              className="h-full rounded-full transition-all duration-700"
-                              style={{
-                                width: `${pct}%`,
-                                background: cfg.color,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                </div>
+                  <defs>
+                    <linearGradient id="radOrdered" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#d97706" stopOpacity={0.24} />
+                      <stop offset="100%" stopColor="#d97706" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id="radReported" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#166534" stopOpacity={0.3} />
+                      <stop offset="100%" stopColor="#166534" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    stroke="#f3f4f6"
+                    vertical={false}
+                  />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 10, fill: "#9ca3af" }}
+                    axisLine={false}
+                    tickLine={false}
+                    tickFormatter={(v) => (v ? format(new Date(v), "EEE") : v)}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 10, fill: "#9ca3af" }}
+                    axisLine={false}
+                    tickLine={false}
+                    width={38}
+                    allowDecimals={false}
+                  />
+                  <Tooltip
+                    contentStyle={{
+                      borderRadius: 12,
+                      border: "1px solid #eaecf0",
+                      fontSize: 12,
+                    }}
+                    labelFormatter={(v) =>
+                      v ? format(new Date(v), "EEE d MMM") : v
+                    }
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="ordered"
+                    name="Ordered"
+                    stroke="#d97706"
+                    fill="url(#radOrdered)"
+                    strokeWidth={2}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="reported"
+                    name="Reported"
+                    stroke="#166534"
+                    fill="url(#radReported)"
+                    strokeWidth={2}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-full flex items-center justify-center text-[13px] text-slate-400">
+                No activity in the last 7 days
               </div>
             )}
-
-          {/* 7-day sparkbar */}
-          {!loading && (stats?.weeklyActivity ?? []).length > 0 && (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-              <div className="flex items-center justify-between mb-3">
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                  7-Day Activity
-                </p>
-                <div className="flex items-center gap-3 text-xs text-gray-400">
-                  <span className="flex items-center gap-1">
-                    <span
-                      className="w-2 h-2 rounded-sm inline-block"
-                      style={{ background: "#bbf7d0" }}
-                    />{" "}
-                    Ordered
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <span
-                      className="w-2 h-2 rounded-sm inline-block"
-                      style={{ background: "#166534" }}
-                    />{" "}
-                    Reported
-                  </span>
-                </div>
-              </div>
-              {(() => {
-                const days = stats.weeklyActivity ?? [];
-                const maxV = Math.max(
-                  ...days.map((d: any) =>
-                    Math.max(
-                      parseInt(d.ordered) || 0,
-                      parseInt(d.reported) || 0,
-                    ),
-                  ),
-                  1,
-                );
-                return (
-                  <div className="flex items-end gap-2 h-14">
-                    {days.map((day: any, i: number) => {
-                      const ordered = parseInt(day.ordered) || 0;
-                      const reported = parseInt(day.reported) || 0;
-                      return (
-                        <div
-                          key={i}
-                          className="flex-1 flex flex-col items-center gap-1"
-                        >
-                          <div
-                            className="w-full flex items-end justify-center gap-0.5"
-                            style={{ height: 40 }}
-                          >
-                            <div
-                              className="w-[45%] rounded-t-sm"
-                              style={{
-                                height: `${Math.round((ordered / maxV) * 100)}%`,
-                                background: "#bbf7d0",
-                                minHeight: ordered > 0 ? 2 : 0,
-                              }}
-                            />
-                            <div
-                              className="w-[45%] rounded-t-sm"
-                              style={{
-                                height: `${Math.round((reported / maxV) * 100)}%`,
-                                background: "#166534",
-                                minHeight: reported > 0 ? 2 : 0,
-                              }}
-                            />
-                          </div>
-                          <span
-                            className="text-gray-400 font-semibold"
-                            style={{ fontSize: 9 }}
-                          >
-                            {new Date(day.date).toLocaleDateString("en-ZM", {
-                              weekday: "short",
-                            })}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-            </div>
-          )}
-        </div>
-
-        {/* Right col: pending worklist */}
-        <div className="lg:col-span-2">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <p className="text-xs font-bold uppercase tracking-widest text-gray-400">
-                Pending Studies
-              </p>
-              {!loading && totalPending > 0 && (
-                <span
-                  className="px-2 py-0.5 rounded-full text-xs font-bold"
-                  style={{
-                    background: criticalCount > 0 ? "#fef2f2" : "#fffbeb",
-                    color: criticalCount > 0 ? "#dc2626" : "#d97706",
-                  }}
-                >
-                  {totalPending}
-                </span>
-              )}
-            </div>
-            <button
-              onClick={() => router.push("/dashboard/radiology/queue")}
-              className="text-xs font-semibold flex items-center gap-1"
-              style={{ color: "#166534" }}
-            >
-              See all <ChevronRight className="w-3.5 h-3.5" />
-            </button>
           </div>
+        </Panel>
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <Panel>
+          <PanelHeader title="Pending by Modality" icon={Scan} />
+          <div className="p-3">
             {loading ? (
-              <div className="divide-y divide-gray-50">
-                {[...Array(5)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="flex items-center gap-4 px-5 py-4 animate-pulse"
-                  >
-                    <div className="w-2.5 h-2.5 rounded-full bg-gray-100 flex-shrink-0" />
-                    <div className="w-9 h-9 rounded-xl bg-gray-100 flex-shrink-0" />
-                    <div className="flex-1 space-y-2">
-                      <div className="h-3.5 w-36 bg-gray-100 rounded" />
-                      <div className="h-3 w-52 bg-gray-100 rounded" />
-                    </div>
-                    <div className="w-16 h-6 bg-gray-100 rounded-full" />
-                  </div>
-                ))}
-              </div>
-            ) : sortedPending.length === 0 ? (
-              <div className="py-16 text-center">
-                <div
-                  className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4"
-                  style={{ background: "#f0fdf4" }}
-                >
-                  <CheckCircle2 className="w-6 h-6 text-green-400" />
-                </div>
-                <p className="text-sm font-semibold text-gray-500">
-                  Worklist is clear
-                </p>
-                <p className="text-xs text-gray-400 mt-1">
-                  All studies have been reported
-                </p>
-              </div>
+              <div className="h-40 rounded-xl bg-slate-50 animate-pulse" />
+            ) : byModality.length === 0 ? (
+              <p className="text-[13px] text-slate-400 text-center py-10">
+                Nothing pending.
+              </p>
             ) : (
-              <div className="divide-y divide-gray-50">
-                {sortedPending.slice(0, 7).map((order, i) => {
-                  const u = getU(order.urgency);
-                  const m = getM(order.modality);
-                  const isCrit = ["critical", "emergency"].includes(
-                    order.urgency,
-                  );
-                  return (
-                    <button
-                      key={order.id}
-                      onClick={() =>
-                        router.push(`/dashboard/radiology/queue/${order.id}`)
-                      }
-                      className="w-full flex items-center gap-4 px-5 py-3.5 text-left transition-colors group"
-                      style={{
-                        background:
-                          isCrit && i === 0 ? `${u.dot}08` : undefined,
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!(isCrit && i === 0))
-                          e.currentTarget.style.background = "#f9fafb";
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!(isCrit && i === 0))
-                          e.currentTarget.style.background = "transparent";
-                      }}
+              byModality.map(([mod, count]) => {
+                const cfg = getM(mod);
+                const pct = totalPending > 0 ? (count / totalPending) * 100 : 0;
+
+                return (
+                  <div key={mod} className="px-2 py-2">
+                    <div className="flex items-center gap-2 mb-1.5">
+                      <span
+                        className="w-2 h-2 rounded-full flex-shrink-0"
+                        style={{ background: cfg.color }}
+                      />
+                      <p className="text-[12.5px] text-slate-600 flex-1 truncate">
+                        {cfg.label}
+                      </p>
+                      <p className="text-[13px] font-bold text-slate-800">
+                        {count}
+                      </p>
+                    </div>
+
+                    <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all"
+                        style={{ width: `${pct}%`, background: cfg.color }}
+                      />
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </Panel>
+      </section>
+
+      {/* Worklist + performance */}
+      <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Panel className="lg:col-span-2">
+          <PanelHeader
+            title="Pending Worklist"
+            icon={ClipboardList}
+            action={sortedPending.length > 0 ? "View all" : undefined}
+            onAction={
+              sortedPending.length > 0
+                ? () => router.push("/dashboard/radiology/queue")
+                : undefined
+            }
+          />
+
+          {loading ? (
+            [...Array(5)].map((_, i) => <SkeletonRow key={i} />)
+          ) : sortedPending.length === 0 ? (
+            <EmptyState icon={CheckCircle2} message="The worklist is clear." />
+          ) : (
+            <>
+              {sortedPending.slice(0, 8).map((order: any, index: number) => {
+                const u = getU(order.urgency);
+                const m = getM(order.modality);
+
+                return (
+                  <button
+                    key={order.id}
+                    onClick={() =>
+                      router.push(`/dashboard/radiology/queue/${order.id}`)
+                    }
+                    className={`w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-slate-50 transition-colors group ${
+                      index < Math.min(sortedPending.length, 8) - 1
+                        ? "border-b border-slate-50"
+                        : ""
+                    }`}
+                  >
+                    <div
+                      className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                      style={{ background: m.bg }}
                     >
-                      <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
-                        {isCrit && i === 0 && (
-                          <span
-                            className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-50"
-                            style={{ background: u.dot }}
-                          />
-                        )}
-                        <span
-                          className="relative inline-flex rounded-full h-2.5 w-2.5"
-                          style={{ background: u.dot }}
-                        />
+                      <Scan className="w-4 h-4" style={{ color: m.color }} />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-[13px] font-semibold text-slate-800 truncate">
+                          {m.label}
+                          {order.bodyPart ? ` · ${order.bodyPart}` : ""}
+                        </p>
+                        <span className="text-[11.5px] font-mono text-slate-400">
+                          {order.orderNumber}
+                        </span>
+                      </div>
+
+                      <p className="text-[12.5px] text-slate-400 mt-0.5 truncate">
+                        {order.visitNumber}
+                        {order.chiefComplaint ? ` · ${order.chiefComplaint}` : ""}
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                      <span
+                        className="px-2 py-0.5 rounded-full text-[11px] font-bold"
+                        style={{ background: u.bg, color: u.color }}
+                      >
+                        {u.label}
                       </span>
 
-                      <div
-                        className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                        style={{ background: m.bg }}
-                      >
-                        <Scan className="w-4 h-4" style={{ color: m.color }} />
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-sm font-semibold text-gray-900">
-                            {m.label}
-                            {order.bodyPart ? ` — ${order.bodyPart}` : ""}
-                          </p>
-                          <span className="font-mono text-xs text-gray-400">
-                            {order.visitNumber || order.orderNumber}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-400 truncate mt-0.5 max-w-xs">
-                          {order.indication}
-                        </p>
-                      </div>
-
-                      <div className="hidden sm:flex flex-col items-end gap-1.5 flex-shrink-0">
-                        <span
-                          className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                          style={{
-                            background: u.bg,
-                            color: u.color,
-                            border: `1px solid ${u.border}`,
-                          }}
-                        >
-                          {u.label}
-                        </span>
-                        <span className="text-xs flex items-center gap-1 text-gray-400">
-                          <Clock className="w-3 h-3" />{" "}
-                          {timeSince(order.orderedAt)}
-                        </span>
-                      </div>
-
-                      <ChevronRight className="w-4 h-4 text-gray-200 group-hover:text-green-600 transition-colors flex-shrink-0" />
-                    </button>
-                  );
-                })}
-                {sortedPending.length > 7 && (
-                  <button
-                    onClick={() => router.push("/dashboard/radiology/queue")}
-                    className="w-full flex items-center justify-center gap-2 px-5 py-3.5 text-sm font-semibold hover:bg-gray-50 transition-colors"
-                    style={{ color: "#166534" }}
-                  >
-                    View {sortedPending.length - 7} more{" "}
-                    <ChevronRight className="w-4 h-4" />
+                      <span className="text-[11.5px] text-slate-400 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {timeSince(order.orderedAt)}
+                        <ChevronRight className="w-3 h-3 text-slate-300 group-hover:text-emerald-600" />
+                      </span>
+                    </div>
                   </button>
-                )}
-              </div>
-            )}
-          </div>
+                );
+              })}
+
+              {sortedPending.length > 8 && (
+                <button
+                  onClick={() => router.push("/dashboard/radiology/queue")}
+                  className="w-full py-3 text-[12.5px] font-semibold text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5 border-t border-slate-50"
+                >
+                  +{sortedPending.length - 8} more
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </>
+          )}
+        </Panel>
+
+        <div className="space-y-4">
+          <Panel>
+            <PanelHeader title="My Performance" icon={TrendingUp} />
+            <div className="grid grid-cols-2 divide-x divide-y divide-slate-100">
+              {[
+                {
+                  label: "This month",
+                  value: myStats?.monthReports ?? 0,
+                  cls: "text-emerald-700",
+                },
+                {
+                  label: "Today",
+                  value: myStats?.todayReports ?? 0,
+                  cls: "text-blue-700",
+                },
+                {
+                  label: "Avg turnaround",
+                  value: formatTA(myStats?.avgTurnaroundMinutes ?? 0),
+                  cls: "text-violet-700",
+                },
+                {
+                  label: "Top modality",
+                  value: topModality,
+                  cls: "text-amber-700",
+                },
+              ].map(({ label, value, cls }) => (
+                <div key={label} className="p-4">
+                  <p
+                    className={`text-[20px] font-bold leading-none truncate ${cls}`}
+                  >
+                    {loading ? "—" : value}
+                  </p>
+                  <p className="text-[11.5px] text-slate-400 mt-1.5">{label}</p>
+                </div>
+              ))}
+            </div>
+          </Panel>
+
+          <Panel>
+            <PanelHeader title="Quick Actions" icon={ArrowRight} />
+            <div className="p-3 space-y-2">
+              {[
+                {
+                  label: "Worklist",
+                  href: "/dashboard/radiology/queue",
+                  icon: Scan,
+                  cls: "bg-amber-50 text-amber-600",
+                },
+                {
+                  label: "Patients",
+                  href: "/dashboard/radiology/patients",
+                  icon: Users,
+                  cls: "bg-blue-50 text-blue-600",
+                },
+                {
+                  label: "My Report",
+                  href: "/dashboard/radiology/report",
+                  icon: ScrollText,
+                  cls: "bg-emerald-50 text-emerald-600",
+                },
+              ].map(({ label, href, icon: Icon, cls }) => (
+                <button
+                  key={href}
+                  onClick={() => router.push(href)}
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-200 text-left hover:border-emerald-200 hover:shadow-sm transition-all group"
+                >
+                  <div
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${cls}`}
+                  >
+                    <Icon className="w-4 h-4" />
+                  </div>
+
+                  <p className="flex-1 text-[13px] font-semibold text-slate-800">
+                    {label}
+                  </p>
+
+                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 transition-colors" />
+                </button>
+              ))}
+            </div>
+          </Panel>
         </div>
-      </div>
+      </section>
     </div>
   );
 }
