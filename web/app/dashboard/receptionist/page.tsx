@@ -8,27 +8,49 @@ import {
   Users,
   ClipboardList,
   Clock,
-  AlertCircle,
   Activity,
-  ChevronRight,
   Zap,
   RefreshCw,
   User,
   UserCheck,
-  Loader2,
-  Building2,
-  TrendingUp,
-  ArrowRight,
   Droplets,
+  QrCode,
+  Calendar,
+  AlertTriangle,
+  CheckCircle2,
+  Plus,
+  ChevronRight,
 } from "lucide-react";
-import { formatDistanceToNow, format, getHours } from "date-fns";
+import { format, getHours } from "date-fns";
 import {
+  Page,
+  PageHeader,
+  Card,
+  CardHeader,
   KpiCard,
-  Panel,
-  PanelHeader,
+  KpiGrid,
+  Pill,
+  Avatar,
+  Button,
+  LinkAction,
+  Banner,
   EmptyState,
-  PageHeading,
-} from "@/components/dashboard/primitives";
+  SkeletonRow,
+  SkeletonBlock,
+  SectionLabel,
+  hoverRow,
+  TONES,
+  type Tone,
+} from "@/components/dashboard/ui";
+
+/* ==========================================================================
+   Receptionist overview.
+
+   Styling follows the HealthChain design system imported from claude.ai/design
+   ("MedLink EMR Sidebar Layout"). Layout primitives live in
+   components/dashboard/ui.tsx; only the two charts and the queue row below are
+   specific enough to this page to stay local.
+   ========================================================================== */
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface QueueItem {
@@ -66,86 +88,13 @@ interface Nurse {
   lastSeenAt: string | null;
 }
 
-// ── Design tokens ─────────────────────────────────────────────────────────────
-const T = {
-  forest: "#052e16",
-  forestMid: "#064e23",
-  green: "#16a34a",
-  greenLight: "#86efac",
-  greenGhost: "#f0fdf4",
-  ink: "#0a0f0d",
-  inkSoft: "#374151",
-  inkMuted: "#6b7280",
-  inkFaint: "#e5e7eb",
-  white: "#ffffff",
-  amber: "#f59e0b",
-  amberLight: "#fef3c7",
-  coral: "#ef4444",
-  coralLight: "#fef2f2",
-  blue: "#2563eb",
-  blueLight: "#eff6ff",
-  violet: "#7c3aed",
-  violetLight: "#faf5ff",
-  border: "#f3f4f6",
-  bg: "#f8faf9",
+const PRIORITY: Record<string, { tone: Tone; label: string }> = {
+  critical: { tone: "accent", label: "Critical" },
+  emergency: { tone: "critical", label: "Emergency" },
+  urgent: { tone: "urgent", label: "Urgent" },
+  routine: { tone: "success", label: "Routine" },
 };
-
-const PRIORITY: Record<
-  string,
-  { color: string; bg: string; border: string; dot: string; label: string }
-> = {
-  routine: {
-    color: T.green,
-    bg: T.greenGhost,
-    border: "#bbf7d0",
-    dot: T.green,
-    label: "Routine",
-  },
-  urgent: {
-    color: "#b45309",
-    bg: T.amberLight,
-    border: "#fde68a",
-    dot: T.amber,
-    label: "Urgent",
-  },
-  emergency: {
-    color: T.coral,
-    bg: T.coralLight,
-    border: "#fecaca",
-    dot: T.coral,
-    label: "Emergency",
-  },
-  critical: {
-    color: T.violet,
-    bg: T.violetLight,
-    border: "#e9d5ff",
-    dot: T.violet,
-    label: "Critical",
-  },
-};
-
-const BLOOD: Record<string, string> = {
-  "A+": "#3b82f6",
-  "A-": "#6366f1",
-  "B+": "#8b5cf6",
-  "B-": "#ec4899",
-  "AB+": "#f59e0b",
-  "AB-": "#ef4444",
-  "O+": "#10b981",
-  "O-": "#14b8a6",
-};
-
-function getInitials(name: string) {
-  return (
-    name
-      .split(" ")
-      .filter(Boolean)
-      .map((n) => n[0])
-      .join("")
-      .slice(0, 2)
-      .toUpperCase() || "?"
-  );
-}
+const getP = (p: string) => PRIORITY[p] ?? PRIORITY.routine;
 
 function getPatientName(item: QueueItem) {
   if (item.patientName) return item.patientName;
@@ -153,19 +102,28 @@ function getPatientName(item: QueueItem) {
   return "Unknown Patient";
 }
 
-// ── SVG Sparkline area chart ──────────────────────────────────────────────────
-function VisitSparkline({ queue }: { queue: QueueItem[] }) {
-  const W = 340,
-    H = 72;
-  const SLOTS = 12; // 06:00 – 18:00, one per hour
+const waitMinutes = (iso: string) =>
+  Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
 
-  // Bucket visits by hour of day (06 – 17)
+const waitLabel = (m: number) =>
+  m < 60 ? `${m}m` : `${Math.floor(m / 60)}h ${m % 60}m`;
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Arrivals sparkline — check-ins bucketed by hour, 06:00–18:00.
+   Hand-built SVG rather than a chart library: a single series over a fixed
+   domain would cost more to configure than to draw.
+   ────────────────────────────────────────────────────────────────────────── */
+function ArrivalsChart({ queue }: { queue: QueueItem[] }) {
+  const SLOTS = 12; // one point per hour, 06:00 – 17:00
+  const W = 320;
+  const H = 96;
+
   const buckets = useMemo(() => {
     const b = Array(SLOTS).fill(0);
     queue.forEach((v) => {
       const h = getHours(new Date(v.admissionDate));
-      const idx = Math.min(Math.max(h - 6, 0), SLOTS - 1);
-      b[idx]++;
+      // Anything outside the clinic day is clamped onto the nearest end.
+      b[Math.min(Math.max(h - 6, 0), SLOTS - 1)]++;
     });
     return b;
   }, [queue]);
@@ -175,129 +133,84 @@ function VisitSparkline({ queue }: { queue: QueueItem[] }) {
   const gW = W - pad.l - pad.r;
   const gH = H - pad.t - pad.b;
 
-  // Build SVG path
   const pts = buckets.map((v, i) => ({
     x: pad.l + (i / (SLOTS - 1)) * gW,
     y: pad.t + gH - (v / maxVal) * gH,
   }));
 
-  const linePath = pts
+  const line = pts
     .map((p, i) => `${i === 0 ? "M" : "L"}${p.x.toFixed(1)},${p.y.toFixed(1)}`)
     .join(" ");
-  const areaPath = `${linePath} L${pts[pts.length - 1].x.toFixed(1)},${(pad.t + gH).toFixed(1)} L${pts[0].x.toFixed(1)},${(pad.t + gH).toFixed(1)} Z`;
+  const area = `${line} L${pts[pts.length - 1].x.toFixed(1)},${(pad.t + gH).toFixed(1)} L${pts[0].x.toFixed(1)},${(pad.t + gH).toFixed(1)} Z`;
 
-  const currentHour = getHours(new Date());
-  const nowX =
-    pad.l +
-    (Math.min(Math.max(currentHour - 6, 0), SLOTS - 1) / (SLOTS - 1)) * gW;
-
-  const hourLabels = ["6am", "8am", "10am", "12pm", "2pm", "4pm", "6pm"];
-  const labelIndices = [0, 2, 4, 6, 8, 10, 12];
+  const hour = getHours(new Date());
+  const nowX = pad.l + (Math.min(Math.max(hour - 6, 0), SLOTS - 1) / (SLOTS - 1)) * gW;
 
   return (
-    <div>
-      <svg
-        width="100%"
-        viewBox={`0 0 ${W} ${H + 14}`}
-        preserveAspectRatio="none"
-        style={{ overflow: "visible" }}
-      >
-        <defs>
-          <linearGradient id="sparkGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor={T.green} stopOpacity="0.18" />
-            <stop offset="100%" stopColor={T.green} stopOpacity="0" />
-          </linearGradient>
-        </defs>
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      width="100%"
+      height={H}
+      preserveAspectRatio="none"
+      style={{ display: "block", overflow: "visible" }}
+    >
+      <defs>
+        <linearGradient id="hcFlow" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="var(--green-700)" stopOpacity="0.22" />
+          <stop offset="100%" stopColor="var(--green-700)" stopOpacity="0" />
+        </linearGradient>
+      </defs>
 
-        {/* Grid lines */}
-        {[0.25, 0.5, 0.75, 1].map((f) => (
-          <line
-            key={f}
-            x1={pad.l}
-            y1={pad.t + gH - f * gH}
-            x2={W - pad.r}
-            y2={pad.t + gH - f * gH}
-            stroke={T.inkFaint}
-            strokeWidth="0.5"
-            strokeDasharray="3 3"
+      {[24, 48, 72].map((y) => (
+        <line key={y} x1="4" y1={y} x2={W - 4} y2={y} stroke="var(--border-100)" strokeWidth="1" />
+      ))}
+
+      <path d={area} fill="url(#hcFlow)" />
+      <path
+        d={line}
+        fill="none"
+        stroke="var(--green-700)"
+        strokeWidth="1.75"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {pts.map((p, i) =>
+        buckets[i] > 0 ? (
+          <circle
+            key={i}
+            cx={p.x}
+            cy={p.y}
+            r="2.5"
+            fill="var(--white)"
+            stroke="var(--green-700)"
+            strokeWidth="1.5"
           />
-        ))}
+        ) : null,
+      )}
 
-        {/* Area fill */}
-        <path d={areaPath} fill="url(#sparkGrad)" />
-
-        {/* Line */}
-        <path
-          d={linePath}
-          fill="none"
-          stroke={T.green}
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+      {/* "You are here" marker, drawn only during clinic hours. */}
+      {hour >= 6 && hour <= 18 && (
+        <line
+          x1={nowX}
+          y1={pad.t}
+          x2={nowX}
+          y2={pad.t + gH}
+          stroke="var(--coral-500)"
+          strokeWidth="1"
+          strokeDasharray="3 2"
+          opacity="0.55"
         />
-
-        {/* Data dots */}
-        {pts.map(
-          (p, i) =>
-            buckets[i] > 0 && (
-              <circle
-                key={i}
-                cx={p.x}
-                cy={p.y}
-                r="2.5"
-                fill={T.white}
-                stroke={T.green}
-                strokeWidth="1.5"
-              />
-            ),
-        )}
-
-        {/* Now line */}
-        {currentHour >= 6 && currentHour <= 18 && (
-          <>
-            <line
-              x1={nowX}
-              y1={pad.t}
-              x2={nowX}
-              y2={pad.t + gH}
-              stroke={T.coral}
-              strokeWidth="1"
-              strokeDasharray="3 2"
-              opacity="0.6"
-            />
-            <text
-              x={nowX + 3}
-              y={pad.t + 7}
-              fontSize="7"
-              fill={T.coral}
-              opacity="0.7"
-            >
-              now
-            </text>
-          </>
-        )}
-
-        {/* Hour labels */}
-        {labelIndices.map((idx, i) => (
-          <text
-            key={idx}
-            x={pad.l + (idx / (SLOTS - 1)) * gW}
-            y={H + 11}
-            fontSize="8"
-            fill={T.inkMuted}
-            textAnchor="middle"
-          >
-            {hourLabels[i]}
-          </text>
-        ))}
-      </svg>
-    </div>
+      )}
+    </svg>
   );
 }
 
-// ── Donut chart ───────────────────────────────────────────────────────────────
-// Only the active queue is available from /api/visits/today, so the donut
-// splits it by triage state rather than including a discharged slice.
+/* ──────────────────────────────────────────────────────────────────────────
+   Visit status donut. Only the ACTIVE queue is available from
+   /api/visits/today, so this splits by triage state — there is deliberately
+   no discharged slice, because that endpoint excludes completed visits.
+   ────────────────────────────────────────────────────────────────────────── */
 function StatusDonut({
   waiting,
   inProgress,
@@ -307,87 +220,84 @@ function StatusDonut({
   inProgress: number;
   total: number;
 }) {
-  const R = 28,
-    CX = 36,
-    CY = 36,
-    STROKE = 7;
-  const circumference = 2 * Math.PI * R;
+  const R = 34;
+  const C = 2 * Math.PI * R;
 
   const segments = [
-    { value: inProgress, color: T.blue, label: "In care" },
-    { value: waiting, color: T.amber, label: "Waiting" },
+    { value: inProgress, color: "var(--green-700)", label: "In care" },
+    { value: waiting, color: "var(--amber-500)", label: "Waiting" },
   ];
 
+  // Each arc starts where the previous one ended.
   let offset = 0;
   const arcs = segments.map((s) => {
-    const frac = total > 0 ? s.value / total : 0;
-    const dash = frac * circumference;
-    const gap = circumference - dash;
-    const start = offset;
+    const dash = (total > 0 ? s.value / total : 0) * C;
+    const arc = { ...s, dash: `${dash} ${C - dash}`, offset: -offset };
     offset += dash;
-    return { ...s, dash, gap, start };
+    return arc;
   });
 
   return (
-    <div className="flex items-center gap-4">
-      <svg width="72" height="72">
-        <circle
-          cx={CX}
-          cy={CY}
-          r={R}
-          fill="none"
-          stroke={T.inkFaint}
-          strokeWidth={STROKE}
-        />
-        {arcs.map((arc, i) => (
+    <div className="flex items-center" style={{ gap: 18 }}>
+      <svg width="88" height="88" viewBox="0 0 88 88" style={{ display: "block", flexShrink: 0 }}>
+        <circle cx="44" cy="44" r={R} fill="none" stroke="var(--surface-sunken)" strokeWidth="10" />
+        {arcs.map((a) => (
           <circle
-            key={i}
-            cx={CX}
-            cy={CY}
+            key={a.label}
+            cx="44"
+            cy="44"
             r={R}
             fill="none"
-            stroke={arc.color}
-            strokeWidth={STROKE}
-            strokeDasharray={`${arc.dash} ${arc.gap}`}
-            strokeDashoffset={-arc.start}
-            style={{
-              transform: "rotate(-90deg)",
-              transformOrigin: `${CX}px ${CY}px`,
-            }}
+            stroke={a.color}
+            strokeWidth="10"
+            strokeDasharray={a.dash}
+            strokeDashoffset={a.offset}
+            strokeLinecap="butt"
+            style={{ transform: "rotate(-90deg)", transformOrigin: "44px 44px" }}
           />
         ))}
         <text
-          x={CX}
-          y={CY + 1}
+          x="44"
+          y="42"
           textAnchor="middle"
-          dominantBaseline="middle"
-          fontSize="13"
-          fontWeight="800"
-          fill={T.ink}
+          fontSize="19"
+          fontWeight="700"
+          fontFamily="var(--font-sans)"
+          fill="var(--text-primary)"
         >
           {total}
         </text>
         <text
-          x={CX}
-          y={CY + 12}
+          x="44"
+          y="55"
           textAnchor="middle"
-          fontSize="6.5"
-          fill={T.inkMuted}
+          fontSize="8.5"
+          fontFamily="var(--font-sans)"
+          fill="var(--text-muted)"
         >
           visits
         </text>
       </svg>
-      <div className="space-y-1.5">
+
+      <div className="flex-1 flex flex-col" style={{ gap: 10 }}>
         {segments.map((s) => (
-          <div key={s.label} className="flex items-center gap-2">
+          <div key={s.label} className="flex items-center" style={{ gap: 8 }}>
             <span
-              className="w-2 h-2 rounded-full flex-shrink-0"
-              style={{ background: s.color }}
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: s.color,
+                flexShrink: 0,
+              }}
             />
-            <span className="text-[13px] text-gray-500 font-medium w-12">
+            <span
+              className="flex-1 truncate"
+              style={{ font: "500 12.5px/1 var(--font-sans)", color: "var(--text-secondary)" }}
+            >
               {s.label}
             </span>
-            <span className="text-[13px] font-bold text-gray-800 tabular-nums">
+            <span style={{ font: "700 13px/1 var(--font-sans)", color: "var(--text-primary)" }}>
               {s.value}
             </span>
           </div>
@@ -397,7 +307,10 @@ function StatusDonut({
   );
 }
 
-// ── Queue row ─────────────────────────────────────────────────────────────────
+/* Shared grid template for the live-queue header and its rows. */
+const GRID = "16px 38px minmax(150px, 1fr) 84px 116px 104px";
+
+/* ── Queue row ────────────────────────────────────────────────────────────── */
 function QueueRow({
   item,
   idx,
@@ -417,189 +330,242 @@ function QueueRow({
   showDropdownFor: string | null;
   setShowDropdownFor: (id: string | null) => void;
 }) {
-  const p = PRIORITY[item.priority] ?? PRIORITY.routine;
-  const isActive = item.status === "in-progress";
-  const isWaiting = !item.hasVitals;
+  const p = getP(item.priority);
+  const dot = TONES[p.tone].dot;
   const name = getPatientName(item);
-  const bloodType = item.patient?.bloodType;
-  const waitMins = Math.floor(
-    (Date.now() - new Date(item.admissionDate).getTime()) / 60_000,
-  );
+  const blood = item.patient?.bloodType;
+  const mins = waitMinutes(item.admissionDate);
+  const isWaiting = !item.hasVitals;
+  const needsNurse = !item.assignedNurseId;
+
+  /* Long waits earn colour; ordinary ones stay quiet so the exceptions read. */
+  const waitInk =
+    mins >= 60
+      ? "var(--critical-ink)"
+      : mins >= 30
+        ? "var(--urgent-ink)"
+        : "var(--text-secondary)";
 
   return (
     <div
-      className="group grid items-center gap-3 px-5 py-3 border-b border-gray-50 last:border-0 hover:bg-gray-50/70 transition-colors cursor-pointer"
-      style={{ gridTemplateColumns: "20px 36px 1fr 80px 72px 88px" }}
-      onClick={() => onOpen(item.id)}
+      className="grid items-center"
+      style={{
+        gridTemplateColumns: GRID,
+        gap: 14,
+        padding: "12px 20px",
+        borderBottom: "1px solid var(--border-faint)",
+        transition: "background var(--dur-fast) var(--ease-standard)",
+      }}
+      {...hoverRow}
     >
-      {/* Priority indicator */}
-      <div className="flex items-center justify-center">
-        <span className="relative flex h-2 w-2">
-          {(isActive || item.priority === "critical") && (
-            <span
-              className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-40"
-              style={{ background: p.dot }}
-            />
-          )}
+      {/* Priority dot — pulses only while the patient is still untriaged. */}
+      <span className="relative flex justify-self-center" style={{ width: 8, height: 8 }}>
+        {isWaiting && (
           <span
-            className="relative inline-flex rounded-full h-2 w-2"
-            style={{ background: p.dot }}
+            className="absolute inset-0 rounded-full"
+            style={{
+              background: dot,
+              animation: "hcPing 2.4s cubic-bezier(0,0,0.2,1) infinite",
+            }}
           />
-        </span>
-      </div>
+        )}
+        <span
+          className="relative rounded-full"
+          style={{ width: 8, height: 8, background: dot }}
+        />
+      </span>
 
-      {/* Avatar */}
-      <div
-        className="w-8 h-8 rounded-xl flex items-center justify-center text-[13px] font-bold text-white flex-shrink-0"
-        style={{ background: `${p.dot}cc` }}
-      >
-        {getInitials(name)}
-      </div>
+      <Avatar name={name} seed={idx} />
 
-      {/* Info */}
-      <div className="min-w-0">
-        <div className="flex items-center gap-2 mb-0.5">
-          <p className="text-[15px] font-semibold text-gray-900 truncate">{name}</p>
-          {bloodType && bloodType !== "unknown" && (
+      <div className="min-w-0 flex flex-col" style={{ gap: 4 }}>
+        <div className="flex items-center min-w-0" style={{ gap: 8 }}>
+          <button
+            onClick={() => onOpen(item.id)}
+            className="truncate text-left"
+            style={{
+              margin: 0,
+              border: "none",
+              background: "transparent",
+              padding: 0,
+              cursor: "pointer",
+              font: "600 14px/1.2 var(--font-sans)",
+              color: "var(--text-primary)",
+            }}
+          >
+            {name}
+          </button>
+
+          {blood && (
             <span
-              className="text-[10.5px] font-bold px-1.5 py-0.5 rounded-full text-white flex-shrink-0 flex items-center gap-0.5"
-              style={{ background: BLOOD[bloodType] ?? "#6b7280" }}
+              className="inline-flex items-center flex-shrink-0"
+              style={{
+                gap: 3,
+                height: 18,
+                padding: "0 7px",
+                borderRadius: "var(--r-pill)",
+                background: "var(--surface-sunken)",
+                color: "var(--text-secondary)",
+                font: "700 10px/1 var(--font-mono)",
+              }}
             >
-              <Droplets className="w-2 h-2" />
-              {bloodType}
+              <Droplets className="w-[10px] h-[10px]" />
+              {blood}
+            </span>
+          )}
+
+          <span
+            className="flex-shrink-0"
+            style={{ font: "500 11px/1 var(--font-mono)", color: "var(--text-disabled)" }}
+          >
+            {item.visitNumber}
+          </span>
+        </div>
+
+        <div className="flex items-center min-w-0" style={{ gap: 8 }}>
+          <p
+            className="truncate"
+            style={{
+              margin: 0,
+              font: "400 12.5px/1.2 var(--font-sans)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            {item.chiefComplaint || "No chief complaint recorded"}
+          </p>
+
+          {item.assignedNurseName && (
+            <span
+              className="inline-flex items-center flex-shrink-0"
+              style={{ gap: 4, font: "500 11.5px/1 var(--font-sans)", color: "var(--green-800)" }}
+            >
+              <CheckCircle2 className="w-3 h-3" />
+              {item.assignedNurseName}
             </span>
           )}
         </div>
-        <p className="text-[13px] text-gray-400 truncate">
-          {item.chiefComplaint || "—"}
-        </p>
-        {item.assignedNurseName && (
-          <p className="text-[13px] text-green-600 mt-0.5 flex items-center gap-1">
-            <UserCheck className="w-2.5 h-2.5" />
-            {item.assignedNurseName}
-          </p>
-        )}
       </div>
 
-      {/* Wait time */}
-      <div className="text-right">
-        <p
-          className="text-[13px] font-semibold tabular-nums"
-          style={{
-            color:
-              waitMins > 60 ? T.coral : waitMins > 30 ? T.amber : T.inkMuted,
-          }}
-        >
-          {waitMins < 60
-            ? `${waitMins}m`
-            : `${Math.floor(waitMins / 60)}h${waitMins % 60}m`}
+      <div className="text-right flex flex-col" style={{ gap: 4 }}>
+        <p style={{ margin: 0, font: "600 13px/1 var(--font-mono)", color: waitInk }}>
+          {waitLabel(mins)}
         </p>
-        <p className="text-[11.5px] text-gray-300">
+        <p style={{ margin: 0, font: "400 11px/1 var(--font-mono)", color: "var(--text-disabled)" }}>
           {format(new Date(item.admissionDate), "HH:mm")}
         </p>
       </div>
 
-      {/* Priority pill */}
-      <span
-        className="text-[11.5px] font-bold px-2 py-1 rounded-full text-center capitalize leading-none"
-        style={{
-          background: p.bg,
-          color: p.color,
-          border: `1px solid ${p.border}`,
-        }}
-      >
+      <Pill tone={p.tone} style={{ justifySelf: "start" }}>
         {p.label}
-      </span>
+      </Pill>
 
-      {/* Action */}
-      <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
-        {isWaiting ? (
-          <div className="relative">
-            {showDropdownFor === item.id ? (
-              <div className="absolute right-0 top-0 mt-8 z-20 bg-white rounded-xl shadow-xl border border-slate-200 w-48">
-                <div className="p-2">
-                  <p className="text-[11.5px] font-bold uppercase tracking-widest text-gray-400 px-2 py-1">
-                    Assign nurse
-                  </p>
+      <div className="relative flex justify-end">
+        {needsNurse ? (
+          <>
+            <Button
+              size="sm"
+              icon={assigningVisitId === item.id ? undefined : UserCheck}
+              loading={assigningVisitId === item.id}
+              onClick={() =>
+                setShowDropdownFor(showDropdownFor === item.id ? null : item.id)
+              }
+            >
+              Assign
+            </Button>
+
+            {showDropdownFor === item.id && (
+              <div
+                className="absolute right-0 z-20"
+                style={{
+                  top: 34,
+                  width: 200,
+                  background: "var(--surface-card)",
+                  borderRadius: "var(--r-sm)",
+                  border: "1px solid var(--hc-border)",
+                  boxShadow: "var(--elev-3)",
+                  overflow: "hidden",
+                }}
+              >
+                <SectionLabel
+                  style={{ padding: "9px 12px", borderBottom: "1px solid var(--border-faint)" }}
+                >
+                  Assign nurse
+                </SectionLabel>
+
+                <div style={{ maxHeight: 200, overflowY: "auto", padding: 4 }}>
                   {onlineNurses.length === 0 ? (
-                    <p className="text-[13px] text-gray-400 px-2 py-2">
+                    <p
+                      style={{
+                        margin: 0,
+                        padding: "14px 12px",
+                        textAlign: "center",
+                        font: "400 12.5px/1.3 var(--font-sans)",
+                        color: "var(--text-muted)",
+                      }}
+                    >
                       No nurses online
                     </p>
                   ) : (
                     onlineNurses.map((nurse) => (
                       <button
                         key={nurse.id}
-                        onClick={() => {
-                          setShowDropdownFor(null);
-                          assignNurse(item.id, nurse.id);
+                        onClick={() => assignNurse(item.id, nurse.id)}
+                        className="w-full flex items-center text-left"
+                        style={{
+                          gap: 9,
+                          padding: "8px 9px",
+                          border: "none",
+                          borderRadius: "var(--r-xs)",
+                          background: "transparent",
+                          cursor: "pointer",
                         }}
-                        disabled={assigningVisitId === item.id}
-                        className="w-full text-left px-2 py-2 text-[15px] rounded-lg hover:bg-gray-50 flex items-center gap-2 transition-colors"
+                        {...hoverRow}
                       >
-                        <div className="w-6 h-6 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
-                          <span className="text-[10.5px] font-bold text-green-700">
-                            {nurse.firstName[0]}
-                            {nurse.lastName[0]}
-                          </span>
-                        </div>
-                        <span className="font-medium text-gray-800">
+                        <Avatar
+                          name={`${nurse.firstName} ${nurse.lastName}`}
+                          size={26}
+                          seed={1}
+                        />
+                        <span
+                          className="flex-1 min-w-0 truncate"
+                          style={{
+                            font: "500 12.5px/1 var(--font-sans)",
+                            color: "var(--text-primary)",
+                          }}
+                        >
                           {nurse.firstName} {nurse.lastName}
                         </span>
-                        {assigningVisitId === item.id && (
-                          <Loader2 className="w-3 h-3 animate-spin ml-auto text-gray-400" />
-                        )}
                       </button>
                     ))
                   )}
-                  <div className="border-t border-slate-100 mt-1 pt-1">
-                    <button
-                      onClick={() => setShowDropdownFor(null)}
-                      className="w-full text-[13px] text-gray-400 px-2 py-1.5 hover:bg-gray-50 rounded-lg text-left"
-                    >
-                      Cancel
-                    </button>
-                  </div>
                 </div>
+
+                <button
+                  onClick={() => setShowDropdownFor(null)}
+                  className="w-full"
+                  style={{
+                    padding: 8,
+                    border: "none",
+                    borderTop: "1px solid var(--border-faint)",
+                    background: "transparent",
+                    font: "500 11.5px/1 var(--font-sans)",
+                    color: "var(--text-muted)",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
               </div>
-            ) : (
-              <button
-                onClick={() => setShowDropdownFor(item.id)}
-                disabled={assigningVisitId === item.id}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[13px] font-semibold transition-all border"
-                style={{
-                  background: T.violetLight,
-                  color: T.violet,
-                  borderColor: "#e9d5ff",
-                }}
-              >
-                {assigningVisitId === item.id ? (
-                  <Loader2 className="w-3 h-3 animate-spin" />
-                ) : (
-                  <User className="w-3 h-3" />
-                )}
-                Assign
-              </button>
             )}
-          </div>
+          </>
         ) : (
-          <button
-            onClick={() => onOpen(item.id)}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[13px] font-semibold transition-all"
-            style={{
-              background: T.greenGhost,
-              color: T.green,
-              border: "1px solid #bbf7d0",
-            }}
-          >
-            Open <ArrowRight className="w-3 h-3" />
-          </button>
+          <LinkAction onClick={() => onOpen(item.id)}>Open</LinkAction>
         )}
       </div>
     </div>
   );
 }
 
-// ── Main page ─────────────────────────────────────────────────────────────────
+/* ── Page ─────────────────────────────────────────────────────────────────── */
 export default function ReceptionistOverviewPage() {
   const router = useRouter();
   const { user } = useAuthStore();
@@ -611,15 +577,10 @@ export default function ReceptionistOverviewPage() {
   const [onlineNurses, setOnlineNurses] = useState<Nurse[]>([]);
   const [assigningId, setAssigningId] = useState<string | null>(null);
   const [dropdownFor, setDropdownFor] = useState<string | null>(null);
-  const [mounted, setMounted] = useState(false);
 
   const institutionName = (user as any)?.institutionName ?? null;
   const institutionId = (user as any)?.institutionId ?? null;
   const hasInstitution = !!institutionName || !!institutionId;
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const fetchData = useCallback(async (silent = false) => {
     if (silent) setRefreshing(true);
@@ -659,12 +620,9 @@ export default function ReceptionistOverviewPage() {
   }, [fetchData]);
 
   /*
-   * Derived counts.
-   *
-   * /api/visits/today returns only status === "in-progress", so filtering on
-   * "waiting" or "completed"/"discharged" always produced 0 — the Waiting and
-   * Discharged figures were permanently blank. Triage state is what separates
-   * them in practice, so "waiting" means checked in but not yet triaged.
+   * Derived counts. /api/visits/today returns only status === "in-progress",
+   * so filtering on "waiting" or "completed" always produced 0 — triage state
+   * is what separates them in practice.
    */
   const waiting = queue.filter((q) => !q.hasVitals).length;
   const inProgress = queue.filter((q) => q.hasVitals).length;
@@ -672,369 +630,355 @@ export default function ReceptionistOverviewPage() {
     ["critical", "emergency"].includes(q.priority),
   ).length;
 
-  // Every visit this endpoint returns is active, so the queue is the whole set.
   const liveQueue = useMemo(
     () =>
-      [...queue]
-        .sort((a, b) => {
-          const o: Record<string, number> = {
-            critical: 0,
-            emergency: 1,
-            urgent: 2,
-            routine: 3,
-          };
-          return (o[a.priority] ?? 9) - (o[b.priority] ?? 9);
-        }),
+      [...queue].sort((a, b) => {
+        const o: Record<string, number> = {
+          critical: 0,
+          emergency: 1,
+          urgent: 2,
+          routine: 3,
+        };
+        const po = (o[a.priority] ?? 9) - (o[b.priority] ?? 9);
+        if (po !== 0) return po;
+        // Within a priority band, longest wait first.
+        return (
+          new Date(a.admissionDate).getTime() - new Date(b.admissionDate).getTime()
+        );
+      }),
     [queue],
   );
 
-  // Hourly throughput for last 6 hours (for the bar mini-chart)
-  const hourlyBars = useMemo(() => {
-    const now = new Date();
-    const bars: { label: string; count: number }[] = [];
-    for (let i = 5; i >= 0; i--) {
-      const h = new Date(now);
-      h.setHours(h.getHours() - i, 0, 0, 0);
-      const label = format(h, "HH:mm");
-      const count = queue.filter((v) => {
-        const vh = new Date(v.admissionDate);
-        return vh >= h && vh < new Date(h.getTime() + 3_600_000);
-      }).length;
-      bars.push({ label, count });
-    }
-    return bars;
-  }, [queue]);
-  const barMax = Math.max(...hourlyBars.map((b) => b.count), 1);
+  const untriagedUrgent = queue.filter(
+    (q) => !q.hasVitals && ["critical", "emergency", "urgent"].includes(q.priority),
+  ).length;
+
+  const openVisit = (id: string) =>
+    router.push(`/dashboard/receptionist/visits/${id}`);
 
   return (
-    <div className="w-full max-w-[1280px] mx-auto pb-8">
-      <PageHeading
-        eyebrow="Front Desk"
+    <Page>
+      <PageHeader
+        eyebrow="Front desk"
         title={hasInstitution ? institutionName : "No institution assigned"}
+        subtitle={
+          <>
+            {loading
+              ? "Loading today's queue…"
+              : `${queue.length} encounter${queue.length !== 1 ? "s" : ""} today · queue auto-refreshes every 30 seconds`}
+            {lastUpdated && !loading ? ` · updated ${format(lastUpdated, "HH:mm")}` : ""}
+          </>
+        }
         actions={
           <>
-            <button
+            <Button
+              variant="primary"
+              icon={Plus}
               onClick={() => router.push("/dashboard/receptionist/visits/new")}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[13px] font-semibold shadow-sm transition-colors"
             >
-              <UserPlus className="w-3.5 h-3.5" />
-              New Visit
-            </button>
-
-            <button
+              New visit
+            </Button>
+            <Button
+              icon={User}
               onClick={() => router.push("/dashboard/receptionist/register")}
-              className="hidden sm:inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:border-emerald-200 text-slate-700 text-[13px] font-semibold transition-colors"
             >
-              <User className="w-3.5 h-3.5" />
-              Register Patient
-            </button>
-
-            <button
+              Register patient
+            </Button>
+            <Button
+              icon={RefreshCw}
               onClick={() => fetchData(true)}
               disabled={refreshing}
-              className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40"
-            >
-              <RefreshCw
-                className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`}
-              />
-            </button>
+              style={{ padding: 0, width: 38 }}
+            />
           </>
         }
       />
 
-      {/* Urgent arrivals are the one thing that cannot wait for a scroll. */}
-      {!loading && urgent > 0 && (
-        <button
+      {/* Urgent arrivals still awaiting triage — the one thing that cannot wait. */}
+      {!loading && untriagedUrgent > 0 && (
+        <Banner
+          tone="critical"
+          icon={AlertTriangle}
           onClick={() => router.push("/dashboard/receptionist/queue")}
-          className="w-full flex items-center gap-3 p-4 rounded-2xl mb-5 bg-red-50 border border-red-200 text-left hover:bg-red-100/60 transition-colors"
+          action={
+            <span
+              className="inline-flex items-center whitespace-nowrap"
+              style={{ gap: 4, font: "700 12.5px/1 var(--font-sans)", color: "var(--critical-ink)" }}
+            >
+              Open queue
+              <ChevronRight className="w-3.5 h-3.5" />
+            </span>
+          }
         >
-          <Zap className="w-4 h-4 text-red-500 flex-shrink-0" />
-          <p className="text-[13px] font-semibold text-red-800 flex-1">
-            {urgent} patient{urgent > 1 ? "s" : ""} marked urgent or critical in
-            today's queue
-          </p>
-          <span className="text-[13px] font-bold text-red-700 flex items-center gap-1 whitespace-nowrap">
-            Open queue <ChevronRight className="w-3.5 h-3.5" />
-          </span>
-        </button>
+          {untriagedUrgent} patient{untriagedUrgent !== 1 ? "s are" : " is"} marked
+          urgent or critical and still waiting on triage.
+        </Banner>
       )}
 
-      {/* KPIs */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+      <KpiGrid>
         <KpiCard
-          label="Total Today"
-          value={loading ? undefined : queue.length}
-          description="All encounters"
+          label="Total today"
+          value={queue.length}
+          sub="All encounters"
           icon={ClipboardList}
-          iconClass="bg-emerald-50 text-emerald-600"
-          href="/dashboard/receptionist/queue"
+          tone="brand"
+          loading={loading}
         />
         <KpiCard
           label="Waiting"
-          value={loading ? undefined : waiting}
-          description="Not yet triaged"
+          value={waiting}
+          sub="Not yet triaged"
           icon={Clock}
-          iconClass="bg-amber-50 text-amber-600"
+          tone="urgent"
+          loading={loading}
         />
         <KpiCard
-          label="In Care"
-          value={loading ? undefined : inProgress}
-          description="Triaged and active"
+          label="In care"
+          value={inProgress}
+          sub="Triaged and active"
           icon={Activity}
-          iconClass="bg-blue-50 text-blue-600"
+          tone="info"
+          loading={loading}
         />
         <KpiCard
           label="Urgent"
-          value={loading ? undefined : urgent}
-          description="Critical or emergency"
+          value={urgent}
+          sub="Critical or emergency"
           icon={Zap}
-          iconClass="bg-red-50 text-red-600"
+          tone="critical"
+          loading={loading}
         />
-      </section>
+      </KpiGrid>
 
-      {/* ── Main grid ─────────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* ── Queue table — 8 cols ────────────────────────────────────────── */}
-        <div className="lg:col-span-8 bg-white rounded-2xl border border-slate-200 overflow-hidden">
-          {/* Table header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl flex items-center justify-center bg-green-50">
-                <Activity className="w-4 h-4 text-green-700" />
-              </div>
-              <div>
-                <h2 className="text-[15px] font-bold text-gray-900">Live Queue</h2>
-                <p className="text-[13px] text-gray-400">
-                  Priority-sorted · auto-refresh 30s
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1.5 text-[13px] text-gray-400">
-                <span className="w-2 h-2 rounded-full bg-green-400" />
-                <span>{onlineNurses.length} nurses online</span>
-              </div>
-              <button
-                onClick={() => router.push("/dashboard/receptionist/queue")}
-                className="flex items-center gap-1 text-[13px] font-semibold text-green-700 hover:underline"
-              >
-                Full queue <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-          </div>
-
-          {/* Column headers */}
-          {!loading && liveQueue.length > 0 && (
-            <div
-              className="grid px-5 py-2 border-b border-gray-50 text-[11.5px] font-bold uppercase tracking-widest text-gray-400"
-              style={{ gridTemplateColumns: "20px 36px 1fr 80px 72px 88px" }}
-            >
-              <div />
-              <div />
-              <div>Patient</div>
-              <div className="text-right">Wait</div>
-              <div>Priority</div>
-              <div className="text-right">Action</div>
-            </div>
-          )}
-
-          {loading ? (
-            <div className="divide-y divide-gray-50">
-              {[...Array(5)].map((_, i) => (
-                <div
-                  key={i}
-                  className="flex items-center gap-4 px-5 py-3.5 animate-pulse"
-                >
-                  <div className="w-2 h-2 rounded-full bg-gray-100 flex-shrink-0" />
-                  <div className="w-8 h-8 rounded-xl bg-gray-100 flex-shrink-0" />
-                  <div className="flex-1 space-y-1.5">
-                    <div className="h-3.5 w-32 bg-gray-100 rounded" />
-                    <div className="h-3 w-48 bg-gray-100 rounded" />
+      <div className="flex flex-wrap" style={{ gap: 16, alignItems: "flex-start" }}>
+        {/* Live queue */}
+        <div style={{ flex: "1 1 560px", minWidth: 0 }}>
+          <Card>
+            <CardHeader
+              icon={Activity}
+              title="Live queue"
+              subtitle="Priority-sorted · longest wait first"
+              right={
+                <>
+                  <div className="hidden sm:flex items-center" style={{ gap: 6 }}>
+                    <span
+                      style={{
+                        width: 7,
+                        height: 7,
+                        borderRadius: "50%",
+                        background:
+                          onlineNurses.length > 0 ? "var(--green-600)" : "var(--ink-300)",
+                      }}
+                    />
+                    <span
+                      style={{
+                        font: "500 12px/1 var(--font-sans)",
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      {onlineNurses.length} nurse{onlineNurses.length !== 1 ? "s" : ""} online
+                    </span>
                   </div>
-                  <div className="w-14 h-6 bg-gray-100 rounded-full" />
-                </div>
-              ))}
+                  <LinkAction onClick={() => router.push("/dashboard/receptionist/queue")}>
+                    Full queue
+                  </LinkAction>
+                </>
+              }
+            />
+
+            {/* Column headers */}
+            <div
+              className="hidden md:grid items-center"
+              style={{
+                gridTemplateColumns: GRID,
+                gap: 14,
+                padding: "9px 20px",
+                background: "var(--surface-sunken)",
+                borderBottom: "1px solid var(--border-faint)",
+              }}
+            >
+              <span />
+              <span />
+              <SectionLabel>Patient</SectionLabel>
+              <SectionLabel style={{ textAlign: "right" }}>Wait</SectionLabel>
+              <SectionLabel>Priority</SectionLabel>
+              <SectionLabel style={{ textAlign: "right" }}>Action</SectionLabel>
             </div>
-          ) : liveQueue.length === 0 ? (
-            <div className="py-16 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-green-50 flex items-center justify-center mx-auto mb-3">
-                <ClipboardList className="w-5 h-5 text-green-300" />
-              </div>
-              <p className="text-[15px] font-semibold text-gray-500">
-                Queue is clear
-              </p>
-              <p className="text-[13px] text-gray-400 mt-1">
-                No active or waiting patients
-              </p>
-              <button
-                onClick={() =>
-                  router.push("/dashboard/receptionist/visits/new")
-                }
-                className="mt-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-[13px] font-semibold text-white"
-                style={{ background: T.forest }}
-              >
-                <UserPlus className="w-3.5 h-3.5" /> Register first visit
-              </button>
-            </div>
-          ) : (
-            <>
-              {liveQueue.slice(0, 8).map((item, idx) => (
+
+            {loading ? (
+              [...Array(5)].map((_, i) => <SkeletonRow key={i} />)
+            ) : liveQueue.length === 0 ? (
+              <EmptyState
+                icon={CheckCircle2}
+                title="No active visits"
+                message="New check-ins will appear here automatically."
+              />
+            ) : (
+              liveQueue.slice(0, 8).map((item, idx) => (
                 <QueueRow
                   key={item.id}
                   item={item}
                   idx={idx}
-                  onOpen={(id) =>
-                    router.push(`/dashboard/receptionist/visits/${id}`)
-                  }
+                  onOpen={openVisit}
                   onlineNurses={onlineNurses}
                   assignNurse={assignNurse}
                   assigningVisitId={assigningId}
                   showDropdownFor={dropdownFor}
                   setShowDropdownFor={setDropdownFor}
                 />
-              ))}
-              {liveQueue.length > 8 && (
-                <button
-                  onClick={() => router.push("/dashboard/receptionist/queue")}
-                  className="w-full py-3 text-[13px] font-semibold text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors flex items-center justify-center gap-1.5 border-t border-gray-50"
-                >
-                  +{liveQueue.length - 8} more in queue{" "}
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </>
-          )}
+              ))
+            )}
+
+            {!loading && liveQueue.length > 8 && (
+              <div className="flex justify-center" style={{ padding: 12 }}>
+                <LinkAction onClick={() => router.push("/dashboard/receptionist/queue")}>
+                  +{liveQueue.length - 8} more in the full queue
+                </LinkAction>
+              </div>
+            )}
+          </Card>
         </div>
 
-        {/* ── Right column — 4 cols ───────────────────────────────────────── */}
-        <div className="lg:col-span-4 space-y-4">
-          {/* ── Analytics card ───────────────────────────────────────────── */}
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-            <div className="px-5 pt-5 pb-3">
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-[15px] font-bold text-gray-900">Today's Flow</p>
-                <span className="text-[11.5px] font-semibold text-gray-400 uppercase tracking-widest">
-                  6AM – 6PM
-                </span>
-              </div>
-              <p className="text-[13px] text-gray-400 mb-4">
-                Visits by hour of arrival
-              </p>
-
-              {loading ? (
-                <div className="h-[86px] bg-gray-50 rounded-xl animate-pulse" />
-              ) : (
-                <VisitSparkline queue={queue} />
-              )}
-            </div>
-
-            {/* Mini bar chart — last 6 hours */}
-            <div className="px-5 pb-4 pt-1 border-t border-gray-50">
-              <p className="text-[11.5px] font-bold uppercase tracking-widest text-gray-400 mb-3">
-                Last 6 hours
-              </p>
-              <div className="flex items-end gap-1.5 h-10">
-                {hourlyBars.map((bar, i) => (
-                  <div
-                    key={i}
-                    className="flex-1 flex flex-col items-center gap-1"
-                  >
-                    <div
-                      className="w-full rounded-t-sm transition-all"
-                      style={{
-                        height: `${Math.max(2, (bar.count / barMax) * 36)}px`,
-                        background:
-                          i === hourlyBars.length - 1
-                            ? `linear-gradient(to top, ${T.green}, #22c55e)`
-                            : "#e5e7eb",
-                      }}
-                    />
-                    <span className="text-[10px] text-gray-400 tabular-nums">
-                      {bar.label.slice(0, 5)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          {/* ── Status donut ─────────────────────────────────────────────── */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5">
-            <p className="text-[15px] font-bold text-gray-900 mb-4">Visit Status</p>
-            {loading ? (
-              <div className="h-[72px] bg-gray-50 rounded-xl animate-pulse" />
-            ) : (
-              <StatusDonut
-                waiting={waiting}
-                inProgress={inProgress}
-                total={queue.length}
-              />
-            )}
-            {urgent > 0 && (
-              <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50 border border-red-100">
-                <Zap className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
-                <p className="text-[13px] font-semibold text-red-700">
-                  {urgent} critical/emergency patient{urgent !== 1 ? "s" : ""}
+        {/* Side rail */}
+        <div
+          style={{
+            flex: "1 1 320px",
+            minWidth: 300,
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+          }}
+        >
+          <Card>
+            <div style={{ padding: "16px 18px 14px" }}>
+              <div
+                className="flex items-baseline justify-between"
+                style={{ gap: 10, marginBottom: 2 }}
+              >
+                <p
+                  style={{
+                    margin: 0,
+                    font: "700 14.5px/1 var(--font-sans)",
+                    color: "var(--text-primary)",
+                  }}
+                >
+                  Arrivals today
                 </p>
+                <SectionLabel>06:00 – 18:00</SectionLabel>
               </div>
-            )}
-          </div>
-
-          {/* ── Quick actions ─────────────────────────────────────────────── */}
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-gray-50">
-              <p className="text-[13px] font-bold uppercase tracking-widest text-gray-400">
-                Quick actions
+              <p
+                style={{
+                  margin: "0 0 14px",
+                  font: "400 12px/1 var(--font-sans)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                Check-ins by hour of arrival
               </p>
+
+              {loading ? <SkeletonBlock /> : <ArrivalsChart queue={queue} />}
             </div>
-            <div className="p-3 space-y-1.5">
+          </Card>
+
+          <Card pad={18}>
+            <p
+              style={{
+                margin: "0 0 14px",
+                font: "700 14.5px/1 var(--font-sans)",
+                color: "var(--text-primary)",
+              }}
+            >
+              Visit status
+            </p>
+            {loading ? (
+              <SkeletonBlock height={88} />
+            ) : (
+              <StatusDonut waiting={waiting} inProgress={inProgress} total={queue.length} />
+            )}
+          </Card>
+
+          <Card>
+            <SectionLabel
+              style={{ padding: "13px 18px", borderBottom: "1px solid var(--border-faint)" }}
+            >
+              Quick actions
+            </SectionLabel>
+            <div style={{ padding: 8, display: "flex", flexDirection: "column", gap: 2 }}>
               {[
                 {
-                  icon: UserPlus,
-                  label: "Register Patient",
-                  sub: "New patient record",
+                  label: "Register patient",
+                  sub: "Create a new record",
                   href: "/dashboard/receptionist/register",
-                  color: T.forest,
+                  icon: UserPlus,
                 },
                 {
-                  icon: ClipboardList,
-                  label: "New Visit",
-                  sub: "Start an encounter",
-                  href: "/dashboard/receptionist/visits/new",
-                  color: T.blue,
+                  label: "Scan hospital ID",
+                  sub: "Check in from the patient app",
+                  href: "/dashboard/receptionist/scan",
+                  icon: QrCode,
                 },
                 {
-                  icon: Users,
-                  label: "Patient Directory",
-                  sub: "Browse records",
+                  label: "Book appointment",
+                  sub: "Schedule a return visit",
+                  href: "/dashboard/receptionist/appointments",
+                  icon: Calendar,
+                },
+                {
+                  label: "All patients",
+                  sub: "Search the register",
                   href: "/dashboard/receptionist/patients",
-                  color: T.violet,
+                  icon: Users,
                 },
-              ].map(({ icon: Icon, label, sub, href, color }) => (
+              ].map(({ label, sub, href, icon: Icon }) => (
                 <button
                   key={href}
                   onClick={() => router.push(href)}
-                  className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl hover:bg-gray-50 transition-all group text-left"
+                  className="flex items-center text-left"
+                  style={{
+                    gap: 12,
+                    padding: 10,
+                    border: "none",
+                    borderRadius: "var(--r-sm)",
+                    background: "transparent",
+                    cursor: "pointer",
+                    transition: "background var(--dur-fast) var(--ease-standard)",
+                  }}
+                  {...hoverRow}
                 >
-                  <div
-                    className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: `${color}12` }}
+                  <span
+                    className="inline-flex items-center justify-center flex-shrink-0"
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: "var(--r-xs)",
+                      background: "var(--brand-tint)",
+                      color: "var(--green-700)",
+                    }}
                   >
-                    <Icon className="w-3.5 h-3.5" style={{ color }} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[15px] font-semibold text-gray-800">
+                    <Icon className="w-4 h-4" />
+                  </span>
+                  <span className="flex-1 flex flex-col" style={{ gap: 3 }}>
+                    <span
+                      style={{ font: "600 13.5px/1 var(--font-sans)", color: "var(--text-primary)" }}
+                    >
                       {label}
-                    </p>
-                    <p className="text-[13px] text-gray-400">{sub}</p>
-                  </div>
-                  <ChevronRight className="w-3.5 h-3.5 text-gray-200 group-hover:text-gray-400 group-hover:translate-x-0.5 transition-all flex-shrink-0" />
+                    </span>
+                    <span
+                      style={{ font: "400 11.5px/1 var(--font-sans)", color: "var(--text-muted)" }}
+                    >
+                      {sub}
+                    </span>
+                  </span>
+                  <ChevronRight
+                    className="w-4 h-4 flex-shrink-0"
+                    style={{ color: "var(--text-disabled)" }}
+                  />
                 </button>
               ))}
             </div>
-          </div>
+          </Card>
         </div>
       </div>
-    </div>
+    </Page>
   );
 }

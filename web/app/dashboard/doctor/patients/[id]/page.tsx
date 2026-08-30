@@ -15,38 +15,42 @@ import {
   Heart,
   Briefcase,
   Users,
+  Loader2,
 } from "lucide-react";
 import { format, differenceInYears } from "date-fns";
 import { MinorBadge, ageFromDob } from "@/components/ui/MinorBadge";
 import { PatientGuardiansSection } from "@/components/ui/PatientGuardiansSection";
+import {
+  Page,
+  Card,
+  CardHeader,
+  Pill as Badge,
+  MonoTag,
+  Button,
+  Banner,
+  EmptyState,
+  SectionLabel,
+  LinkAction,
+  hoverRow,
+  TONES,
+  type Tone,
+} from "@/components/dashboard/ui";
+import { getPriority } from "../../vocab";
 
-const bloodTypeColor: Record<string, string> = {
-  "A+": "#3b82f6",
-  "A-": "#6366f1",
-  "B+": "#8b5cf6",
-  "B-": "#ec4899",
-  "AB+": "#f59e0b",
-  "AB-": "#ef4444",
-  "O+": "#10b981",
-  "O-": "#14b8a6",
-  unknown: "#9ca3af",
-};
+/* ==========================================================================
+   Patient record (doctor view).
 
-const PRIORITY_STYLE: Record<
-  string,
-  { bg: string; text: string; dot: string }
-> = {
-  routine: { bg: "#f0fdf4", text: "#15803d", dot: "#16a34a" },
-  urgent: { bg: "#fffbeb", text: "#d97706", dot: "#f59e0b" },
-  emergency: { bg: "#fef2f2", text: "#dc2626", dot: "#ef4444" },
-  critical: { bg: "#fdf4ff", text: "#7c3aed", dot: "#a855f7" },
-};
+   Reads the patient plus their full visit list. An in-progress visit is the
+   thing a doctor almost always wants from here, so it is surfaced as a
+   primary action rather than buried in the history list below.
+   ========================================================================== */
 
-const SEVERITY_COLOR: Record<string, string> = {
-  mild: "#16a34a",
-  moderate: "#d97706",
-  severe: "#dc2626",
-  life_threatening: "#7c3aed",
+/** Allergy severity climbs mild → life-threatening. */
+const SEVERITY_TONE: Record<string, Tone> = {
+  mild: "success",
+  moderate: "urgent",
+  severe: "critical",
+  life_threatening: "accent",
 };
 
 export default function PatientDetailPage() {
@@ -80,29 +84,42 @@ export default function PatientDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-64">
-        <div className="w-6 h-6 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+      <div
+        className="flex items-center justify-center"
+        style={{ minHeight: 256, gap: 12 }}
+      >
+        <Loader2 className="w-6 h-6 animate-spin" style={{ color: "var(--brand)" }} />
+        <p
+          style={{
+            margin: 0,
+            font: "400 13px/1 var(--font-sans)",
+            color: "var(--text-muted)",
+          }}
+        >
+          Loading patient…
+        </p>
       </div>
     );
   }
 
   if (error || !patient) {
     return (
-      <div className="max-w-lg mx-auto text-center py-20">
-        <AlertCircle size={40} className="text-red-400 mx-auto mb-3" />
-        <p className="text-gray-700 font-semibold">
-          {error || "Patient not found"}
-        </p>
-        <p className="text-gray-400 text-sm mt-1">
-          You may not have permission to view this patient's records.
-        </p>
-        <button
-          onClick={() => router.back()}
-          className="mt-4 text-green-700 text-sm font-medium hover:underline"
+      <Page maxWidth={560}>
+        <Banner
+          tone="critical"
+          icon={AlertCircle}
+          title={error || "Patient not found"}
         >
-          ← Go back
-        </button>
-      </div>
+          You may not have permission to view this patient's records.
+        </Banner>
+        <Button
+          icon={ChevronLeft}
+          onClick={() => router.back()}
+          style={{ alignSelf: "flex-start" }}
+        >
+          Go back
+        </Button>
+      </Page>
     );
   }
 
@@ -112,356 +129,432 @@ export default function PatientDetailPage() {
     : null;
 
   return (
-    <div
-      className="max-w-4xl mx-auto"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
-    >
-      {/* Back nav */}
-      <button
+    <Page maxWidth={900}>
+      <Button
+        variant="ghost"
+        icon={ChevronLeft}
         onClick={() => router.back()}
-        className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-5 transition-colors"
+        style={{ alignSelf: "flex-start" }}
       >
-        <ChevronLeft size={16} /> Back
-      </button>
+        Back
+      </Button>
 
-      <div className="space-y-4">
-        {/* ── Patient header card ── */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div
-            className="px-6 py-5"
-            style={{ background: "linear-gradient(135deg, #f0fdf4, #dcfce7)" }}
-          >
-            <div className="flex items-start gap-4">
-              {/* Avatar */}
+      {/* ── Patient header card ── */}
+      <Card>
+        <div style={{ padding: "20px 24px", background: "var(--brand-tint)" }}>
+          <div className="flex items-start" style={{ gap: 16 }}>
+            <span
+              className="inline-flex items-center justify-center flex-shrink-0"
+              style={{
+                width: 60,
+                height: 60,
+                borderRadius: "50%",
+                background: "var(--brand)",
+                color: "var(--on-brand)",
+                font: "700 19px/1 var(--font-sans)",
+              }}
+            >
+              {patient.firstName?.[0]}
+              {patient.lastName?.[0]}
+            </span>
+
+            <div className="flex-1 min-w-0">
               <div
-                className="w-16 h-16 rounded-full flex items-center justify-center text-xl font-bold text-white flex-shrink-0"
-                style={{ background: "#166534" }}
+                className="flex items-start justify-between flex-wrap"
+                style={{ gap: 12 }}
               >
-                {patient.firstName?.[0]}
-                {patient.lastName?.[0]}
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h1
-                        className="text-xl font-bold text-gray-900"
-                        style={{ fontFamily: "'Playfair Display', serif" }}
-                      >
-                        {patient.firstName} {patient.lastName}
-                      </h1>
-                      {patient.isMinor && (
-                        <MinorBadge
-                          age={patient.dateOfBirth ? ageFromDob(patient.dateOfBirth) : undefined}
-                          primaryGuardianName={patient.guardians?.[0]?.guardianName}
-                          primaryGuardianRelationship={patient.guardians?.[0]?.relationship}
-                        />
-                      )}
-                    </div>
-                    <p className="text-sm text-gray-500 mt-0.5 capitalize">
-                      {patient.gender}
-                      {age ? ` · ${age} years old` : ""}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {patient.bloodType && patient.bloodType !== "unknown" && (
-                      <span
-                        className="text-sm font-bold px-3 py-1.5 rounded-full text-white"
-                        style={{
-                          background:
-                            bloodTypeColor[patient.bloodType] ?? "#6b7280",
-                        }}
-                      >
-                        {patient.bloodType}
-                      </span>
-                    )}
-                    {activeVisit && (
-                      <span
-                        className="flex items-center gap-1.5 text-xs font-bold px-2.5 py-1.5 rounded-full"
-                        style={{
-                          background: "#fef2f2",
-                          color: "#dc2626",
-                          border: "1px solid #fca5a5",
-                        }}
-                      >
-                        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                        Currently Admitted
-                      </span>
+                <div className="min-w-0 flex flex-col" style={{ gap: 6 }}>
+                  <div className="flex items-center flex-wrap" style={{ gap: 8 }}>
+                    <h1
+                      style={{
+                        margin: 0,
+                        font: "700 20px/1.2 var(--font-sans)",
+                        letterSpacing: "var(--ls-tight)",
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      {patient.firstName} {patient.lastName}
+                    </h1>
+                    {patient.isMinor && (
+                      <MinorBadge
+                        age={
+                          patient.dateOfBirth
+                            ? ageFromDob(patient.dateOfBirth)
+                            : undefined
+                        }
+                        primaryGuardianName={patient.guardians?.[0]?.guardianName}
+                        primaryGuardianRelationship={
+                          patient.guardians?.[0]?.relationship
+                        }
+                      />
                     )}
                   </div>
+                  <p
+                    style={{
+                      margin: 0,
+                      font: "400 13px/1 var(--font-sans)",
+                      color: "var(--text-secondary)",
+                      textTransform: "capitalize",
+                    }}
+                  >
+                    {patient.gender}
+                    {age ? ` · ${age} years old` : ""}
+                  </p>
+                </div>
+
+                <div className="flex items-center flex-shrink-0" style={{ gap: 8 }}>
+                  {patient.bloodType && patient.bloodType !== "unknown" && (
+                    <span
+                      className="inline-flex items-center"
+                      style={{
+                        height: 26,
+                        padding: "0 12px",
+                        borderRadius: "var(--r-pill)",
+                        background: "var(--critical-tint)",
+                        color: "var(--critical-ink)",
+                        font: "700 12.5px/1 var(--font-mono)",
+                      }}
+                    >
+                      {patient.bloodType}
+                    </span>
+                  )}
+                  {activeVisit && (
+                    <Badge tone="critical" dot style={{ height: 26 }}>
+                      Currently admitted
+                    </Badge>
+                  )}
                 </div>
               </div>
             </div>
           </div>
+        </div>
 
-          {/* Info grid */}
-          <div className="px-6 py-4 grid grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4 border-b border-gray-100">
-            {[
-              { icon: User, label: "National ID", value: patient.nationalId },
-              { icon: Phone, label: "Phone", value: patient.phoneNumber },
-              {
-                icon: Calendar,
-                label: "Date of Birth",
-                value: patient.dateOfBirth
-                  ? format(new Date(patient.dateOfBirth), "dd MMM yyyy")
-                  : "—",
-              },
-              { icon: MapPin, label: "Address", value: patient.address },
-              {
-                icon: Briefcase,
-                label: "Occupation",
-                value: patient.occupation ?? "—",
-              },
-              {
-                icon: Users,
-                label: "Marital Status",
-                value: patient.maritalStatus ?? "—",
-              },
-            ].map(({ icon: Icon, label, value }) => (
-              <div key={label} className="flex items-start gap-2.5">
-                <Icon
-                  size={14}
-                  className="text-gray-400 flex-shrink-0 mt-0.5"
-                />
-                <div>
-                  <p className="text-xs text-gray-400 uppercase tracking-wide font-medium mb-0.5">
-                    {label}
-                  </p>
-                  <p className="text-sm text-gray-800 font-medium capitalize">
-                    {value ?? "—"}
-                  </p>
-                </div>
+        {/* Info grid */}
+        <div
+          style={{
+            padding: "18px 24px",
+            borderBottom: "1px solid var(--border-faint)",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+            gap: 18,
+          }}
+        >
+          {[
+            { icon: User, label: "National ID", value: patient.nationalId },
+            { icon: Phone, label: "Phone", value: patient.phoneNumber },
+            {
+              icon: Calendar,
+              label: "Date of birth",
+              value: patient.dateOfBirth
+                ? format(new Date(patient.dateOfBirth), "dd MMM yyyy")
+                : "—",
+            },
+            { icon: MapPin, label: "Address", value: patient.address },
+            { icon: Briefcase, label: "Occupation", value: patient.occupation ?? "—" },
+            { icon: Users, label: "Marital status", value: patient.maritalStatus ?? "—" },
+          ].map(({ icon: Icon, label, value }) => (
+            <div key={label} className="flex items-start" style={{ gap: 10 }}>
+              <Icon
+                className="w-3.5 h-3.5 flex-shrink-0"
+                style={{ color: "var(--text-muted)", marginTop: 2 }}
+              />
+              <div className="min-w-0 flex flex-col" style={{ gap: 4 }}>
+                <SectionLabel>{label}</SectionLabel>
+                <span
+                  style={{
+                    font: "500 13px/1.4 var(--font-sans)",
+                    color: "var(--text-primary)",
+                    wordBreak: "break-word",
+                  }}
+                >
+                  {value ?? "—"}
+                </span>
               </div>
-            ))}
-          </div>
-
-          {/* Emergency contact */}
-          {patient.emergencyContact && (
-            <div className="px-6 py-3 border-b border-gray-100 flex items-center gap-2 text-sm">
-              <Phone size={13} className="text-gray-400" />
-              <span className="text-gray-400 text-xs uppercase font-semibold tracking-wide">
-                Emergency Contact:
-              </span>
-              <span className="text-gray-700 font-medium">
-                {patient.emergencyContact}
-              </span>
             </div>
+          ))}
+        </div>
+
+        {patient.emergencyContact && (
+          <div
+            className="flex items-center flex-wrap"
+            style={{
+              gap: 8,
+              padding: "12px 24px",
+              borderBottom: "1px solid var(--border-faint)",
+            }}
+          >
+            <Phone className="w-3.5 h-3.5" style={{ color: "var(--text-muted)" }} />
+            <SectionLabel>Emergency contact</SectionLabel>
+            <span
+              style={{
+                font: "600 13px/1 var(--font-sans)",
+                color: "var(--text-primary)",
+              }}
+            >
+              {patient.emergencyContact}
+            </span>
+          </div>
+        )}
+
+        {/* Active visit is the common destination, so it gets the primary action. */}
+        <div style={{ padding: "16px 24px" }}>
+          {activeVisit ? (
+            <Button
+              variant="primary"
+              full
+              size="lg"
+              icon={Activity}
+              iconRight={ChevronRight}
+              onClick={() => router.push(`/dashboard/doctor/visit/${activeVisit.id}`)}
+            >
+              Open active visit — {activeVisit.visitNumber}
+            </Button>
+          ) : (
+            <Button
+              icon={PlusCircle}
+              onClick={() =>
+                router.push(`/dashboard/doctor/visit/new?patientId=${patientId}`)
+              }
+              style={{
+                borderColor: "var(--green-200)",
+                color: "var(--green-700)",
+              }}
+            >
+              Create new visit
+            </Button>
           )}
+        </div>
+      </Card>
 
-          {/* Active visit CTA */}
-          {activeVisit && (
-            <div className="px-6 py-4">
-              <button
-                onClick={() =>
-                  router.push(`/dashboard/doctor/visit/${activeVisit.id}`)
-                }
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md"
+      {/* ── Guardians (minor only) ── */}
+      {patient.isMinor && (
+        <PatientGuardiansSection patientId={patientId} canManage={false} />
+      )}
+
+      {/* ── Allergies ── */}
+      {patient.allergies?.length > 0 && (
+        <Card>
+          <CardHeader icon={AlertCircle} title="Known allergies" tone="critical" />
+          {patient.allergies.map((a: any) => {
+            const tone = SEVERITY_TONE[a.severity] ?? "neutral";
+            return (
+              <div
+                key={a.id}
+                className="flex items-start"
                 style={{
-                  background: "linear-gradient(135deg, #166534, #15803d)",
+                  gap: 12,
+                  padding: "12px 20px",
+                  borderBottom: "1px solid var(--border-faint)",
                 }}
               >
-                <Activity className="w-4 h-4" />
-                Open Active Visit — {activeVisit.visitNumber}
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-          )}
-
-          {/* New visit button (no active visit) */}
-          {!activeVisit && (
-            <div className="px-6 py-4">
-              <button
-                onClick={() =>
-                  router.push(
-                    `/dashboard/doctor/visit/new?patientId=${patientId}`,
-                  )
-                }
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-green-200 text-green-700 text-sm font-semibold hover:bg-green-50 transition-colors"
-              >
-                <PlusCircle size={15} />
-                Create New Visit
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* ── Guardians (minor only) ── */}
-        {patient.isMinor && (
-          <PatientGuardiansSection patientId={patientId} canManage={false} />
-        )}
-
-        {/* ── Allergies ── */}
-        {patient.allergies?.length > 0 && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-2">
-              <AlertCircle size={15} className="text-red-500" />
-              <p className="text-sm font-bold text-gray-900">Known Allergies</p>
-            </div>
-            <div className="divide-y divide-gray-50">
-              {patient.allergies.map((a: any) => (
-                <div key={a.id} className="px-5 py-3 flex items-start gap-3">
-                  <div
-                    className="w-2 h-2 rounded-full mt-1.5 flex-shrink-0"
+                <span
+                  className="flex-shrink-0"
+                  style={{
+                    width: 8,
+                    height: 8,
+                    marginTop: 5,
+                    borderRadius: "50%",
+                    background: TONES[tone].dot,
+                  }}
+                />
+                <div className="flex-1 min-w-0 flex flex-col" style={{ gap: 5 }}>
+                  <div className="flex items-center flex-wrap" style={{ gap: 8 }}>
+                    <span
+                      style={{
+                        font: "600 13.5px/1 var(--font-sans)",
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      {a.allergen}
+                    </span>
+                    <Badge tone={tone} style={{ height: 18, fontSize: 10 }}>
+                      {a.severity?.replace("_", " ")}
+                    </Badge>
+                  </div>
+                  <span
                     style={{
-                      background: SEVERITY_COLOR[a.severity] ?? "#9ca3af",
+                      font: "400 12px/1 var(--font-sans)",
+                      color: "var(--text-secondary)",
+                      textTransform: "capitalize",
                     }}
-                  />
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2">
-                      <p className="text-sm font-semibold text-gray-900">
-                        {a.allergen}
-                      </p>
-                      <span
-                        className="text-xs font-semibold px-1.5 py-0.5 rounded-full capitalize"
-                        style={{
-                          background: SEVERITY_COLOR[a.severity] + "15",
-                          color: SEVERITY_COLOR[a.severity] ?? "#6b7280",
-                        }}
-                      >
-                        {a.severity?.replace("_", " ")}
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 mt-0.5 capitalize">
-                      {a.allergyType} · {a.reaction}
-                    </p>
-                    {a.notes && (
-                      <p className="text-xs text-gray-400 mt-0.5 italic">
-                        {a.notes}
-                      </p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── Medical history ── */}
-        {patient.medicalHistory?.length > 0 && (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-2">
-              <Heart size={15} className="text-rose-500" />
-              <p className="text-sm font-bold text-gray-900">Medical History</p>
-            </div>
-            <div className="divide-y divide-gray-50">
-              {patient.medicalHistory.map((m: any) => (
-                <div key={m.id} className="px-5 py-3 flex items-start gap-3">
-                  <div>
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <p className="text-sm font-semibold text-gray-900">
-                        {m.condition}
-                      </p>
-                      <span
-                        className="text-xs font-semibold px-1.5 py-0.5 rounded-full capitalize"
-                        style={
-                          m.status === "active"
-                            ? { background: "#fef2f2", color: "#dc2626" }
-                            : { background: "#f0fdf4", color: "#15803d" }
-                        }
-                      >
-                        {m.status}
-                      </span>
-                    </div>
-                    {m.diagnosedDate && (
-                      <p className="text-xs text-gray-400">
-                        Diagnosed: {m.diagnosedDate}
-                      </p>
-                    )}
-                    {m.notes && (
-                      <p className="text-xs text-gray-500 mt-0.5">{m.notes}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ── Visit history ── */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
-            <div>
-              <p className="text-sm font-bold text-gray-900">Visit History</p>
-              <p className="text-xs text-gray-400 mt-0.5">
-                {visits.length} total visit{visits.length !== 1 ? "s" : ""}
-              </p>
-            </div>
-            <button
-              onClick={() =>
-                router.push(
-                  `/dashboard/doctor/visit/new?patientId=${patientId}`,
-                )
-              }
-              className="flex items-center gap-1.5 text-xs font-semibold text-green-700 hover:text-green-800 transition-colors"
-            >
-              <PlusCircle size={13} /> New visit
-            </button>
-          </div>
-
-          {visits.length === 0 ? (
-            <div className="py-10 text-center text-gray-400 text-sm">
-              No visits on record
-            </div>
-          ) : (
-            <div className="divide-y divide-gray-50">
-              {visits.map((v) => {
-                const ps = PRIORITY_STYLE[v.priority] ?? PRIORITY_STYLE.routine;
-                const isActive = v.status === "in-progress";
-                return (
-                  <button
-                    key={v.id}
-                    onClick={() =>
-                      router.push(`/dashboard/doctor/visit/${v.id}`)
-                    }
-                    className="w-full px-5 py-3.5 flex items-center gap-4 hover:bg-gray-50 transition-colors text-left group"
                   >
-                    <div
-                      className="w-2 h-2 rounded-full flex-shrink-0"
-                      style={{ background: isActive ? "#ef4444" : ps.dot }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        <span className="text-xs font-bold text-gray-500 font-mono">
-                          {v.visitNumber}
-                        </span>
-                        <span
-                          className="text-xs font-semibold px-2 py-0.5 rounded-full capitalize"
-                          style={{ background: ps.bg, color: ps.text }}
-                        >
-                          {v.priority}
-                        </span>
-                        {isActive && (
-                          <span
-                            className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                            style={{ background: "#fef2f2", color: "#dc2626" }}
-                          >
-                            Active
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-sm font-semibold text-gray-900 truncate">
-                        {v.chiefComplaint}
-                      </p>
-                      <p className="text-xs text-gray-400">
-                        {v.admissionDate
-                          ? format(new Date(v.admissionDate), "dd MMM yyyy")
-                          : "—"}{" "}
-                        · {v.institution?.institutionName ?? "—"}
-                      </p>
-                    </div>
-                    <ChevronRight
-                      size={16}
-                      className="text-gray-300 group-hover:text-gray-500 flex-shrink-0 transition-colors"
-                    />
-                  </button>
-                );
-              })}
+                    {a.allergyType} · {a.reaction}
+                  </span>
+                  {a.notes && (
+                    <span
+                      style={{
+                        font: "400 11.5px/1.4 var(--font-sans)",
+                        color: "var(--text-muted)",
+                        fontStyle: "italic",
+                      }}
+                    >
+                      {a.notes}
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </Card>
+      )}
+
+      {/* ── Medical history ── */}
+      {patient.medicalHistory?.length > 0 && (
+        <Card>
+          <CardHeader icon={Heart} title="Medical history" tone="critical" />
+          {patient.medicalHistory.map((m: any) => (
+            <div
+              key={m.id}
+              className="flex flex-col"
+              style={{
+                gap: 5,
+                padding: "12px 20px",
+                borderBottom: "1px solid var(--border-faint)",
+              }}
+            >
+              <div className="flex items-center flex-wrap" style={{ gap: 8 }}>
+                <span
+                  style={{
+                    font: "600 13.5px/1 var(--font-sans)",
+                    color: "var(--text-primary)",
+                  }}
+                >
+                  {m.condition}
+                </span>
+                <Badge
+                  tone={m.status === "active" ? "critical" : "success"}
+                  style={{ height: 18, fontSize: 10 }}
+                >
+                  {m.status}
+                </Badge>
+              </div>
+              {m.diagnosedDate && (
+                <span
+                  style={{
+                    font: "400 11.5px/1 var(--font-sans)",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  Diagnosed {m.diagnosedDate}
+                </span>
+              )}
+              {m.notes && (
+                <span
+                  style={{
+                    font: "400 12px/1.4 var(--font-sans)",
+                    color: "var(--text-secondary)",
+                  }}
+                >
+                  {m.notes}
+                </span>
+              )}
             </div>
-          )}
-        </div>
-      </div>
-    </div>
+          ))}
+        </Card>
+      )}
+
+      {/* ── Visit history ── */}
+      <Card>
+        <CardHeader
+          icon={Activity}
+          title="Visit history"
+          subtitle={`${visits.length} total visit${visits.length !== 1 ? "s" : ""}`}
+          right={
+            <LinkAction
+              arrow={false}
+              onClick={() =>
+                router.push(`/dashboard/doctor/visit/new?patientId=${patientId}`)
+              }
+            >
+              New visit
+            </LinkAction>
+          }
+        />
+
+        {visits.length === 0 ? (
+          <EmptyState
+            icon={Activity}
+            title="No visits on record"
+            message="This patient has not been seen at your institution yet."
+            tone="neutral"
+          />
+        ) : (
+          visits.map((v) => {
+            const p = getPriority(v.priority);
+            const isActive = v.status === "in-progress";
+            return (
+              <button
+                key={v.id}
+                onClick={() => router.push(`/dashboard/doctor/visit/${v.id}`)}
+                className="w-full flex items-center text-left"
+                style={{
+                  gap: 14,
+                  padding: "12px 20px",
+                  border: "none",
+                  borderBottom: "1px solid var(--border-faint)",
+                  background: "transparent",
+                  cursor: "pointer",
+                  transition: "background var(--dur-fast) var(--ease-standard)",
+                }}
+                {...hoverRow}
+              >
+                <span
+                  className="flex-shrink-0"
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: isActive
+                      ? "var(--coral-500)"
+                      : TONES[p.tone].dot,
+                  }}
+                />
+
+                <span className="flex-1 min-w-0 flex flex-col" style={{ gap: 5 }}>
+                  <span className="flex items-center flex-wrap" style={{ gap: 8 }}>
+                    <MonoTag style={{ height: 17, fontSize: 10 }}>
+                      {v.visitNumber}
+                    </MonoTag>
+                    <Badge tone={p.tone} style={{ height: 17, fontSize: 10 }}>
+                      {p.label}
+                    </Badge>
+                    {isActive && (
+                      <Badge tone="critical" style={{ height: 17, fontSize: 10 }}>
+                        Active
+                      </Badge>
+                    )}
+                  </span>
+                  <span
+                    className="truncate"
+                    style={{
+                      font: "600 13.5px/1 var(--font-sans)",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    {v.chiefComplaint}
+                  </span>
+                  <span
+                    style={{
+                      font: "400 11.5px/1 var(--font-sans)",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    {v.admissionDate
+                      ? format(new Date(v.admissionDate), "dd MMM yyyy")
+                      : "—"}{" "}
+                    · {v.institution?.institutionName ?? "—"}
+                  </span>
+                </span>
+
+                <ChevronRight
+                  className="w-4 h-4 flex-shrink-0"
+                  style={{ color: "var(--text-disabled)" }}
+                />
+              </button>
+            );
+          })
+        )}
+      </Card>
+    </Page>
   );
 }

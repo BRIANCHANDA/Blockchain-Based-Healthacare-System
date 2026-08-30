@@ -1,5 +1,12 @@
-import { Loader2, LogOut, CheckCircle2 } from "lucide-react";
+import { LogOut, CheckCircle2 } from "lucide-react";
+import { Button } from "@/components/dashboard/ui";
 
+/**
+ * Primary action button for a tab.
+ *
+ * `danger` is for actions that end something (discharge, cancel) — it swaps
+ * both the colour and the icon, so the two never disagree.
+ */
 export function SubmitBtn({
   onClick,
   loading,
@@ -8,24 +15,19 @@ export function SubmitBtn({
   danger = false,
 }: any) {
   return (
-    <button
+    <Button
+      variant="primary"
+      icon={danger ? LogOut : CheckCircle2}
+      loading={loading}
+      disabled={disabled}
       onClick={onClick}
-      disabled={loading || disabled}
-      className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md disabled:opacity-50"
-      style={{
-        background: danger
-          ? "linear-gradient(135deg,#dc2626,#b91c1c)"
-          : "linear-gradient(135deg,#166534,#15803d)",
-      }}
+      style={
+        danger
+          ? { background: "var(--coral-600)", boxShadow: "none" }
+          : undefined
+      }
     >
-      {loading ? (
-        <Loader2 size={15} className="animate-spin" />
-      ) : danger ? (
-        <LogOut size={15} />
-      ) : (
-        <CheckCircle2 size={15} />
-      )}
       {label}
-    </button>
+    </Button>
   );
 }

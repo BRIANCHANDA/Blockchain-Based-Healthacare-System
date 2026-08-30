@@ -32,6 +32,20 @@ import {
   Lock,
   Unlock,
 } from "lucide-react";
+import {
+  Card,
+  TONES,
+  type Tone,
+} from "@/components/dashboard/ui";
+
+/* ==========================================================================
+   Patient history tab.
+
+   The patient's full record across every visit — including visits at OTHER
+   institutions, which is what AwayInstitutionSection handles. Those are
+   locked behind a per-institution consent request, so each away institution
+   carries its own permission state machine rather than one global one.
+   ========================================================================== */
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -182,31 +196,23 @@ interface PatientHistoryTabProps {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const PRIORITY_STYLE: Record<
-  string,
-  { bg: string; text: string; dot: string }
-> = {
-  routine: { bg: "#f0fdf4", text: "#166534", dot: "#22c55e" },
-  urgent: { bg: "#fffbeb", text: "#92400e", dot: "#f59e0b" },
-  emergency: { bg: "#fef2f2", text: "#991b1b", dot: "#ef4444" },
-  critical: { bg: "#faf5ff", text: "#6b21a8", dot: "#a855f7" },
+/* Priority and visit status keyed to the Postgres enums. Tones are shared
+   with the rest of the doctor portal via TONES, so a "critical" visit reads
+   the same colour here as it does in the queue. */
+const PRIORITY_TONE: Record<string, Tone> = {
+  routine: "success",
+  urgent: "urgent",
+  emergency: "critical",
+  critical: "accent",
 };
-const STATUS_STYLE: Record<string, { bg: string; text: string }> = {
-  "in-progress": { bg: "#eff6ff", text: "#1d4ed8" },
-  completed: { bg: "#f0fdf4", text: "#166534" },
-  cancelled: { bg: "#f9fafb", text: "#6b7280" },
+const priorityTone = (p: string): Tone => PRIORITY_TONE[p] ?? "neutral";
+
+const VISIT_STATUS_TONE: Record<string, Tone> = {
+  "in-progress": "info",
+  completed: "success",
+  cancelled: "neutral",
 };
-const BLOOD_TYPE_COLOR: Record<string, string> = {
-  "A+": "#3b82f6",
-  "A-": "#6366f1",
-  "B+": "#8b5cf6",
-  "B-": "#ec4899",
-  "AB+": "#f59e0b",
-  "AB-": "#ef4444",
-  "O+": "#10b981",
-  "O-": "#14b8a6",
-  unknown: "#9ca3af",
-};
+const visitStatusTone = (s: string): Tone => VISIT_STATUS_TONE[s] ?? "neutral";
 
 function formatDate(iso?: string | null) {
   if (!iso) return "—";
@@ -240,48 +246,80 @@ function calculateAge(dob: string) {
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function Badge({
-  label,
-  bg = "#f3f4f6",
-  text = "#374151",
-}: {
-  label: string;
-  bg?: string;
-  text?: string;
-}) {
+function Badge({ label, tone = "neutral" }: { label: string; tone?: Tone }) {
+  const t = TONES[tone];
   return (
     <span
-      className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold capitalize"
-      style={{ background: bg, color: text }}
+      className="inline-flex items-center flex-shrink-0"
+      style={{
+        height: 19,
+        padding: "0 8px",
+        borderRadius: "var(--r-xs)",
+        background: t.tint,
+        color: t.ink,
+        font: "600 11.5px/1 var(--font-sans)",
+        textTransform: "capitalize",
+        whiteSpace: "nowrap",
+      }}
     >
       {label.replace(/_/g, " ")}
     </span>
   );
 }
 
+/** One vital reading. Renders nothing when the value is absent. */
 function VitalRow({
   label,
   value,
   unit,
   icon: Icon,
-  color,
+  tone = "neutral",
 }: {
   label: string;
   value?: string | number | null;
   unit?: string;
   icon: React.ElementType;
-  color: string;
+  tone?: Tone;
 }) {
   if (value == null || value === "") return null;
   return (
-    <div className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-      <div className="flex items-center gap-2">
-        <Icon className="w-3.5 h-3.5" style={{ color }} />
-        <span className="text-xs text-gray-500">{label}</span>
-      </div>
-      <span className="text-sm font-semibold text-gray-800">
+    <div
+      className="flex items-center justify-between"
+      style={{
+        gap: 12,
+        padding: "8px 0",
+        borderBottom: "1px solid var(--border-faint)",
+      }}
+    >
+      <span className="inline-flex items-center" style={{ gap: 8 }}>
+        <Icon className="w-3.5 h-3.5" style={{ color: TONES[tone].ink }} />
+        <span
+          style={{
+            font: "400 11.5px/1 var(--font-sans)",
+            color: "var(--text-secondary)",
+          }}
+        >
+          {label}
+        </span>
+      </span>
+      <span
+        style={{
+          font: "600 13px/1 var(--font-mono)",
+          color: "var(--text-primary)",
+        }}
+      >
         {value}
-        {unit && <span className="text-xs text-gray-400 ml-1">{unit}</span>}
+        {unit && (
+          <span
+            style={{
+              font: "400 11px/1 var(--font-sans)",
+              color: "var(--text-muted)",
+              marginLeft: 4,
+            }}
+          >
+            {unit}
+          </span>
+        )}
       </span>
     </div>
   );
@@ -298,8 +336,8 @@ function VisitCard({ record, index }: { record: VisitRecord; index: number }) {
     imagingOrders,
     vitals,
   } = record;
-  const p = PRIORITY_STYLE[visit.priority] ?? PRIORITY_STYLE.routine;
-  const s = STATUS_STYLE[visit.status] ?? STATUS_STYLE.completed;
+  const pTone = priorityTone(visit.priority);
+  const sTone = visitStatusTone(visit.status);
   const totalRecords =
     consultations.length +
     diagnoses.length +
@@ -308,30 +346,27 @@ function VisitCard({ record, index }: { record: VisitRecord; index: number }) {
     imagingOrders.length;
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] overflow-hidden">
       <button onClick={() => setOpen((v) => !v)} className="w-full text-left">
         <div className="px-5 py-4 flex items-start gap-4">
+          {/* Priority spine — the visit's urgency, readable while collapsed. */}
           <div
             className="w-2 self-stretch rounded-full flex-shrink-0 mt-1"
-            style={{ background: p.dot }}
+            style={{ background: TONES[pTone].dot }}
           />
           <div className="flex-1 min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-1">
-              <span className="font-mono text-sm font-bold text-gray-800">
+              <span className="font-mono text-sm font-bold text-[var(--text-primary)]">
                 {visit.visitNumber}
               </span>
-              <Badge
-                label={visit.status.replace("-", " ")}
-                bg={s.bg}
-                text={s.text}
-              />
-              <Badge label={visit.priority} bg={p.bg} text={p.text} />
+              <Badge label={visit.status.replace("-", " ")} tone={sTone} />
+              <Badge label={visit.priority} tone={pTone} />
               <Badge label={visit.visitType} />
             </div>
-            <p className="text-sm text-gray-600 truncate">
+            <p className="text-sm text-[var(--text-secondary)] truncate">
               {visit.chiefComplaint || "No complaint recorded"}
             </p>
-            <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
+            <p className="text-xs text-[var(--text-muted)] mt-1 flex items-center gap-1">
               <Calendar className="w-3 h-3" />
               {formatDateTime(visit.admissionDate)}
               {visit.dischargeDate && <> → {formatDate(visit.dischargeDate)}</>}
@@ -339,33 +374,33 @@ function VisitCard({ record, index }: { record: VisitRecord; index: number }) {
           </div>
           <div className="flex-shrink-0 flex items-center gap-3">
             <div className="text-right hidden sm:block">
-              <p className="text-xs text-gray-400">Records</p>
-              <p className="text-xs font-bold text-gray-700">{totalRecords}</p>
+              <p className="text-xs text-[var(--text-muted)]">Records</p>
+              <p className="text-xs font-bold text-[var(--text-secondary)]">{totalRecords}</p>
             </div>
             {open ? (
-              <ChevronDown className="w-4 h-4 text-gray-400" />
+              <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
             ) : (
-              <ChevronRight className="w-4 h-4 text-gray-400" />
+              <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />
             )}
           </div>
         </div>
       </button>
 
       {open && (
-        <div className="border-t border-gray-100 px-5 py-5 space-y-5">
+        <div className="border-t border-[var(--border-faint)] px-5 py-5 space-y-5">
           {/* Vitals */}
           {vitals.length > 0 && (
             <div>
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+              <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
                 Vital Signs · {formatDateTime(vitals[0].recordedAt)}
               </p>
-              <div className="bg-gray-50/60 rounded-xl p-3">
+              <div className="bg-[var(--surface-sunken)] rounded-[var(--r-sm)] p-3">
                 <VitalRow
                   icon={Thermometer}
                   label="Temperature"
                   value={vitals[0].temperature}
                   unit="°C"
-                  color="#ef4444"
+                  tone="critical"
                 />
                 <VitalRow
                   icon={Gauge}
@@ -377,46 +412,46 @@ function VisitCard({ record, index }: { record: VisitRecord; index: number }) {
                       : null
                   }
                   unit="mmHg"
-                  color="#3b82f6"
+                  tone="info"
                 />
                 <VitalRow
                   icon={Heart}
                   label="Pulse Rate"
                   value={vitals[0].pulseRate}
                   unit="bpm"
-                  color="#ec4899"
+                  tone="critical"
                 />
                 <VitalRow
                   icon={Wind}
                   label="Respiratory Rate"
                   value={vitals[0].respiratoryRate}
                   unit="/min"
-                  color="#14b8a6"
+                  tone="success"
                 />
                 <VitalRow
                   icon={Droplets}
                   label="SpO₂"
                   value={vitals[0].oxygenSaturation}
                   unit="%"
-                  color="#0ea5e9"
+                  tone="info"
                 />
                 <VitalRow
                   icon={Weight}
                   label="Weight"
                   value={vitals[0].weight}
                   unit="kg"
-                  color="#f59e0b"
+                  tone="urgent"
                 />
                 <VitalRow
                   icon={UserIcon}
                   label="Height"
                   value={vitals[0].height}
                   unit="cm"
-                  color="#8b5cf6"
+                  tone="accent"
                 />
                 {vitals[0].painLevel != null && (
                   <div className="flex items-center justify-between py-2">
-                    <span className="text-xs text-gray-500">Pain Level</span>
+                    <span className="text-xs text-[var(--text-secondary)]">Pain Level</span>
                     <div className="flex items-center gap-1.5">
                       <div className="flex gap-0.5">
                         {Array.from({ length: 10 }, (_, i) => (
@@ -427,23 +462,23 @@ function VisitCard({ record, index }: { record: VisitRecord; index: number }) {
                               background:
                                 i < (vitals[0].painLevel ?? 0)
                                   ? vitals[0].painLevel! <= 3
-                                    ? "#22c55e"
+                                    ? "var(--green-600)"
                                     : vitals[0].painLevel! <= 6
-                                      ? "#f59e0b"
-                                      : "#ef4444"
-                                  : "#e5e7eb",
+                                      ? "var(--amber-500)"
+                                      : "var(--coral-500)"
+                                  : "var(--hc-border)",
                             }}
                           />
                         ))}
                       </div>
-                      <span className="text-sm font-semibold text-gray-800">
+                      <span className="text-sm font-semibold text-[var(--text-primary)]">
                         {vitals[0].painLevel}/10
                       </span>
                     </div>
                   </div>
                 )}
                 {vitals[0].nurseNotes && (
-                  <p className="text-xs text-gray-500 mt-2 pt-2 border-t border-gray-100 italic">
+                  <p className="text-xs text-[var(--text-secondary)] mt-2 pt-2 border-t border-[var(--border-faint)] italic">
                     {vitals[0].nurseNotes}
                   </p>
                 )}
@@ -454,73 +489,73 @@ function VisitCard({ record, index }: { record: VisitRecord; index: number }) {
           {/* Consultations */}
           {consultations.length > 0 && (
             <div>
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+              <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
                 Consultations ({consultations.length})
               </p>
               <div className="space-y-3">
                 {consultations.map((c) => (
                   <div
                     key={c.id}
-                    className="bg-blue-50/40 rounded-xl p-4 border border-blue-100/60 space-y-2"
+                    className="bg-[var(--info-tint)] rounded-[var(--r-sm)] p-4 border border-[var(--blue-100)] space-y-2"
                   >
                     {c.historyOfPresentIllness && (
                       <div>
-                        <p className="text-xs font-semibold text-blue-600 uppercase mb-0.5">
+                        <p className="text-xs font-semibold text-[var(--info-ink)] uppercase mb-0.5">
                           History
                         </p>
-                        <p className="text-sm text-gray-700">
+                        <p className="text-sm text-[var(--text-secondary)]">
                           {c.historyOfPresentIllness}
                         </p>
                       </div>
                     )}
                     {c.physicalExamination && (
                       <div>
-                        <p className="text-xs font-semibold text-blue-600 uppercase mb-0.5">
+                        <p className="text-xs font-semibold text-[var(--info-ink)] uppercase mb-0.5">
                           Examination
                         </p>
-                        <p className="text-sm text-gray-700">
+                        <p className="text-sm text-[var(--text-secondary)]">
                           {c.physicalExamination}
                         </p>
                       </div>
                     )}
                     {c.clinicalFindings && (
                       <div>
-                        <p className="text-xs font-semibold text-blue-600 uppercase mb-0.5">
+                        <p className="text-xs font-semibold text-[var(--info-ink)] uppercase mb-0.5">
                           Clinical Findings
                         </p>
-                        <p className="text-sm text-gray-700">
+                        <p className="text-sm text-[var(--text-secondary)]">
                           {c.clinicalFindings}
                         </p>
                       </div>
                     )}
                     {c.assessment && (
                       <div>
-                        <p className="text-xs font-semibold text-blue-600 uppercase mb-0.5">
+                        <p className="text-xs font-semibold text-[var(--info-ink)] uppercase mb-0.5">
                           Assessment
                         </p>
-                        <p className="text-sm text-gray-700">{c.assessment}</p>
+                        <p className="text-sm text-[var(--text-secondary)]">{c.assessment}</p>
                       </div>
                     )}
                     {c.plan && (
                       <div>
-                        <p className="text-xs font-semibold text-blue-600 uppercase mb-0.5">
+                        <p className="text-xs font-semibold text-[var(--info-ink)] uppercase mb-0.5">
                           Plan
                         </p>
-                        <p className="text-sm text-gray-700">{c.plan}</p>
+                        <p className="text-sm text-[var(--text-secondary)]">{c.plan}</p>
                       </div>
                     )}
                     {c.followUpInstructions && (
                       <div>
-                        <p className="text-xs font-semibold text-blue-600 uppercase mb-0.5">
+                        <p className="text-xs font-semibold text-[var(--info-ink)] uppercase mb-0.5">
                           Follow-up
                         </p>
-                        <p className="text-sm text-gray-700">
+                        <p className="text-sm text-[var(--text-secondary)]">
                           {c.followUpInstructions}
                         </p>
                       </div>
                     )}
                     {c.nextAppointmentDate && (
-                      <p className="text-xs text-gray-400">
+                      <p className="text-xs text-[var(--text-muted)]">
                         Next appointment: {formatDate(c.nextAppointmentDate)}
                       </p>
                     )}
@@ -533,32 +568,31 @@ function VisitCard({ record, index }: { record: VisitRecord; index: number }) {
           {/* Diagnoses */}
           {diagnoses.length > 0 && (
             <div>
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+              <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
                 Diagnoses ({diagnoses.length})
               </p>
               <div className="space-y-2">
                 {diagnoses.map((d) => (
                   <div
                     key={d.id}
-                    className="flex items-start gap-3 p-3 bg-gray-50 rounded-xl"
+                    className="flex items-start gap-3 p-3 bg-[var(--surface-sunken)] rounded-[var(--r-sm)]"
                   >
-                    <span className="font-mono text-xs bg-white px-2 py-1 rounded-lg border border-gray-200 text-gray-600 flex-shrink-0 mt-0.5">
+                    <span className="font-mono text-xs bg-[var(--surface-card)] px-2 py-1 rounded-[var(--r-xs)] border border-[var(--hc-border)] text-[var(--text-secondary)] flex-shrink-0 mt-0.5">
                       {d.icdCode}
                     </span>
                     <div>
-                      <p className="text-sm font-semibold text-gray-800">
+                      <p className="text-sm font-semibold text-[var(--text-primary)]">
                         {d.diagnosisName}
                       </p>
                       <div className="flex gap-1.5 mt-1">
                         <Badge
                           label={d.diagnosisType.replace("_", " ")}
-                          bg="#eff6ff"
-                          text="#1d4ed8"
+                          tone="info"
                         />
                         {d.severity && <Badge label={d.severity} />}
                       </div>
                       {d.notes && (
-                        <p className="text-xs text-gray-500 mt-1">{d.notes}</p>
+                        <p className="text-xs text-[var(--text-secondary)] mt-1">{d.notes}</p>
                       )}
                     </div>
                   </div>
@@ -570,57 +604,56 @@ function VisitCard({ record, index }: { record: VisitRecord; index: number }) {
           {/* Prescriptions */}
           {prescriptions.length > 0 && (
             <div>
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+              <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
                 Prescriptions ({prescriptions.length})
               </p>
               <div className="space-y-3">
                 {prescriptions.map((rx) => (
                   <div
                     key={rx.id}
-                    className="border border-green-100 rounded-xl overflow-hidden"
+                    className="border border-[var(--green-100)] rounded-[var(--r-sm)] overflow-hidden"
                   >
-                    <div className="flex items-center justify-between px-4 py-2.5 bg-green-50/60">
-                      <span className="font-mono text-xs font-bold text-green-800">
+                    <div className="flex items-center justify-between px-4 py-2.5 bg-[var(--brand-tint)]">
+                      <span className="font-mono text-xs font-bold text-[var(--green-800)]">
                         {rx.prescriptionNumber}
                       </span>
                       <Badge
                         label={rx.status}
-                        bg={rx.status === "dispensed" ? "#f0fdf4" : "#fffbeb"}
-                        text={rx.status === "dispensed" ? "#166534" : "#92400e"}
+                        tone={rx.status === "dispensed" ? "success" : "urgent"}
                       />
                     </div>
-                    <div className="divide-y divide-gray-50">
+                    <div className="divide-y divide-[var(--border-faint)]">
                       {rx.items.map((item) => (
                         <div
                           key={item.id}
                           className="px-4 py-3 flex items-start justify-between gap-3"
                         >
                           <div>
-                            <p className="text-sm font-semibold text-gray-800">
+                            <p className="text-sm font-semibold text-[var(--text-primary)]">
                               {item.medicationName}
                               {item.genericName && (
-                                <span className="text-xs text-gray-400 ml-1">
+                                <span className="text-xs text-[var(--text-muted)] ml-1">
                                   ({item.genericName})
                                 </span>
                               )}
                             </p>
-                            <p className="text-xs text-gray-500 mt-0.5">
+                            <p className="text-xs text-[var(--text-secondary)] mt-0.5">
                               {item.strength} · {item.dosageForm} · {item.dose}{" "}
                               · {item.frequency.replace(/_/g, " ")} ·{" "}
                               {item.route} · {item.duration}
                             </p>
                             {item.instructions && (
-                              <p className="text-xs text-gray-400 italic mt-0.5">
+                              <p className="text-xs text-[var(--text-muted)] italic mt-0.5">
                                 {item.instructions}
                               </p>
                             )}
                           </div>
                           <div className="text-right flex-shrink-0">
-                            <p className="text-xs font-semibold text-gray-700">
+                            <p className="text-xs font-semibold text-[var(--text-secondary)]">
                               ×{item.quantity}
                             </p>
                             {item.isDispensed && (
-                              <CheckCircle2 className="w-3.5 h-3.5 text-green-500 ml-auto mt-1" />
+                              <CheckCircle2 className="w-3.5 h-3.5 text-[var(--success-ink)] ml-auto mt-1" />
                             )}
                           </div>
                         </div>
@@ -635,34 +668,33 @@ function VisitCard({ record, index }: { record: VisitRecord; index: number }) {
           {/* Lab Orders */}
           {labOrders.length > 0 && (
             <div>
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+              <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
                 Lab Orders ({labOrders.length})
               </p>
               <div className="space-y-2">
                 {labOrders.map((lo) => (
                   <div
                     key={lo.id}
-                    className="p-3 bg-purple-50/40 rounded-xl border border-purple-100/60"
+                    className="p-3 bg-[var(--violet-050)] rounded-[var(--r-sm)] border border-[var(--violet-100)]"
                   >
                     <div className="flex items-center justify-between mb-1">
                       <div>
-                        <p className="text-sm font-semibold text-gray-800">
+                        <p className="text-sm font-semibold text-[var(--text-primary)]">
                           {lo.testName}
                         </p>
-                        <p className="text-xs text-gray-500 font-mono">
+                        <p className="text-xs text-[var(--text-secondary)] font-mono">
                           {lo.testCode} · {lo.specimenType}
                         </p>
                       </div>
                       <Badge
                         label={lo.status}
-                        bg={lo.status === "resulted" ? "#f0fdf4" : "#eff6ff"}
-                        text={lo.status === "resulted" ? "#166534" : "#1d4ed8"}
+                        tone={lo.status === "resulted" ? "success" : "info"}
                       />
                     </div>
                     {lo.result && (
-                      <div className="mt-2 pt-2 border-t border-purple-100 space-y-1">
+                      <div className="mt-2 pt-2 border-t border-[var(--violet-100)] space-y-1">
                         {lo.result.interpretation && (
-                          <p className="text-xs text-gray-600">
+                          <p className="text-xs text-[var(--text-secondary)]">
                             <span className="font-semibold">
                               Interpretation:
                             </span>{" "}
@@ -670,7 +702,7 @@ function VisitCard({ record, index }: { record: VisitRecord; index: number }) {
                           </p>
                         )}
                         {lo.result.abnormalFindings && (
-                          <p className="text-xs text-amber-700 flex items-center gap-1">
+                          <p className="text-xs text-[var(--urgent-ink)] flex items-center gap-1">
                             <AlertTriangle className="w-3 h-3" />{" "}
                             {lo.result.abnormalFindings}
                           </p>
@@ -686,44 +718,43 @@ function VisitCard({ record, index }: { record: VisitRecord; index: number }) {
           {/* Imaging */}
           {imagingOrders.length > 0 && (
             <div>
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">
+              <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-3">
                 Imaging ({imagingOrders.length})
               </p>
               <div className="space-y-2">
                 {imagingOrders.map((io) => (
                   <div
                     key={io.id}
-                    className="p-3 bg-sky-50/40 rounded-xl border border-sky-100/60"
+                    className="p-3 bg-[var(--info-tint)] rounded-[var(--r-sm)] border border-[var(--blue-100)]"
                   >
                     <div className="flex items-center justify-between mb-1">
                       <div>
-                        <p className="text-sm font-semibold text-gray-800 uppercase">
+                        <p className="text-sm font-semibold text-[var(--text-primary)] uppercase">
                           {io.modality.replace("_", " ")} — {io.bodyPart}
                         </p>
-                        <p className="text-xs text-gray-500">{io.indication}</p>
+                        <p className="text-xs text-[var(--text-secondary)]">{io.indication}</p>
                       </div>
                       <Badge
                         label={io.status}
-                        bg={io.status === "reported" ? "#f0fdf4" : "#eff6ff"}
-                        text={io.status === "reported" ? "#166534" : "#1d4ed8"}
+                        tone={io.status === "reported" ? "success" : "info"}
                       />
                     </div>
                     {io.report && (
-                      <div className="mt-2 pt-2 border-t border-sky-100 space-y-1">
+                      <div className="mt-2 pt-2 border-t border-[var(--blue-100)] space-y-1">
                         {io.report.findings && (
-                          <p className="text-xs text-gray-600">
+                          <p className="text-xs text-[var(--text-secondary)]">
                             <span className="font-semibold">Findings:</span>{" "}
                             {io.report.findings}
                           </p>
                         )}
                         {io.report.impression && (
-                          <p className="text-xs text-gray-600">
+                          <p className="text-xs text-[var(--text-secondary)]">
                             <span className="font-semibold">Impression:</span>{" "}
                             {io.report.impression}
                           </p>
                         )}
                         {io.report.recommendations && (
-                          <p className="text-xs text-gray-600">
+                          <p className="text-xs text-[var(--text-secondary)]">
                             <span className="font-semibold">
                               Recommendations:
                             </span>{" "}
@@ -740,16 +771,16 @@ function VisitCard({ record, index }: { record: VisitRecord; index: number }) {
 
           {/* Discharge summary */}
           {visit.dischargeDiagnosis && (
-            <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
-              <p className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+            <div className="bg-[var(--surface-sunken)] rounded-[var(--r-sm)] p-4 border border-[var(--hc-border)]">
+              <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider mb-2">
                 Discharge Summary
               </p>
-              <p className="text-sm text-gray-700">
+              <p className="text-sm text-[var(--text-secondary)]">
                 <span className="font-semibold">Diagnosis:</span>{" "}
                 {visit.dischargeDiagnosis}
               </p>
               {visit.dischargeSummary && (
-                <p className="text-sm text-gray-700 mt-1">
+                <p className="text-sm text-[var(--text-secondary)] mt-1">
                   {visit.dischargeSummary}
                 </p>
               )}
@@ -876,38 +907,38 @@ function AwayInstitutionSection({
   // ── UNLOCKED — show visits ─────────────────────────────────────────────────
   if (institution.hasPermission) {
     return (
-      <div className="rounded-2xl border border-green-200 overflow-hidden">
+      <div className="rounded-[var(--r-lg)] border border-[var(--green-200)] overflow-hidden">
         {/* Header */}
         <div
           className="px-5 py-3.5 flex items-center gap-3"
-          style={{ background: "linear-gradient(135deg,#f0fdf4,#dcfce7)" }}
+          style={{ background: "var(--brand-tint)" }}
         >
-          <div className="w-8 h-8 rounded-xl bg-green-100 flex items-center justify-center flex-shrink-0">
-            <Building2 className="w-4 h-4 text-green-700" />
+          <div className="w-8 h-8 rounded-[var(--r-sm)] bg-[var(--green-100)] flex items-center justify-center flex-shrink-0">
+            <Building2 className="w-4 h-4 text-[var(--green-700)]" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-bold text-gray-900 flex items-center gap-2">
+            <p className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
               {institution.institutionName}
               {institution.accessVia === "emergency" && (
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-700 border border-red-200">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[var(--coral-100)] text-[var(--critical-ink)] border border-[var(--coral-100)]">
                   EMERGENCY ACCESS
                 </span>
               )}
             </p>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-[var(--text-secondary)]">
               {institution.visitCount} visit
               {institution.visitCount !== 1 ? "s" : ""}
             </p>
           </div>
           <div
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
-            style={{ background: "#f0fdf4", color: "#166534" }}
+            style={{ background: "var(--brand-tint)", color: "var(--green-800)" }}
           >
             <Unlock className="w-3 h-3" /> Access granted
           </div>
         </div>
         {/* Visits */}
-        <div className="p-4 space-y-3" style={{ background: "#fafafa" }}>
+        <div className="p-4 space-y-3" style={{ background: "var(--surface-app)" }}>
           {institution.visits.map((record, i) => (
             <VisitCard key={record.visit.id} record={record} index={i} />
           ))}
@@ -918,39 +949,39 @@ function AwayInstitutionSection({
 
   // ── LOCKED — permission gate ───────────────────────────────────────────────
   return (
-    <div className="rounded-2xl border border-gray-200 overflow-hidden">
+    <div className="rounded-[var(--r-lg)] border border-[var(--hc-border)] overflow-hidden">
       {/* Header */}
-      <div className="px-5 py-3.5 flex items-center gap-3 bg-white">
-        <div className="w-8 h-8 rounded-xl bg-gray-100 flex items-center justify-center flex-shrink-0">
-          <Building2 className="w-4 h-4 text-gray-500" />
+      <div className="px-5 py-3.5 flex items-center gap-3 bg-[var(--surface-card)]">
+        <div className="w-8 h-8 rounded-[var(--r-sm)] bg-[var(--surface-sunken)] flex items-center justify-center flex-shrink-0">
+          <Building2 className="w-4 h-4 text-[var(--text-secondary)]" />
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-gray-800">
+          <p className="text-sm font-bold text-[var(--text-primary)]">
             {institution.institutionName}
           </p>
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-[var(--text-muted)]">
             {institution.visitCount} visit
             {institution.visitCount !== 1 ? "s" : ""} · access required
           </p>
         </div>
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-gray-100 text-gray-500">
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-[var(--surface-sunken)] text-[var(--text-secondary)]">
           <Lock className="w-3 h-3" /> Locked
         </div>
       </div>
 
       {/* Body */}
       <div
-        className="border-t border-gray-100 px-5 py-4"
-        style={{ background: "#fafafa" }}
+        className="border-t border-[var(--border-faint)] px-5 py-4"
+        style={{ background: "var(--surface-app)" }}
       >
         {/* Idle — show prompt */}
         {permState.phase === "idle" && (
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
             <div className="flex-1">
-              <p className="text-sm font-semibold text-gray-700">
+              <p className="text-sm font-semibold text-[var(--text-secondary)]">
                 Records from this institution are protected
               </p>
-              <p className="text-xs text-gray-400 mt-0.5">
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
                 Request consent from the patient to view their history from{" "}
                 {institution.institutionName}.
               </p>
@@ -958,15 +989,15 @@ function AwayInstitutionSection({
             <div className="flex-shrink-0 flex items-center gap-2">
               <button
                 onClick={() => setShowOverride(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 transition-all"
+                className="flex items-center gap-2 px-4 py-2 rounded-[var(--r-sm)] text-xs font-semibold border border-[var(--coral-100)] text-[var(--critical-ink)] bg-[var(--coral-050)] hover:bg-[var(--coral-100)] transition-all"
               >
                 <ShieldAlert className="w-3.5 h-3.5" /> Emergency
               </button>
               <button
                 onClick={() => setPermState({ phase: "form" })}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-white text-xs font-semibold shadow-sm hover:shadow-md transition-all"
+                className="flex items-center gap-2 px-4 py-2 rounded-[var(--r-sm)] text-[var(--white)] text-xs font-semibold shadow-[var(--elev-1)] hover:shadow-[var(--elev-2)] transition-all"
                 style={{
-                  background: "linear-gradient(135deg,#166534,#15803d)",
+                  background: "var(--brand)",
                 }}
               >
                 <Send className="w-3.5 h-3.5" /> Request Access
@@ -978,15 +1009,15 @@ function AwayInstitutionSection({
         {/* Form */}
         {permState.phase === "form" && (
           <div className="space-y-4">
-            <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200">
-              <ShieldX className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-              <p className="text-xs text-amber-700">
+            <div className="flex items-start gap-3 p-3 rounded-[var(--r-sm)] bg-[var(--amber-050)] border border-[var(--amber-100)]">
+              <ShieldX className="w-4 h-4 text-[var(--urgent-ink)] flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-[var(--urgent-ink)]">
                 The patient will receive a notification on their mobile app and
                 must approve your request.
               </p>
             </div>
             <div className="space-y-2">
-              <p className="text-xs font-semibold text-gray-600 uppercase tracking-wide">
+              <p className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide">
                 Requested Permissions
               </p>
               <div className="flex flex-wrap gap-2">
@@ -997,18 +1028,18 @@ function AwayInstitutionSection({
                       key={key}
                       type="button"
                       onClick={() => togglePerm(key)}
-                      className="px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all"
+                      className="px-2.5 py-1 rounded-[var(--r-xs)] text-xs font-semibold border transition-all"
                       style={
                         selected
                           ? {
-                              background: "#f0fdf4",
-                              borderColor: "#86efac",
-                              color: "#166534",
+                              background: "var(--brand-tint)",
+                              borderColor: "var(--green-300)",
+                              color: "var(--green-800)",
                             }
                           : {
-                              background: "#fafafa",
-                              borderColor: "#e5e7eb",
-                              color: "#6b7280",
+                              background: "var(--surface-app)",
+                              borderColor: "var(--hc-border)",
+                              color: "var(--text-secondary)",
                             }
                       }
                     >
@@ -1020,8 +1051,8 @@ function AwayInstitutionSection({
               </div>
             </div>
             <div className="space-y-1">
-              <label className="text-xs font-semibold text-gray-600 uppercase tracking-wide block">
-                Clinical Reason <span className="text-red-400">*</span>
+              <label className="text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide block">
+                Clinical Reason <span className="text-[var(--coral-500)]">*</span>
               </label>
               <textarea
                 value={reason}
@@ -1031,16 +1062,16 @@ function AwayInstitutionSection({
                 }}
                 rows={2}
                 placeholder={`Need to review ${institution.institutionName} records for…`}
-                className="w-full px-3 py-2 rounded-xl border border-gray-200 bg-white text-gray-900 text-sm outline-none transition-all focus:border-green-500 focus:ring-2 focus:ring-green-500/10 placeholder:text-gray-400 resize-none"
+                className="w-full px-3 py-2 rounded-[var(--r-sm)] border border-[var(--hc-border)] bg-[var(--surface-card)] text-[var(--text-primary)] text-sm outline-none transition-all focus:border-[var(--brand)] focus:ring-2 focus:ring-[var(--focus-ring)] placeholder:text-[var(--text-muted)] resize-none"
               />
-              <p className="text-xs text-gray-400">
+              <p className="text-xs text-[var(--text-muted)]">
                 {reason.length} chars · minimum 10
               </p>
             </div>
             {formError && (
-              <div className="flex items-start gap-2 p-2.5 rounded-xl bg-red-50 border border-red-100">
-                <AlertCircle className="w-3.5 h-3.5 text-red-500 mt-0.5 flex-shrink-0" />
-                <p className="text-xs text-red-700">{formError}</p>
+              <div className="flex items-start gap-2 p-2.5 rounded-[var(--r-sm)] bg-[var(--coral-050)] border border-[var(--coral-100)]">
+                <AlertCircle className="w-3.5 h-3.5 text-[var(--critical-ink)] mt-0.5 flex-shrink-0" />
+                <p className="text-xs text-[var(--critical-ink)]">{formError}</p>
               </div>
             )}
             <div className="flex gap-2">
@@ -1050,15 +1081,15 @@ function AwayInstitutionSection({
                   setReason("");
                   setFormError("");
                 }}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl border border-gray-200 text-xs font-semibold text-gray-700 hover:bg-gray-50"
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-[var(--r-sm)] border border-[var(--hc-border)] text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-sunken)]"
               >
                 <XCircle className="w-3.5 h-3.5" /> Cancel
               </button>
               <button
                 onClick={handleRequest}
-                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-white text-xs font-semibold"
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-[var(--r-sm)] text-[var(--white)] text-xs font-semibold"
                 style={{
-                  background: "linear-gradient(135deg,#166534,#15803d)",
+                  background: "var(--brand)",
                 }}
               >
                 <Send className="w-3.5 h-3.5" /> Send Request
@@ -1070,30 +1101,30 @@ function AwayInstitutionSection({
         {/* Submitting */}
         {permState.phase === "submitting" && (
           <div className="flex items-center justify-center gap-2 py-4">
-            <Loader2 className="w-4 h-4 animate-spin text-green-700" />
-            <span className="text-sm text-gray-500">Sending request…</span>
+            <Loader2 className="w-4 h-4 animate-spin text-[var(--green-700)]" />
+            <span className="text-sm text-[var(--text-secondary)]">Sending request…</span>
           </div>
         )}
 
         {/* Pending */}
         {permState.phase === "pending" && (
           <div className="space-y-3">
-            <div className="flex items-center gap-3 p-3 rounded-xl bg-blue-50 border border-blue-100">
+            <div className="flex items-center gap-3 p-3 rounded-[var(--r-sm)] bg-[var(--info-tint)] border border-[var(--blue-100)]">
               <div className="relative w-8 h-8 flex-shrink-0">
-                <div className="absolute inset-0 rounded-full animate-ping opacity-20 bg-green-600" />
-                <div className="relative w-8 h-8 rounded-full bg-green-100 flex items-center justify-center">
-                  <Clock className="w-4 h-4 text-green-700" />
+                <div className="absolute inset-0 rounded-full animate-ping opacity-20 bg-[var(--brand)]" />
+                <div className="relative w-8 h-8 rounded-full bg-[var(--green-100)] flex items-center justify-center">
+                  <Clock className="w-4 h-4 text-[var(--green-700)]" />
                 </div>
               </div>
               <div>
-                <p className="text-sm font-semibold text-gray-800">
+                <p className="text-sm font-semibold text-[var(--text-primary)]">
                   Waiting for patient approval
                 </p>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-[var(--text-secondary)]">
                   Checking every 5 seconds…
                 </p>
               </div>
-              <Loader2 className="w-4 h-4 animate-spin text-green-700 ml-auto flex-shrink-0" />
+              <Loader2 className="w-4 h-4 animate-spin text-[var(--green-700)] ml-auto flex-shrink-0" />
             </div>
             <button
               onClick={() => {
@@ -1101,7 +1132,7 @@ function AwayInstitutionSection({
                 setPermState({ phase: "idle" });
                 setReason("");
               }}
-              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl border border-gray-200 text-xs font-semibold text-gray-600 hover:bg-gray-50"
+              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-[var(--r-sm)] border border-[var(--hc-border)] text-xs font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-sunken)]"
             >
               <XCircle className="w-3.5 h-3.5" /> Cancel request
             </button>
@@ -1111,13 +1142,13 @@ function AwayInstitutionSection({
         {/* Rejected */}
         {permState.phase === "rejected" && (
           <div className="space-y-3">
-            <div className="flex items-center gap-3 p-3 rounded-xl bg-red-50 border border-red-100">
-              <Ban className="w-5 h-5 text-red-500 flex-shrink-0" />
+            <div className="flex items-center gap-3 p-3 rounded-[var(--r-sm)] bg-[var(--coral-050)] border border-[var(--coral-100)]">
+              <Ban className="w-5 h-5 text-[var(--critical-ink)] flex-shrink-0" />
               <div>
-                <p className="text-sm font-semibold text-gray-800">
+                <p className="text-sm font-semibold text-[var(--text-primary)]">
                   Request declined
                 </p>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-[var(--text-secondary)]">
                   The patient declined to share records from{" "}
                   {institution.institutionName}.
                 </p>
@@ -1128,8 +1159,8 @@ function AwayInstitutionSection({
                 setPermState({ phase: "form" });
                 setReason("");
               }}
-              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-white text-xs font-semibold"
-              style={{ background: "linear-gradient(135deg,#166534,#15803d)" }}
+              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-[var(--r-sm)] text-[var(--white)] text-xs font-semibold"
+              style={{ background: "var(--brand)" }}
             >
               <Send className="w-3.5 h-3.5" /> Send New Request
             </button>
@@ -1139,13 +1170,13 @@ function AwayInstitutionSection({
         {/* Expired */}
         {permState.phase === "expired" && (
           <div className="space-y-3">
-            <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-100">
-              <Clock className="w-5 h-5 text-amber-500 flex-shrink-0" />
+            <div className="flex items-center gap-3 p-3 rounded-[var(--r-sm)] bg-[var(--amber-050)] border border-[var(--amber-100)]">
+              <Clock className="w-5 h-5 text-[var(--amber-500)] flex-shrink-0" />
               <div>
-                <p className="text-sm font-semibold text-gray-800">
+                <p className="text-sm font-semibold text-[var(--text-primary)]">
                   Request expired
                 </p>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs text-[var(--text-secondary)]">
                   The patient didn't respond in time.
                 </p>
               </div>
@@ -1155,8 +1186,8 @@ function AwayInstitutionSection({
                 setPermState({ phase: "form" });
                 setReason("");
               }}
-              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-white text-xs font-semibold"
-              style={{ background: "linear-gradient(135deg,#166534,#15803d)" }}
+              className="w-full flex items-center justify-center gap-1.5 py-2 rounded-[var(--r-sm)] text-[var(--white)] text-xs font-semibold"
+              style={{ background: "var(--brand)" }}
             >
               <RefreshCw className="w-3.5 h-3.5" /> Send New Request
             </button>
@@ -1256,17 +1287,17 @@ export default function PatientHistoryTab({
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-20 gap-3">
-        <Loader2 className="w-6 h-6 animate-spin text-green-700" />
-        <p className="text-sm text-gray-500">Loading patient history…</p>
+        <Loader2 className="w-6 h-6 animate-spin text-[var(--green-700)]" />
+        <p className="text-sm text-[var(--text-secondary)]">Loading patient history…</p>
       </div>
     );
   }
 
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-100 rounded-2xl p-8 text-center">
-        <AlertCircle className="w-8 h-8 text-red-400 mx-auto mb-3" />
-        <p className="text-sm font-semibold text-red-700">{error}</p>
+      <div className="bg-[var(--coral-050)] border border-[var(--coral-100)] rounded-[var(--r-lg)] p-8 text-center">
+        <AlertCircle className="w-8 h-8 text-[var(--coral-500)] mx-auto mb-3" />
+        <p className="text-sm font-semibold text-[var(--critical-ink)]">{error}</p>
       </div>
     );
   }
@@ -1293,27 +1324,27 @@ export default function PatientHistoryTab({
       );
 
   return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif" }} className="space-y-5">
+    <div className="space-y-5">
       {/* Patient demographics card */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] overflow-hidden">
         <div
           className="px-5 py-4 flex items-center gap-4"
-          style={{ background: "linear-gradient(135deg,#f0fdf4,#dcfce7)" }}
+          style={{ background: "var(--brand-tint)" }}
         >
           <div
-            className="w-12 h-12 rounded-full flex items-center justify-center text-base font-bold text-white flex-shrink-0"
-            style={{ background: "#166534" }}
+            className="w-12 h-12 rounded-full flex items-center justify-center text-base font-bold text-[var(--white)] flex-shrink-0"
+            style={{ background: "var(--green-800)" }}
           >
             {patient.firstName[0]}
             {patient.lastName[0]}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-bold text-gray-900 text-lg">
+            <p className="font-bold text-[var(--text-primary)] text-lg">
               {patient.firstName}
               {patient.middleName ? ` ${patient.middleName}` : ""}{" "}
               {patient.lastName}
             </p>
-            <p className="text-xs text-gray-500 mt-0.5">
+            <p className="text-xs text-[var(--text-secondary)] mt-0.5">
               {patient.gender.charAt(0).toUpperCase() + patient.gender.slice(1)}{" "}
               · Age {calculateAge(patient.dateOfBirth)} · DOB{" "}
               {formatDate(patient.dateOfBirth)}
@@ -1321,16 +1352,17 @@ export default function PatientHistoryTab({
           </div>
           {patient.bloodType && patient.bloodType !== "unknown" && (
             <span
-              className="text-xs font-bold px-2.5 py-1 rounded-full text-white flex-shrink-0"
+              className="text-xs font-bold px-2.5 py-1 rounded-full flex-shrink-0"
               style={{
-                background: BLOOD_TYPE_COLOR[patient.bloodType] ?? "#6b7280",
+                background: "var(--critical-tint)",
+                color: "var(--critical-ink)",
               }}
             >
               {patient.bloodType}
             </span>
           )}
         </div>
-        <div className="px-5 py-3 grid grid-cols-2 gap-3 bg-gray-50/40 border-t border-gray-100">
+        <div className="px-5 py-3 grid grid-cols-2 gap-3 bg-[var(--surface-sunken)] border-t border-[var(--border-faint)]">
           {[
             { label: "Phone", value: patient.phoneNumber },
             { label: "Marital Status", value: patient.maritalStatus },
@@ -1340,10 +1372,10 @@ export default function PatientHistoryTab({
             .filter(({ value }) => !!value)
             .map(({ label, value }) => (
               <div key={label}>
-                <p className="text-xs text-gray-400 uppercase tracking-wide">
+                <p className="text-xs text-[var(--text-muted)] uppercase tracking-wide">
                   {label}
                 </p>
-                <p className="text-sm font-semibold text-gray-700 capitalize truncate">
+                <p className="text-sm font-semibold text-[var(--text-secondary)] capitalize truncate">
                   {value}
                 </p>
               </div>
@@ -1358,28 +1390,28 @@ export default function PatientHistoryTab({
             label: "Total Visits",
             value: totalVisits,
             icon: FileText,
-            color: "#166534",
+            color: "var(--green-800)",
           },
           {
             label: "Diagnoses",
             value: totalDiagnoses,
             icon: Stethoscope,
-            color: "#2563eb",
+            color: "var(--blue-600)",
           },
           {
             label: "Prescriptions",
             value: totalRx,
             icon: Pill,
-            color: "#7c3aed",
+            color: "var(--accent-ink)",
           },
         ].map(({ label, value, icon: Icon, color }) => (
           <div
             key={label}
-            className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 text-center"
+            className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-4 text-center"
           >
             <Icon className="w-5 h-5 mx-auto mb-1" style={{ color }} />
-            <p className="text-2xl font-bold text-gray-900">{value}</p>
-            <p className="text-xs text-gray-500">{label}</p>
+            <p className="text-2xl font-bold text-[var(--text-primary)]">{value}</p>
+            <p className="text-xs text-[var(--text-secondary)]">{label}</p>
           </div>
         ))}
       </div>
@@ -1387,19 +1419,19 @@ export default function PatientHistoryTab({
       {/* ── OWN INSTITUTION RECORDS ─────────────────────────────────────────── */}
       <div className="space-y-3">
         <div className="flex items-center gap-2 px-1">
-          <ShieldCheck className="w-4 h-4 text-green-600" />
-          <p className="text-xs font-bold text-gray-600 uppercase tracking-wider">
+          <ShieldCheck className="w-4 h-4 text-[var(--green-700)]" />
+          <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
             Own Institution Records
           </p>
-          <span className="ml-auto text-xs font-semibold text-gray-400">
+          <span className="ml-auto text-xs font-semibold text-[var(--text-muted)]">
             {ownVisits.length} visit{ownVisits.length !== 1 ? "s" : ""}
           </span>
         </div>
 
         {ownVisits.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center">
-            <FileText className="w-7 h-7 text-gray-300 mx-auto mb-2" />
-            <p className="text-sm text-gray-500">
+          <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-8 text-center">
+            <FileText className="w-7 h-7 text-[var(--text-disabled)] mx-auto mb-2" />
+            <p className="text-sm text-[var(--text-secondary)]">
               No visits at your institution yet.
             </p>
           </div>
@@ -1414,19 +1446,19 @@ export default function PatientHistoryTab({
       {awayInstitutions.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-2 px-1">
-            <Building2 className="w-4 h-4 text-gray-400" />
-            <p className="text-xs font-bold text-gray-600 uppercase tracking-wider">
+            <Building2 className="w-4 h-4 text-[var(--text-muted)]" />
+            <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
               Away Institution Records
             </p>
-            <span className="ml-auto text-xs font-semibold text-gray-400">
+            <span className="ml-auto text-xs font-semibold text-[var(--text-muted)]">
               {awayInstitutions.length} institution
               {awayInstitutions.length !== 1 ? "s" : ""}
             </span>
           </div>
 
-          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start gap-2.5">
-            <ShieldX className="w-4 h-4 text-amber-600 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-amber-700">
+          <div className="bg-[var(--amber-050)] border border-[var(--amber-100)] rounded-[var(--r-sm)] px-4 py-3 flex items-start gap-2.5">
+            <ShieldX className="w-4 h-4 text-[var(--urgent-ink)] flex-shrink-0 mt-0.5" />
+            <p className="text-xs text-[var(--urgent-ink)]">
               Records from other institutions are protected by blockchain
               consent. Click <strong>Request Access</strong> on each institution
               — the patient will approve or deny from their mobile app. In a

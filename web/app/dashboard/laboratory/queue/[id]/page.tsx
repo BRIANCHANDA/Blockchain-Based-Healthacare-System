@@ -18,7 +18,6 @@ import {
   Clock,
   Beaker,
   User,
-  Heart,
   Activity,
   Ban,
   ShieldAlert,
@@ -28,6 +27,25 @@ import {
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 import { MinorBadge, ageFromDob } from "@/components/ui/MinorBadge";
+import {
+  Pill as Badge,
+  Toast as BaseToast,
+  TONES,
+  type Tone,
+} from "@/components/dashboard/ui";
+import { getUrgency } from "../../vocab";
+
+/* ==========================================================================
+   Lab result entry.
+
+   The technician enters one row per parameter, each auto-flagged against its
+   reference range by autoFlag(). TEST_TEMPLATES pre-fills the rows for
+   common panels so a full blood count is not typed from scratch.
+
+   Two guard rails before release: a critical value forces an explicit
+   confirmation, and a sample can be rejected outright with a reason rather
+   than resulted with bad data.
+   ========================================================================== */
 
 // ════════════════════════════════════════════════════════════════════════════
 // Types
@@ -45,22 +63,14 @@ type ResultRow = {
 // ════════════════════════════════════════════════════════════════════════════
 // Design tokens
 // ════════════════════════════════════════════════════════════════════════════
-const URGENCY_CONFIG: Record<
-  string,
-  { color: string; bg: string; label: string }
-> = {
-  routine: { color: "#0A6640", bg: "#E6F4EE", label: "Routine" },
-  urgent: { color: "#C9952A", bg: "#FDF3DC", label: "Urgent" },
-  emergency: { color: "#C0392B", bg: "#FDECEA", label: "Emergency" },
-  critical: { color: "#6D28D9", bg: "#EDE9FE", label: "Critical" },
+/* A parameter's flag against its reference range. Direction arrows stay in
+   the label — the tone alone cannot say "high" versus "low". */
+const FLAG_CONFIG: Record<Flag, { tone: Tone; label: string }> = {
+  normal: { tone: "success", label: "Normal" },
+  high: { tone: "critical", label: "High ↑" },
+  low: { tone: "info", label: "Low ↓" },
+  critical: { tone: "accent", label: "Critical" },
 };
-const FLAG_CONFIG: Record<Flag, { color: string; bg: string; label: string }> =
-  {
-    normal: { color: "#0A6640", bg: "#E6F4EE", label: "Normal" },
-    high: { color: "#C0392B", bg: "#FDECEA", label: "High ↑" },
-    low: { color: "#1A6B8A", bg: "#E3F2F8", label: "Low ↓" },
-    critical: { color: "#6D28D9", bg: "#EDE9FE", label: "Critical" },
-  };
 
 // ════════════════════════════════════════════════════════════════════════════
 // Test templates — expanded for Zambian clinical context
@@ -618,17 +628,11 @@ function Toast({
   type: "success" | "error";
 }) {
   return (
-    <div
-      className={`fixed top-5 right-5 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-lg text-sm font-medium
-      ${type === "success" ? "bg-green-50 text-green-800 border border-green-200" : "bg-red-50 text-red-800 border border-red-100"}`}
-    >
-      {type === "success" ? (
-        <CheckCircle2 size={16} className="text-green-600" />
-      ) : (
-        <AlertTriangle size={16} className="text-red-500" />
-      )}
-      {message}
-    </div>
+    <BaseToast
+      message={message}
+      icon={type === "success" ? CheckCircle2 : AlertTriangle}
+      tone={type === "success" ? "success" : "critical"}
+    />
   );
 }
 
@@ -644,12 +648,12 @@ function PatientContextPanel({
 }) {
   if (loading) {
     return (
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 animate-pulse">
+      <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-5 animate-pulse">
         <div className="flex items-center gap-3 mb-3">
-          <div className="w-12 h-12 rounded-2xl bg-gray-100" />
+          <div className="w-12 h-12 rounded-[var(--r-lg)] bg-[var(--surface-sunken)]" />
           <div className="space-y-2">
-            <div className="h-4 w-32 bg-gray-100 rounded" />
-            <div className="h-3 w-20 bg-gray-100 rounded" />
+            <div className="h-4 w-32 bg-[var(--surface-sunken)] rounded" />
+            <div className="h-3 w-20 bg-[var(--surface-sunken)] rounded" />
           </div>
         </div>
       </div>
@@ -665,15 +669,15 @@ function PatientContextPanel({
     ) ?? [];
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] overflow-hidden">
       {/* Critical allergies banner */}
       {severeAllergies.length > 0 && (
         <div
           className="px-5 py-2.5 flex items-center gap-2.5 border-b"
-          style={{ background: "#fef2f2", borderColor: "#fecaca" }}
+          style={{ background: "var(--coral-050)", borderColor: "var(--coral-100)" }}
         >
-          <ShieldAlert size={15} className="text-red-600 flex-shrink-0" />
-          <p className="text-xs font-bold text-red-700">
+          <ShieldAlert size={15} className="text-[var(--critical-ink)] flex-shrink-0" />
+          <p className="text-xs font-bold text-[var(--critical-ink)]">
             SEVERE ALLERGY:{" "}
             {severeAllergies.map((a: any) => a.allergen).join(", ")}
           </p>
@@ -684,21 +688,21 @@ function PatientContextPanel({
       <div className="p-5">
         <div className="flex items-start gap-4">
           <div
-            className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
-            style={{ background: "linear-gradient(135deg, #f0fdf4, #dcfce7)" }}
+            className="w-12 h-12 rounded-[var(--r-lg)] flex items-center justify-center flex-shrink-0"
+            style={{ background: "var(--brand-tint)" }}
           >
-            <User size={22} className="text-green-700" />
+            <User size={22} className="text-[var(--green-700)]" />
           </div>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <p className="text-base font-bold text-gray-900">
+              <p className="text-base font-bold text-[var(--text-primary)]">
                 {patient.fullName}
               </p>
               {patient.isMinor && (
                 <MinorBadge age={patient.dateOfBirth ? ageFromDob(patient.dateOfBirth) : patient.age} />
               )}
             </div>
-            <div className="flex items-center gap-3 mt-0.5 text-xs text-gray-500 flex-wrap">
+            <div className="flex items-center gap-3 mt-0.5 text-xs text-[var(--text-secondary)] flex-wrap">
               {patient.age != null && (
                 <span className="font-semibold">{patient.age} yrs</span>
               )}
@@ -707,8 +711,8 @@ function PatientContextPanel({
               )}
               {patient.bloodType && patient.bloodType !== "unknown" && (
                 <span className="flex items-center gap-1">
-                  <Droplets size={11} className="text-red-500" />
-                  <span className="font-semibold text-red-600">
+                  <Droplets size={11} className="text-[var(--coral-500)]" />
+                  <span className="font-semibold text-[var(--critical-ink)]">
                     {patient.bloodType}
                   </span>
                 </span>
@@ -725,8 +729,8 @@ function PatientContextPanel({
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
                 style={{
                   background:
-                    severeAllergies.length > 0 ? "#fef2f2" : "#fffbeb",
-                  color: severeAllergies.length > 0 ? "#dc2626" : "#d97706",
+                    severeAllergies.length > 0 ? "var(--coral-050)" : "var(--amber-050)",
+                  color: severeAllergies.length > 0 ? "var(--critical-ink)" : "var(--urgent-ink)",
                 }}
               >
                 <AlertTriangle size={11} />
@@ -735,7 +739,7 @@ function PatientContextPanel({
               </div>
             )}
             {summary.activeConditions > 0 && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700">
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-[var(--info-tint)] text-[var(--info-ink)]">
                 <Activity size={11} />
                 {summary.activeConditions} active condition
                 {summary.activeConditions !== 1 ? "s" : ""}
@@ -746,8 +750,8 @@ function PatientContextPanel({
 
         {/* Allergies detail */}
         {allergies && allergies.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-gray-50">
-            <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
+          <div className="mt-4 pt-4 border-t border-[var(--border-faint)]">
+            <p className="text-xs font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2">
               Allergies
             </p>
             <div className="space-y-1.5">
@@ -759,18 +763,18 @@ function PatientContextPanel({
                   <div key={a.id} className="flex items-start gap-2 text-xs">
                     <span
                       className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0"
-                      style={{ background: severe ? "#dc2626" : "#d97706" }}
+                      style={{ background: severe ? "var(--critical-ink)" : "var(--urgent-ink)" }}
                     />
                     <div className="flex-1 min-w-0">
-                      <span className="font-semibold text-gray-800">
+                      <span className="font-semibold text-[var(--text-primary)]">
                         {a.allergen}
                       </span>
-                      <span className="text-gray-400 capitalize">
+                      <span className="text-[var(--text-muted)] capitalize">
                         {" "}
                         · {a.severity?.replace(/_/g, " ")}
                       </span>
                       {a.reaction && (
-                        <p className="text-gray-500 mt-0.5">{a.reaction}</p>
+                        <p className="text-[var(--text-secondary)] mt-0.5">{a.reaction}</p>
                       )}
                     </div>
                   </div>
@@ -782,8 +786,8 @@ function PatientContextPanel({
 
         {/* Active conditions */}
         {medicalHistory && medicalHistory.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-gray-50">
-            <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
+          <div className="mt-4 pt-4 border-t border-[var(--border-faint)]">
+            <p className="text-xs font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2">
               Medical History
             </p>
             <div className="space-y-1.5">
@@ -792,15 +796,15 @@ function PatientContextPanel({
                   <span
                     className="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0"
                     style={{
-                      background: h.status === "active" ? "#2563eb" : "#9ca3af",
+                      background: h.status === "active" ? "var(--blue-600)" : "var(--text-muted)",
                     }}
                   />
                   <div className="flex-1">
-                    <span className="font-semibold text-gray-800">
+                    <span className="font-semibold text-[var(--text-primary)]">
                       {h.condition}
                     </span>
                     {h.diagnosedDate && (
-                      <span className="text-gray-400">
+                      <span className="text-[var(--text-muted)]">
                         {" "}
                         · since {format(new Date(h.diagnosedDate), "MMM yyyy")}
                       </span>
@@ -814,8 +818,8 @@ function PatientContextPanel({
 
         {/* Recent diagnoses */}
         {recentDiagnoses && recentDiagnoses.length > 0 && (
-          <div className="mt-4 pt-4 border-t border-gray-50">
-            <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
+          <div className="mt-4 pt-4 border-t border-[var(--border-faint)]">
+            <p className="text-xs font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2">
               Recent Diagnoses
             </p>
             <div className="space-y-1.5">
@@ -823,14 +827,14 @@ function PatientContextPanel({
                 <div key={d.id} className="flex items-start gap-2 text-xs">
                   <HistoryIcon
                     size={11}
-                    className="text-gray-400 mt-0.5 flex-shrink-0"
+                    className="text-[var(--text-muted)] mt-0.5 flex-shrink-0"
                   />
                   <div className="flex-1">
-                    <span className="font-semibold text-gray-800">
+                    <span className="font-semibold text-[var(--text-primary)]">
                       {d.diagnosisName}
                     </span>
                     {d.icdCode && (
-                      <span className="text-gray-400 font-mono text-[10px]">
+                      <span className="text-[var(--text-muted)] font-mono text-[10px]">
                         {" "}
                         · {d.icdCode}
                       </span>
@@ -897,41 +901,41 @@ function RejectModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(10,14,26,0.6)", backdropFilter: "blur(4px)" }}
+      style={{ background: "var(--scrim)", backdropFilter: "blur(4px)" }}
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-md max-h-[85vh] overflow-y-auto"
+        className="bg-[var(--surface-card)] rounded-[var(--r-lg)] shadow-[var(--elev-3)] w-full max-w-md max-h-[85vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-[var(--border-faint)] flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{ background: "#fef2f2" }}
+              className="w-10 h-10 rounded-[var(--r-sm)] flex items-center justify-center"
+              style={{ background: "var(--coral-050)" }}
             >
-              <Ban size={20} className="text-red-600" />
+              <Ban size={20} className="text-[var(--critical-ink)]" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-gray-900">
+              <h2 className="text-base font-bold text-[var(--text-primary)]">
                 Reject Specimen
               </h2>
-              <p className="text-xs text-gray-400 mt-0.5">
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
                 The doctor will be notified to re-order
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-gray-100"
+            className="p-2 rounded-[var(--r-xs)] hover:bg-[var(--surface-sunken)]"
           >
-            <X size={18} className="text-gray-400" />
+            <X size={18} className="text-[var(--text-muted)]" />
           </button>
         </div>
 
         <div className="p-6 space-y-4">
           <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
+            <p className="text-xs font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2">
               Reason
             </p>
             <div className="space-y-1.5">
@@ -939,24 +943,24 @@ function RejectModal({
                 <button
                   key={r.key}
                   onClick={() => setReason(r.key)}
-                  className="w-full text-left px-3 py-2.5 rounded-xl border transition-all"
+                  className="w-full text-left px-3 py-2.5 rounded-[var(--r-sm)] border transition-all"
                   style={
                     reason === r.key
-                      ? { background: "#fef2f2", borderColor: "#fca5a5" }
-                      : { background: "#fff", borderColor: "#e5e7eb" }
+                      ? { background: "var(--coral-050)", borderColor: "var(--coral-100)" }
+                      : { background: "var(--white)", borderColor: "var(--hc-border)" }
                   }
                 >
-                  <p className="text-sm font-semibold text-gray-900">
+                  <p className="text-sm font-semibold text-[var(--text-primary)]">
                     {r.label}
                   </p>
-                  <p className="text-xs text-gray-500 mt-0.5">{r.desc}</p>
+                  <p className="text-xs text-[var(--text-secondary)] mt-0.5">{r.desc}</p>
                 </button>
               ))}
             </div>
           </div>
 
           <div>
-            <p className="text-xs font-bold uppercase tracking-widest text-gray-400 mb-2">
+            <p className="text-xs font-bold uppercase tracking-widest text-[var(--text-muted)] mb-2">
               Notes <span className="font-normal normal-case">(optional)</span>
             </p>
             <textarea
@@ -964,23 +968,23 @@ function RejectModal({
               onChange={(e) => setNotes(e.target.value)}
               rows={2}
               placeholder="Additional details for the ordering doctor…"
-              className="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-red-400 focus:bg-white resize-none placeholder:text-gray-400"
+              className="w-full px-3 py-2.5 rounded-[var(--r-sm)] border border-[var(--hc-border)] bg-[var(--surface-sunken)] text-sm outline-none focus:border-[var(--coral-500)] focus:bg-[var(--surface-card)] resize-none placeholder:text-[var(--text-muted)]"
             />
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-2">
+        <div className="px-6 py-4 border-t border-[var(--border-faint)] flex items-center justify-end gap-2">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+            className="px-4 py-2 rounded-[var(--r-sm)] border border-[var(--hc-border)] text-sm font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-sunken)]"
           >
             Cancel
           </button>
           <button
             onClick={() => onConfirm(reason, notes)}
             disabled={!reason || submitting}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
-            style={{ background: "linear-gradient(135deg,#dc2626,#b91c1c)" }}
+            className="flex items-center gap-2 px-4 py-2 rounded-[var(--r-sm)] text-sm font-semibold text-[var(--white)] disabled:opacity-50"
+            style={{ background: "var(--coral-600)" }}
           >
             {submitting ? (
               <Loader2 size={14} className="animate-spin" />
@@ -1013,26 +1017,26 @@ function CriticalConfirmModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(10,14,26,0.6)", backdropFilter: "blur(4px)" }}
+      style={{ background: "var(--scrim)", backdropFilter: "blur(4px)" }}
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-md"
+        className="bg-[var(--surface-card)] rounded-[var(--r-lg)] shadow-[var(--elev-3)] w-full max-w-md"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 py-4 border-b border-gray-100">
+        <div className="px-6 py-4 border-b border-[var(--border-faint)]">
           <div className="flex items-center gap-3">
             <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{ background: "#fef2f2" }}
+              className="w-10 h-10 rounded-[var(--r-sm)] flex items-center justify-center"
+              style={{ background: "var(--coral-050)" }}
             >
-              <AlertTriangle size={20} className="text-red-600" />
+              <AlertTriangle size={20} className="text-[var(--critical-ink)]" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-gray-900">
+              <h2 className="text-base font-bold text-[var(--text-primary)]">
                 Critical Values Detected
               </h2>
-              <p className="text-xs text-gray-400 mt-0.5">
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
                 Confirm before submitting
               </p>
             </div>
@@ -1040,7 +1044,7 @@ function CriticalConfirmModal({
         </div>
 
         <div className="p-6">
-          <p className="text-sm text-gray-600 mb-3">
+          <p className="text-sm text-[var(--text-secondary)] mb-3">
             The following{" "}
             {criticalRows.length === 1 ? "value is" : "values are"}{" "}
             <strong>critical</strong>:
@@ -1049,27 +1053,27 @@ function CriticalConfirmModal({
             {criticalRows.map((r, i) => (
               <div
                 key={i}
-                className="flex items-center justify-between px-3 py-2 rounded-xl bg-red-50 border border-red-100"
+                className="flex items-center justify-between px-3 py-2 rounded-[var(--r-sm)] bg-[var(--coral-050)] border border-[var(--coral-100)]"
               >
                 <div>
-                  <p className="text-sm font-semibold text-red-900">
+                  <p className="text-sm font-semibold text-[var(--critical-ink)]">
                     {r.parameter}
                   </p>
-                  <p className="text-xs text-red-600 mt-0.5">
+                  <p className="text-xs text-[var(--critical-ink)] mt-0.5">
                     Reference: {r.referenceRange} {r.unit}
                   </p>
                 </div>
                 <div className="text-right">
-                  <p className="text-xl font-extrabold text-red-700 tabular-nums">
+                  <p className="text-xl font-extrabold text-[var(--critical-ink)] tabular-nums">
                     {r.value}
                   </p>
-                  <p className="text-xs text-red-500">{r.unit}</p>
+                  <p className="text-xs text-[var(--coral-500)]">{r.unit}</p>
                 </div>
               </div>
             ))}
           </div>
-          <div className="p-3 rounded-xl bg-amber-50 border border-amber-100">
-            <p className="text-xs text-amber-800 leading-relaxed">
+          <div className="p-3 rounded-[var(--r-sm)] bg-[var(--amber-050)] border border-[var(--amber-100)]">
+            <p className="text-xs text-[var(--urgent-ink)] leading-relaxed">
               <strong>
                 Critical values require immediate clinical attention.
               </strong>{" "}
@@ -1079,17 +1083,17 @@ function CriticalConfirmModal({
           </div>
         </div>
 
-        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-end gap-2">
+        <div className="px-6 py-4 border-t border-[var(--border-faint)] flex items-center justify-end gap-2">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+            className="px-4 py-2 rounded-[var(--r-sm)] border border-[var(--hc-border)] text-sm font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-sunken)]"
           >
             Re-check values
           </button>
           <button
             onClick={onConfirm}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white"
-            style={{ background: "linear-gradient(135deg,#dc2626,#b91c1c)" }}
+            className="flex items-center gap-2 px-4 py-2 rounded-[var(--r-sm)] text-sm font-semibold text-[var(--white)]"
+            style={{ background: "var(--coral-600)" }}
           >
             <CheckCircle2 size={14} /> Confirm & Submit
           </button>
@@ -1291,8 +1295,8 @@ export default function LabOrderDetailPage() {
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-64 gap-3">
-        <Loader2 size={28} className="animate-spin text-green-700" />
-        <p className="text-sm text-gray-400">Loading order…</p>
+        <Loader2 size={28} className="animate-spin text-[var(--green-700)]" />
+        <p className="text-sm text-[var(--text-muted)]">Loading order…</p>
       </div>
     );
   }
@@ -1300,16 +1304,16 @@ export default function LabOrderDetailPage() {
   if (!order) {
     return (
       <div className="max-w-lg mx-auto text-center py-20">
-        <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
-          <FlaskConical size={28} className="text-gray-400" />
+        <div className="w-16 h-16 rounded-[var(--r-lg)] bg-[var(--surface-sunken)] flex items-center justify-center mx-auto mb-4">
+          <FlaskConical size={28} className="text-[var(--text-muted)]" />
         </div>
-        <p className="text-gray-700 font-semibold mb-1">Order not found</p>
-        <p className="text-gray-400 text-sm mb-4">
+        <p className="text-[var(--text-secondary)] font-semibold mb-1">Order not found</p>
+        <p className="text-[var(--text-muted)] text-sm mb-4">
           This order may have already been resulted or doesn't exist.
         </p>
         <button
           onClick={() => router.push("/dashboard/laboratory/queue")}
-          className="text-green-700 text-sm font-medium hover:underline"
+          className="text-[var(--green-700)] text-sm font-medium hover:underline"
         >
           ← Back to queue
         </button>
@@ -1317,18 +1321,18 @@ export default function LabOrderDetailPage() {
     );
   }
 
-  const urgency = URGENCY_CONFIG[order.urgency] ?? URGENCY_CONFIG.routine;
+  const urgency = getUrgency(order.urgency);
+  const uTone = TONES[urgency.tone];
 
   return (
     <div
       className="max-w-6xl mx-auto"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
     >
       {toast && <Toast message={toast.message} type={toast.type} />}
 
       <button
         onClick={() => router.push("/dashboard/laboratory/queue")}
-        className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 mb-5"
+        className="flex items-center gap-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] mb-5"
       >
         <ChevronLeft size={16} /> Back to Queue
       </button>
@@ -1343,24 +1347,24 @@ export default function LabOrderDetailPage() {
         <div className="lg:col-span-2 space-y-5">
           {/* Order header */}
           <div
-            className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
-            style={{ borderTop: `4px solid ${urgency.color}` }}
+            className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] overflow-hidden"
+            style={{ borderTop: `4px solid ${uTone.ink}` }}
           >
             <div className="p-5">
               <div className="flex items-start gap-4">
                 <div
-                  className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0"
-                  style={{ backgroundColor: urgency.bg }}
+                  className="w-14 h-14 rounded-[var(--r-lg)] flex items-center justify-center flex-shrink-0"
+                  style={{ backgroundColor: uTone.tint }}
                 >
-                  <FlaskConical size={26} style={{ color: urgency.color }} />
+                  <FlaskConical size={26} style={{ color: uTone.ink }} />
                 </div>
                 <div className="flex-1">
                   <div className="flex items-center gap-2 flex-wrap mb-1">
-                    <h1 className="text-xl font-bold text-gray-900">
+                    <h1 className="text-xl font-bold text-[var(--text-primary)]">
                       {order.testName}
                     </h1>
                     {order.testCode && (
-                      <span className="text-sm font-mono font-semibold text-gray-400 bg-gray-100 px-2 py-0.5 rounded">
+                      <span className="text-sm font-mono font-semibold text-[var(--text-muted)] bg-[var(--surface-sunken)] px-2 py-0.5 rounded">
                         {order.testCode}
                       </span>
                     )}
@@ -1369,53 +1373,53 @@ export default function LabOrderDetailPage() {
                     <span
                       className="text-xs font-semibold px-2.5 py-1 rounded-full"
                       style={{
-                        backgroundColor: urgency.bg,
-                        color: urgency.color,
+                        backgroundColor: uTone.tint,
+                        color: uTone.ink,
                       }}
                     >
                       {urgency.label}
                     </span>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-[var(--text-secondary)]">
                       {order.orderNumber}
                     </span>
-                    <span className="text-xs text-gray-300">·</span>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-[var(--text-disabled)]">·</span>
+                    <span className="text-xs text-[var(--text-secondary)]">
                       {order.visitNumber}
                     </span>
                   </div>
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-4 mt-5 pt-5 border-t border-gray-50">
+              <div className="grid grid-cols-3 gap-4 mt-5 pt-5 border-t border-[var(--border-faint)]">
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center">
-                    <Beaker size={14} className="text-gray-500" />
+                  <div className="w-8 h-8 rounded-[var(--r-xs)] bg-[var(--surface-sunken)] flex items-center justify-center">
+                    <Beaker size={14} className="text-[var(--text-secondary)]" />
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">Specimen</p>
-                    <p className="text-sm font-semibold text-gray-800 capitalize">
+                    <p className="text-xs text-[var(--text-muted)]">Specimen</p>
+                    <p className="text-sm font-semibold text-[var(--text-primary)] capitalize">
                       {order.specimenType}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center">
-                    <Clock size={14} className="text-gray-500" />
+                  <div className="w-8 h-8 rounded-[var(--r-xs)] bg-[var(--surface-sunken)] flex items-center justify-center">
+                    <Clock size={14} className="text-[var(--text-secondary)]" />
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">Ordered</p>
-                    <p className="text-sm font-semibold text-gray-800">
+                    <p className="text-xs text-[var(--text-muted)]">Ordered</p>
+                    <p className="text-sm font-semibold text-[var(--text-primary)]">
                       {safeDistance(order.orderedAt)}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center">
-                    <Activity size={14} className="text-gray-500" />
+                  <div className="w-8 h-8 rounded-[var(--r-xs)] bg-[var(--surface-sunken)] flex items-center justify-center">
+                    <Activity size={14} className="text-[var(--text-secondary)]" />
                   </div>
                   <div>
-                    <p className="text-xs text-gray-400">Status</p>
-                    <p className="text-sm font-semibold text-gray-800 capitalize">
+                    <p className="text-xs text-[var(--text-muted)]">Status</p>
+                    <p className="text-sm font-semibold text-[var(--text-primary)] capitalize">
                       {order.status}
                     </p>
                   </div>
@@ -1423,32 +1427,32 @@ export default function LabOrderDetailPage() {
               </div>
 
               {order.chiefComplaint && (
-                <div className="mt-4 flex items-start gap-2.5 p-3 rounded-xl bg-blue-50 border border-blue-100">
+                <div className="mt-4 flex items-start gap-2.5 p-3 rounded-[var(--r-sm)] bg-[var(--info-tint)] border border-[var(--blue-100)]">
                   <ClipboardList
                     size={14}
-                    className="text-blue-500 mt-0.5 flex-shrink-0"
+                    className="text-[var(--blue-500)] mt-0.5 flex-shrink-0"
                   />
                   <div>
-                    <p className="text-xs font-semibold text-blue-700 mb-0.5">
+                    <p className="text-xs font-semibold text-[var(--info-ink)] mb-0.5">
                       Chief Complaint
                     </p>
-                    <p className="text-sm text-blue-800">
+                    <p className="text-sm text-[var(--info-ink)]">
                       {order.chiefComplaint}
                     </p>
                   </div>
                 </div>
               )}
               {order.clinicalNotes && (
-                <div className="mt-3 flex items-start gap-2.5 p-3 rounded-xl bg-amber-50 border border-amber-100">
+                <div className="mt-3 flex items-start gap-2.5 p-3 rounded-[var(--r-sm)] bg-[var(--amber-050)] border border-[var(--amber-100)]">
                   <ClipboardList
                     size={14}
-                    className="text-amber-500 mt-0.5 flex-shrink-0"
+                    className="text-[var(--amber-500)] mt-0.5 flex-shrink-0"
                   />
                   <div>
-                    <p className="text-xs font-semibold text-amber-700 mb-0.5">
+                    <p className="text-xs font-semibold text-[var(--urgent-ink)] mb-0.5">
                       Clinical Notes
                     </p>
-                    <p className="text-sm text-amber-800 italic">
+                    <p className="text-sm text-[var(--urgent-ink)] italic">
                       "{order.clinicalNotes}"
                     </p>
                   </div>
@@ -1458,8 +1462,8 @@ export default function LabOrderDetailPage() {
           </div>
 
           {/* Templates */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4">
-            <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-2">
+          <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-4">
+            <p className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wide mb-2">
               Quick Templates
             </p>
             <div className="flex gap-2 flex-wrap">
@@ -1467,7 +1471,7 @@ export default function LabOrderDetailPage() {
                 <button
                   key={code}
                   onClick={() => applyTemplate(code)}
-                  className="text-xs font-semibold px-3 py-1.5 rounded-xl border border-gray-200 hover:border-green-400 hover:text-green-700 hover:bg-green-50 transition-all"
+                  className="text-xs font-semibold px-3 py-1.5 rounded-[var(--r-sm)] border border-[var(--hc-border)] hover:border-[var(--green-300)] hover:text-[var(--green-700)] hover:bg-[var(--brand-tint)] transition-all"
                 >
                   {code}
                 </button>
@@ -1476,22 +1480,22 @@ export default function LabOrderDetailPage() {
           </div>
 
           {/* Results entry */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+          <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <p className="text-sm font-bold text-gray-800">Enter Results</p>
-                <span className="text-xs text-gray-400">
+                <p className="text-sm font-bold text-[var(--text-primary)]">Enter Results</p>
+                <span className="text-xs text-[var(--text-muted)]">
                   · Auto-flagged from reference range
                 </span>
               </div>
               <div className="flex items-center gap-2">
                 {criticalRows.length > 0 && (
-                  <span className="flex items-center gap-1.5 text-xs font-semibold text-red-600 bg-red-50 px-2.5 py-1 rounded-full border border-red-100">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-[var(--critical-ink)] bg-[var(--coral-050)] px-2.5 py-1 rounded-full border border-[var(--coral-100)]">
                     <TriangleAlert size={11} /> {criticalRows.length} critical
                   </span>
                 )}
                 {hasAbnormal && criticalRows.length === 0 && (
-                  <span className="flex items-center gap-1.5 text-xs font-semibold text-amber-600 bg-amber-50 px-2.5 py-1 rounded-full">
+                  <span className="flex items-center gap-1.5 text-xs font-semibold text-[var(--urgent-ink)] bg-[var(--amber-050)] px-2.5 py-1 rounded-full">
                     <TriangleAlert size={11} /> Abnormal present
                   </span>
                 )}
@@ -1508,7 +1512,7 @@ export default function LabOrderDetailPage() {
               ].map(({ label, span }) => (
                 <p
                   key={label}
-                  className={`${span} text-xs font-semibold text-gray-400 uppercase tracking-wide`}
+                  className={`${span} text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide`}
                 >
                   {label}
                 </p>
@@ -1519,48 +1523,48 @@ export default function LabOrderDetailPage() {
               {rows.map((row, i) => (
                 <div key={i} className="grid grid-cols-12 gap-2 items-center">
                   <input
-                    className="col-span-3 px-2.5 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-500 focus:bg-white"
+                    className="col-span-3 px-2.5 py-2 rounded-[var(--r-xs)] border border-[var(--hc-border)] bg-[var(--surface-sunken)] text-sm outline-none focus:border-[var(--brand)] focus:bg-[var(--surface-card)]"
                     placeholder="e.g. Haemoglobin"
                     value={row.parameter}
                     onChange={(e) => updateRow(i, "parameter", e.target.value)}
                   />
                   <input
-                    className="col-span-2 px-2.5 py-2 rounded-lg border text-sm outline-none focus:bg-white"
+                    className="col-span-2 px-2.5 py-2 rounded-[var(--r-xs)] border text-sm outline-none focus:bg-[var(--surface-card)]"
                     style={{
                       borderColor:
                         row.flag === "critical"
-                          ? "#fca5a5"
+                          ? "var(--coral-100)"
                           : row.flag === "high" || row.flag === "low"
-                            ? "#fde68a"
-                            : "#e5e7eb",
+                            ? "var(--amber-100)"
+                            : "var(--hc-border)",
                       background:
                         row.flag === "critical"
-                          ? "#fef2f2"
+                          ? "var(--coral-050)"
                           : row.flag === "high" || row.flag === "low"
-                            ? "#fffbeb"
-                            : "#f9fafb",
+                            ? "var(--amber-050)"
+                            : "var(--surface-sunken)",
                       fontWeight: row.flag !== "normal" ? 700 : 400,
                       color:
                         row.flag === "critical"
-                          ? "#dc2626"
+                          ? "var(--critical-ink)"
                           : row.flag === "high"
-                            ? "#dc2626"
+                            ? "var(--critical-ink)"
                             : row.flag === "low"
-                              ? "#1d4ed8"
-                              : "#111827",
+                              ? "var(--info-ink)"
+                              : "var(--text-primary)",
                     }}
                     placeholder="12.5"
                     value={row.value}
                     onChange={(e) => updateRow(i, "value", e.target.value)}
                   />
                   <input
-                    className="col-span-2 px-2.5 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-500 focus:bg-white"
+                    className="col-span-2 px-2.5 py-2 rounded-[var(--r-xs)] border border-[var(--hc-border)] bg-[var(--surface-sunken)] text-sm outline-none focus:border-[var(--brand)] focus:bg-[var(--surface-card)]"
                     placeholder="g/dL"
                     value={row.unit}
                     onChange={(e) => updateRow(i, "unit", e.target.value)}
                   />
                   <input
-                    className="col-span-3 px-2.5 py-2 rounded-lg border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-500 focus:bg-white"
+                    className="col-span-3 px-2.5 py-2 rounded-[var(--r-xs)] border border-[var(--hc-border)] bg-[var(--surface-sunken)] text-sm outline-none focus:border-[var(--brand)] focus:bg-[var(--surface-card)]"
                     placeholder="12.0-16.0"
                     value={row.referenceRange}
                     onChange={(e) =>
@@ -1571,11 +1575,11 @@ export default function LabOrderDetailPage() {
                     <select
                       value={row.flag}
                       onChange={(e) => setManualFlag(i, e.target.value as Flag)}
-                      className="flex-1 px-1.5 py-2 rounded-lg border text-xs font-semibold outline-none cursor-pointer"
+                      className="flex-1 px-1.5 py-2 rounded-[var(--r-xs)] border text-xs font-semibold outline-none cursor-pointer"
                       style={{
                         borderColor: "transparent",
-                        backgroundColor: FLAG_CONFIG[row.flag].bg,
-                        color: FLAG_CONFIG[row.flag].color,
+                        backgroundColor: TONES[FLAG_CONFIG[row.flag].tone].tint,
+                        color: TONES[FLAG_CONFIG[row.flag].tone].ink,
                       }}
                     >
                       <option value="normal">Normal</option>
@@ -1586,7 +1590,7 @@ export default function LabOrderDetailPage() {
                     {rows.length > 1 && (
                       <button
                         onClick={() => removeRow(i)}
-                        className="text-gray-300 hover:text-red-400"
+                        className="text-[var(--text-disabled)] hover:text-[var(--coral-500)]"
                       >
                         <Trash2 size={13} />
                       </button>
@@ -1598,14 +1602,14 @@ export default function LabOrderDetailPage() {
 
             <button
               onClick={addRow}
-              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-gray-300 text-sm text-gray-500 hover:border-green-400 hover:text-green-700 transition-all mb-5"
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-[var(--r-sm)] border border-dashed border-[var(--ink-300)] text-sm text-[var(--text-secondary)] hover:border-[var(--green-300)] hover:text-[var(--green-700)] transition-all mb-5"
             >
               <Plus size={14} /> Add parameter
             </button>
 
             <div className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1.5">
+                <label className="block text-xs font-bold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">
                   Interpretation
                 </label>
                 <textarea
@@ -1613,13 +1617,13 @@ export default function LabOrderDetailPage() {
                   value={interpretation}
                   onChange={(e) => setInterpretation(e.target.value)}
                   placeholder="Overall interpretation of results…"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-500 focus:bg-white resize-none placeholder:text-gray-400"
+                  className="w-full px-3.5 py-2.5 rounded-[var(--r-sm)] border border-[var(--hc-border)] bg-[var(--surface-sunken)] text-sm outline-none focus:border-[var(--brand)] focus:bg-[var(--surface-card)] resize-none placeholder:text-[var(--text-muted)]"
                 />
               </div>
               <div>
-                <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1.5">
+                <label className="block text-xs font-bold text-[var(--text-muted)] uppercase tracking-wide mb-1.5">
                   Abnormal Findings{" "}
-                  <span className="text-gray-300 font-normal normal-case">
+                  <span className="text-[var(--text-disabled)] font-normal normal-case">
                     (optional)
                   </span>
                 </label>
@@ -1628,37 +1632,37 @@ export default function LabOrderDetailPage() {
                   value={abnormalFindings}
                   onChange={(e) => setAbnormalFindings(e.target.value)}
                   placeholder="Highlight any critical or abnormal values for the clinician…"
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-500 focus:bg-white resize-none placeholder:text-gray-400"
+                  className="w-full px-3.5 py-2.5 rounded-[var(--r-sm)] border border-[var(--hc-border)] bg-[var(--surface-sunken)] text-sm outline-none focus:border-[var(--brand)] focus:bg-[var(--surface-card)] resize-none placeholder:text-[var(--text-muted)]"
                 />
               </div>
             </div>
 
             {error && (
-              <div className="flex items-center gap-2 mt-4 p-3 rounded-xl bg-red-50 border border-red-100 text-sm text-red-700">
+              <div className="flex items-center gap-2 mt-4 p-3 rounded-[var(--r-sm)] bg-[var(--coral-050)] border border-[var(--coral-100)] text-sm text-[var(--critical-ink)]">
                 <AlertTriangle size={14} /> {error}
               </div>
             )}
 
-            <div className="flex items-center justify-between mt-5 pt-4 border-t border-gray-100 flex-wrap gap-3">
+            <div className="flex items-center justify-between mt-5 pt-4 border-t border-[var(--border-faint)] flex-wrap gap-3">
               <button
                 onClick={() => setShowReject(true)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl border border-red-200 text-sm font-semibold text-red-700 bg-red-50 hover:bg-red-100 transition-colors"
+                className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--r-sm)] border border-[var(--coral-100)] text-sm font-semibold text-[var(--critical-ink)] bg-[var(--coral-050)] hover:bg-[var(--coral-100)] transition-colors"
               >
                 <Ban size={14} /> Reject Specimen
               </button>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => router.push("/dashboard/laboratory/queue")}
-                  className="px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+                  className="px-4 py-2.5 rounded-[var(--r-sm)] border border-[var(--hc-border)] text-sm font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-sunken)]"
                 >
                   Cancel
                 </button>
                 <button
                   onClick={handleSubmit}
                   disabled={submitting}
-                  className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md disabled:opacity-50"
+                  className="flex items-center gap-2 px-6 py-2.5 rounded-[var(--r-sm)] text-sm font-semibold text-[var(--white)] transition-all hover:shadow-[var(--elev-2)] disabled:opacity-50"
                   style={{
-                    background: "linear-gradient(135deg,#0A6640,#15803d)",
+                    background: "var(--brand)",
                   }}
                 >
                   {submitting ? (

@@ -19,6 +19,31 @@ import { SelectField } from "../shared/SelectField";
 import StaffDropdown from "../shared/StaffDropdown";
 import { SubmitBtn } from "../shared/SubmitBtn";
 import { safeFormatDate } from "../utils/dateHelpers";
+import {
+  Card,
+  CardHeader,
+  Pill as Badge,
+  MonoTag,
+  Button,
+  Banner,
+  EmptyState,
+  SectionLabel,
+  hoverRow,
+  TONES,
+} from "@/components/dashboard/ui";
+import { getPriority } from "@/app/dashboard/doctor/vocab";
+
+/* ==========================================================================
+   Lab orders tab.
+
+   Several tests are usually ordered together, so the form builds a list of
+   rows rather than one test at a time — quick-add chips fill the first empty
+   row, or append a new one.
+
+   While a visit is open this polls getLabResults every 5s: results come back
+   from the lab asynchronously and a doctor should not have to reload to see
+   them.
+   ========================================================================== */
 
 const COMMON_TESTS = [
   { name: "Full Blood Count", code: "FBC", specimen: "blood" },
@@ -53,158 +78,213 @@ interface StaffMember {
   lastSeenAt: string | null;
 }
 
-const URGENCY_STYLE: Record<string, { bg: string; text: string }> = {
-  routine: { bg: "#f0fdf4", text: "#15803d" },
-  urgent: { bg: "#fffbeb", text: "#d97706" },
-  emergency: { bg: "#fef2f2", text: "#dc2626" },
-  critical: { bg: "#fdf4ff", text: "#7c3aed" },
+const EMPTY_TEST = {
+  testName: "",
+  testCode: "",
+  specimenType: "blood",
+  urgency: "routine",
+  clinicalNotes: "",
+  assignedTo: "",
 };
 
 // ── Lab order card ────────────────────────────────────────────────────────────
 function LabOrderCard({ order }: { order: any }) {
   const [open, setOpen] = useState(false);
   const resulted = order.status === "resulted";
-  const ug = URGENCY_STYLE[order.urgency] ?? URGENCY_STYLE.routine;
+  /* A resulted test is done regardless of how urgently it was ordered, so
+     "resulted" wins over the urgency tone. */
+  const tone = resulted ? "success" : getPriority(order.urgency).tone;
+  const t = TONES[tone];
 
   return (
     <div
-      className={`rounded-2xl border overflow-hidden ${resulted ? "border-green-100" : "border-gray-100"}`}
+      style={{
+        border: `1px solid ${resulted ? "var(--green-100)" : "var(--hc-border)"}`,
+        borderRadius: "var(--r-md)",
+        overflow: "hidden",
+      }}
     >
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50/60 transition-colors"
+        className="w-full flex items-center text-left"
+        style={{
+          gap: 12,
+          padding: "12px 16px",
+          border: "none",
+          background: "transparent",
+          cursor: "pointer",
+          transition: "background var(--dur-fast) var(--ease-standard)",
+        }}
+        {...hoverRow}
       >
-        <div
-          className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${resulted ? "bg-green-50" : "bg-amber-50"}`}
+        <span
+          className="inline-flex items-center justify-center flex-shrink-0"
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: "var(--r-sm)",
+            background: t.tint,
+            color: t.ink,
+          }}
         >
-          <FlaskConical
-            className={`w-4 h-4 ${resulted ? "text-green-600" : "text-amber-500"}`}
-          />
-        </div>
+          <FlaskConical className="w-4 h-4" />
+        </span>
 
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-gray-800">{order.testName}</p>
-          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-            <span className="text-xs font-mono text-gray-400">
+        <span className="flex-1 min-w-0 flex flex-col" style={{ gap: 5 }}>
+          <span
+            className="truncate"
+            style={{
+              font: "700 13.5px/1 var(--font-sans)",
+              color: "var(--text-primary)",
+            }}
+          >
+            {order.testName}
+          </span>
+          <span className="flex items-center flex-wrap" style={{ gap: 8 }}>
+            <MonoTag style={{ height: 17, fontSize: 10 }}>
               {order.orderNumber}
-            </span>
-            <span className="text-gray-300">·</span>
-            <span className="text-xs text-gray-400 capitalize">
+            </MonoTag>
+            <span
+              style={{
+                font: "400 11.5px/1 var(--font-sans)",
+                color: "var(--text-muted)",
+                textTransform: "capitalize",
+              }}
+            >
               {order.specimenType}
             </span>
             {order.assignedToName && (
               <>
-                <span className="text-gray-300">·</span>
-                <span className="text-xs text-gray-400">
+                <span style={{ color: "var(--text-disabled)" }}>·</span>
+                <span
+                  style={{
+                    font: "400 11.5px/1 var(--font-sans)",
+                    color: "var(--text-muted)",
+                  }}
+                >
                   {order.assignedToName}
                 </span>
               </>
             )}
-          </div>
-        </div>
+          </span>
+        </span>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <span
-            className="hidden sm:inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full capitalize"
-            style={{
-              background: resulted ? "#f0fdf4" : ug.bg,
-              color: resulted ? "#15803d" : ug.text,
-            }}
-          >
-            {resulted ? (
-              <CheckCircle2Lab className="w-3 h-3" />
-            ) : (
-              <Clock className="w-3 h-3" />
-            )}
-            {order.status}
+        <span className="flex items-center flex-shrink-0" style={{ gap: 9 }}>
+          <span className="hidden sm:inline-flex">
+            <Badge tone={tone} icon={resulted ? CheckCircle2Lab : Clock}>
+              {order.status}
+            </Badge>
           </span>
           {open ? (
-            <ChevronUpLab className="w-4 h-4 text-gray-400" />
+            <ChevronUpLab className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
           ) : (
-            <ChevronDownLab className="w-4 h-4 text-gray-400" />
+            <ChevronDownLab className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
           )}
-        </div>
+        </span>
       </button>
 
       {open && (
-        <div className="border-t border-gray-100 px-4 py-4 bg-white space-y-4">
-          {/* Abnormal findings */}
+        <div
+          style={{
+            padding: 16,
+            borderTop: "1px solid var(--border-faint)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 14,
+          }}
+        >
           {order.result?.abnormalFindings && (
-            <div className="flex gap-3 p-4 rounded-2xl bg-red-50 border border-red-100">
-              <AlertCircleLab className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs font-bold text-red-600 uppercase tracking-wide mb-1">
-                  Abnormal Findings
-                </p>
-                <p className="text-sm text-red-800 whitespace-pre-wrap">
-                  {order.result.abnormalFindings}
-                </p>
-              </div>
-            </div>
+            <Banner tone="critical" icon={AlertCircleLab} title="Abnormal findings">
+              {order.result.abnormalFindings}
+            </Banner>
           )}
 
-          {/* Interpretation */}
           {order.result?.interpretation && (
-            <div className="flex gap-3 p-4 rounded-2xl bg-blue-50 border border-blue-100">
-              <Stethoscope className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs font-bold text-blue-600 uppercase tracking-wide mb-1">
-                  Interpretation
-                </p>
-                <p className="text-sm text-blue-800 whitespace-pre-wrap">
-                  {order.result.interpretation}
-                </p>
-              </div>
-            </div>
+            <Banner tone="info" icon={Stethoscope} title="Interpretation">
+              {order.result.interpretation}
+            </Banner>
           )}
 
-          {/* Results table */}
+          {/* Quantitative results, with reference ranges where the lab sent them. */}
           {order.result?.resultsData &&
             typeof order.result.resultsData === "object" &&
             Object.keys(order.result.resultsData).length > 0 && (
-              <div className="rounded-2xl border border-gray-100 overflow-hidden">
-                <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-100">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-                    Quantitative Results
-                  </p>
-                </div>
-                <div className="divide-y divide-gray-50">
-                  {Object.entries(order.result.resultsData).map(
-                    ([param, value]) => (
-                      <div
-                        key={param}
-                        className="flex items-center justify-between px-4 py-2.5"
+              <div
+                style={{
+                  borderRadius: "var(--r-sm)",
+                  border: "1px solid var(--hc-border)",
+                  overflow: "hidden",
+                }}
+              >
+                <SectionLabel
+                  style={{
+                    padding: "9px 16px",
+                    background: "var(--surface-sunken)",
+                    borderBottom: "1px solid var(--border-faint)",
+                  }}
+                >
+                  Quantitative results
+                </SectionLabel>
+
+                {Object.entries(order.result.resultsData).map(([param, value]) => (
+                  <div
+                    key={param}
+                    className="flex items-center justify-between"
+                    style={{
+                      gap: 12,
+                      padding: "10px 16px",
+                      borderBottom: "1px solid var(--border-faint)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        font: "500 13px/1 var(--font-sans)",
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      {param}
+                    </span>
+                    <span className="flex items-center" style={{ gap: 12 }}>
+                      <span
+                        style={{
+                          font: "700 13px/1 var(--font-mono)",
+                          color: "var(--text-primary)",
+                        }}
                       >
-                        <span className="text-sm text-gray-700 font-medium">
-                          {param}
+                        {String(value)}
+                      </span>
+                      {order.result?.referenceRanges?.[param] && (
+                        <span
+                          style={{
+                            font: "400 11px/1 var(--font-mono)",
+                            color: "var(--text-muted)",
+                          }}
+                        >
+                          ref {order.result.referenceRanges[param]}
                         </span>
-                        <div className="flex items-center gap-3">
-                          <span className="text-sm font-bold font-mono text-gray-900">
-                            {String(value)}
-                          </span>
-                          {order.result?.referenceRanges?.[param] && (
-                            <span className="text-xs text-gray-400">
-                              ref: {order.result.referenceRanges[param]}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ),
-                  )}
-                </div>
+                      )}
+                    </span>
+                  </div>
+                ))}
               </div>
             )}
 
           {!order.result && (
-            <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-50 border border-amber-100 text-sm text-amber-700">
-              <Clock className="w-4 h-4" /> Awaiting lab result.
-            </div>
+            <Banner tone="urgent" icon={Clock}>
+              Awaiting lab result.
+            </Banner>
           )}
 
           {order.result?.performedAt && (
-            <p className="text-xs text-gray-400 text-right">
-              Resulted:{" "}
-              {safeFormatDate(order.result.performedAt, "dd MMM yyyy, HH:mm")}
+            <p
+              className="text-right"
+              style={{
+                margin: 0,
+                font: "400 11px/1 var(--font-mono)",
+                color: "var(--text-muted)",
+              }}
+            >
+              Resulted {safeFormatDate(order.result.performedAt, "dd MMM yyyy, HH:mm")}
             </p>
           )}
         </div>
@@ -232,16 +312,7 @@ export function LabOrdersTab({
   const [labTechs, setLabTechs] = useState<StaffMember[]>([]);
   const [techsLoading, setTechsLoading] = useState(true);
   const [liveOrders, setLiveOrders] = useState(initialOrders);
-  const [tests, setTests] = useState([
-    {
-      testName: "",
-      testCode: "",
-      specimenType: "blood",
-      urgency: "routine",
-      clinicalNotes: "",
-      assignedTo: "",
-    },
-  ]);
+  const [tests, setTests] = useState([{ ...EMPTY_TEST }]);
 
   useEffect(() => {
     setLiveOrders(initialOrders);
@@ -266,18 +337,7 @@ export function LabOrdersTab({
       .finally(() => setTechsLoading(false));
   }, []);
 
-  const addTest = () =>
-    setTests((p) => [
-      ...p,
-      {
-        testName: "",
-        testCode: "",
-        specimenType: "blood",
-        urgency: "routine",
-        clinicalNotes: "",
-        assignedTo: "",
-      },
-    ]);
+  const addTest = () => setTests((p) => [...p, { ...EMPTY_TEST }]);
   const removeTest = (i: number) =>
     setTests((p) => p.filter((_, idx) => idx !== i));
   const updateTest = (i: number, field: string, value: string) =>
@@ -295,12 +355,10 @@ export function LabOrdersTab({
       setTests((p) => [
         ...p,
         {
+          ...EMPTY_TEST,
           testName: test.name,
           testCode: test.code,
           specimenType: test.specimen,
-          urgency: "routine",
-          clinicalNotes: "",
-          assignedTo: "",
         },
       ]);
     }
@@ -320,16 +378,7 @@ export function LabOrdersTab({
     setSubmitting(true);
     try {
       await visitApi.orderLabs(visitId, { tests: valid });
-      setTests([
-        {
-          testName: "",
-          testCode: "",
-          specimenType: "blood",
-          urgency: "routine",
-          clinicalNotes: "",
-          assignedTo: "",
-        },
-      ]);
+      setTests([{ ...EMPTY_TEST }]);
       setShowForm(false);
       onSaved();
       const res = await visitApi.getLabResults(visitId);
@@ -341,21 +390,16 @@ export function LabOrdersTab({
     }
   };
 
+  const namedCount = tests.filter((t) => t.testName).length;
+
   return (
-    <div
-      className="p-5 space-y-4"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
-    >
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {liveOrders.length > 0 && (
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2.5 px-0.5">
-            Lab Orders ({liveOrders.length})
-          </p>
-          <div className="space-y-2.5">
-            {liveOrders.map((order: any) => (
-              <LabOrderCard key={order.id} order={order} />
-            ))}
-          </div>
+        <div className="flex flex-col" style={{ gap: 10 }}>
+          <SectionLabel>Lab orders ({liveOrders.length})</SectionLabel>
+          {liveOrders.map((order: any) => (
+            <LabOrderCard key={order.id} order={order} />
+          ))}
         </div>
       )}
 
@@ -363,48 +407,79 @@ export function LabOrdersTab({
         (!showForm ? (
           <button
             onClick={() => setShowForm(true)}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-dashed border-gray-200 text-sm font-semibold text-gray-400 hover:border-amber-300 hover:text-amber-600 hover:bg-amber-50/40 transition-all"
+            className="w-full inline-flex items-center justify-center"
+            style={{
+              gap: 8,
+              padding: 14,
+              borderRadius: "var(--r-md)",
+              border: "1.5px dashed var(--hc-border)",
+              background: "transparent",
+              font: "600 13.5px/1 var(--font-sans)",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              transition: "all var(--dur-fast) var(--ease-standard)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "var(--amber-500)";
+              e.currentTarget.style.color = "var(--urgent-ink)";
+              e.currentTarget.style.background = "var(--amber-050)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = "var(--hc-border)";
+              e.currentTarget.style.color = "var(--text-muted)";
+              e.currentTarget.style.background = "transparent";
+            }}
           >
             <PlusCircleLab className="w-4 h-4" />
-            Order Lab Tests
+            Order lab tests
           </button>
         ) : (
-          <div className="rounded-2xl border border-amber-100 overflow-hidden">
-            <div className="flex items-center gap-3 px-5 py-4 bg-gradient-to-r from-amber-50 to-white border-b border-amber-100">
-              <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
-                <FlaskConical className="w-4 h-4 text-amber-700" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-gray-800">
-                  Order Lab Tests
-                </p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  Select tests and assign a technician
-                </p>
-              </div>
-              <button
-                onClick={() => setShowForm(false)}
-                className="ml-auto text-xs text-gray-400 hover:text-gray-600 font-medium"
-              >
-                Cancel
-              </button>
-            </div>
+          <Card>
+            <CardHeader
+              icon={FlaskConical}
+              title="Order lab tests"
+              subtitle="Select tests and assign a technician"
+              tone="urgent"
+              right={
+                <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}>
+                  Cancel
+                </Button>
+              }
+            />
 
-            <div className="p-5 space-y-4 bg-white">
-              {/* Quick add chips */}
-              <div>
-                <div className="flex items-center gap-2 mb-2">
-                  <Zap className="w-3.5 h-3.5 text-amber-500" />
-                  <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">
-                    Quick Add
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-1.5">
+            <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 18 }}>
+              {/* Quick add — fills the first empty row, or appends one. */}
+              <div className="flex flex-col" style={{ gap: 8 }}>
+                <span className="inline-flex items-center" style={{ gap: 7 }}>
+                  <Zap className="w-3.5 h-3.5" style={{ color: "var(--amber-500)" }} />
+                  <SectionLabel>Quick add</SectionLabel>
+                </span>
+                <div className="flex flex-wrap" style={{ gap: 6 }}>
                   {COMMON_TESTS.map((t) => (
                     <button
                       key={t.code}
                       onClick={() => quickAdd(t)}
-                      className="text-xs font-semibold px-2.5 py-1 rounded-full border border-gray-200 text-gray-500 hover:border-amber-400 hover:text-amber-700 hover:bg-amber-50 transition-all"
+                      style={{
+                        height: 26,
+                        padding: "0 11px",
+                        borderRadius: "var(--r-pill)",
+                        border: "1px solid var(--hc-border)",
+                        background: "var(--surface-card)",
+                        color: "var(--text-secondary)",
+                        font: "600 11.5px/1 var(--font-sans)",
+                        cursor: "pointer",
+                        transition: "all var(--dur-fast) var(--ease-standard)",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = "var(--amber-500)";
+                        e.currentTarget.style.color = "var(--urgent-ink)";
+                        e.currentTarget.style.background = "var(--amber-050)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = "var(--hc-border)";
+                        e.currentTarget.style.color = "var(--text-secondary)";
+                        e.currentTarget.style.background = "var(--surface-card)";
+                      }}
                     >
                       + {t.name}
                     </button>
@@ -413,62 +488,68 @@ export function LabOrdersTab({
               </div>
 
               {/* Test rows */}
-              <div className="space-y-3">
+              <div className="flex flex-col" style={{ gap: 12 }}>
                 {tests.map((test, idx) => (
                   <div
                     key={idx}
-                    className="p-4 rounded-2xl border border-gray-100 space-y-3 bg-gray-50/40"
+                    style={{
+                      padding: 16,
+                      borderRadius: "var(--r-sm)",
+                      border: "1px solid var(--hc-border)",
+                      background: "var(--surface-sunken)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 14,
+                    }}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-gray-400 uppercase tracking-wide">
-                        Test {idx + 1}
-                      </span>
+                    <div className="flex items-center justify-between" style={{ gap: 10 }}>
+                      <SectionLabel>Test {idx + 1}</SectionLabel>
                       {tests.length > 1 && (
-                        <button
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          icon={Trash2}
                           onClick={() => removeTest(idx)}
-                          className="text-red-400 hover:text-red-600 transition-colors"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                          style={{ width: 26, color: "var(--critical-ink)" }}
+                        />
                       )}
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <FieldGroup label="Test Name *">
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+                        gap: 14,
+                      }}
+                    >
+                      <FieldGroup label="Test name *">
                         <InputField
                           value={test.testName}
-                          onChange={(v: string) =>
-                            updateTest(idx, "testName", v)
-                          }
+                          onChange={(v: string) => updateTest(idx, "testName", v)}
                           placeholder="e.g. Full Blood Count"
                         />
                       </FieldGroup>
-                      <FieldGroup label="Test Code *">
+                      <FieldGroup label="Test code *">
                         <InputField
                           value={test.testCode}
-                          onChange={(v: string) =>
-                            updateTest(idx, "testCode", v)
-                          }
+                          onChange={(v: string) => updateTest(idx, "testCode", v)}
                           placeholder="e.g. FBC"
                         />
                       </FieldGroup>
                       <FieldGroup label="Specimen">
                         <SelectField
                           value={test.specimenType}
-                          onChange={(v: string) =>
-                            updateTest(idx, "specimenType", v)
-                          }
-                          options={SPECIMEN_TYPES.map((s) => ({
-                            value: s,
-                            label: s.charAt(0).toUpperCase() + s.slice(1),
+                          onChange={(v: string) => updateTest(idx, "specimenType", v)}
+                          options={SPECIMEN_TYPES.map((sp) => ({
+                            value: sp,
+                            label: sp.charAt(0).toUpperCase() + sp.slice(1),
                           }))}
                         />
                       </FieldGroup>
                       <FieldGroup label="Urgency">
                         <SelectField
                           value={test.urgency}
-                          onChange={(v: string) =>
-                            updateTest(idx, "urgency", v)
-                          }
+                          onChange={(v: string) => updateTest(idx, "urgency", v)}
                           options={[
                             { value: "routine", label: "Routine" },
                             { value: "urgent", label: "Urgent" },
@@ -478,16 +559,16 @@ export function LabOrdersTab({
                         />
                       </FieldGroup>
                     </div>
-                    <FieldGroup label="Clinical Notes">
+
+                    <FieldGroup label="Clinical notes">
                       <InputField
                         value={test.clinicalNotes}
-                        onChange={(v: string) =>
-                          updateTest(idx, "clinicalNotes", v)
-                        }
+                        onChange={(v: string) => updateTest(idx, "clinicalNotes", v)}
                         placeholder="Reason for test"
                       />
                     </FieldGroup>
-                    <FieldGroup label="Assign Lab Technician *">
+
+                    <FieldGroup label="Assign lab technician *">
                       <StaffDropdown
                         value={test.assignedTo}
                         onChange={(v) => updateTest(idx, "assignedTo", v)}
@@ -502,28 +583,51 @@ export function LabOrdersTab({
 
               <button
                 onClick={addTest}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-gray-200 text-sm text-gray-400 hover:border-amber-400 hover:text-amber-600 transition-all"
+                className="w-full inline-flex items-center justify-center"
+                style={{
+                  gap: 8,
+                  padding: 11,
+                  borderRadius: "var(--r-sm)",
+                  border: "1.5px dashed var(--hc-border)",
+                  background: "transparent",
+                  font: "500 13px/1 var(--font-sans)",
+                  color: "var(--text-muted)",
+                  cursor: "pointer",
+                }}
               >
-                <PlusCircleLab className="w-4 h-4" /> Add another test
+                <PlusCircleLab className="w-4 h-4" />
+                Add another test
               </button>
 
-              <div className="flex justify-end pt-3 border-t border-gray-100">
+              <div
+                className="flex justify-end"
+                style={{ paddingTop: 14, borderTop: "1px solid var(--border-faint)" }}
+              >
                 <SubmitBtn
                   onClick={handleSubmit}
                   loading={submitting}
-                  label={`Order ${tests.filter((t) => t.testName).length || 1} Test${tests.filter((t) => t.testName).length !== 1 ? "s" : ""}`}
+                  label={`Order ${namedCount || 1} test${namedCount !== 1 ? "s" : ""}`}
                 />
               </div>
             </div>
-          </div>
+          </Card>
         ))}
 
       {liveOrders.length === 0 && isCompleted && (
-        <div className="flex flex-col items-center gap-2 py-10 rounded-2xl border border-dashed border-gray-200 bg-gray-50/60">
-          <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center">
-            <FlaskConical className="w-5 h-5 text-gray-300" />
-          </div>
-          <p className="text-sm font-semibold text-gray-400">No lab orders</p>
+        <div
+          style={{
+            borderRadius: "var(--r-md)",
+            border: "1.5px dashed var(--hc-border)",
+            background: "var(--surface-sunken)",
+          }}
+        >
+          <EmptyState
+            icon={FlaskConical}
+            title="No lab orders"
+            message="No tests were ordered during this visit."
+            tone="neutral"
+            pad={32}
+          />
         </div>
       )}
     </div>

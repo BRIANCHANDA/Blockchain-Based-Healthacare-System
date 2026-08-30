@@ -21,19 +21,19 @@ export function Logo({
     >
       <path
         d="M48 6 L82 18 V46 C82 68 67 82 48 90 C29 82 14 68 14 46 V18 Z"
-        fill="#059669"
+        fill="var(--brand)"
       />
       <path
         d="M48 6 L82 18 V46 C82 68 67 82 48 90 C29 82 14 68 14 46 V18 Z"
         fill={`url(#${gradId})`}
         fillOpacity="0.18"
       />
-      <g stroke="#FFFFFF" strokeWidth="7" strokeLinecap="round" fill="none">
+      <g stroke="var(--white)" strokeWidth="7" strokeLinecap="round" fill="none">
         <rect x="40.5" y="24" width="15" height="48" rx="7.5" />
         <rect x="24" y="40.5" width="48" height="15" rx="7.5" />
       </g>
-      <rect x="40.5" y="40.5" width="15" height="15" rx="3" fill="#059669" />
-      <rect x="44" y="44" width="8" height="8" rx="2.5" fill="#FFFFFF" />
+      <rect x="40.5" y="40.5" width="15" height="15" rx="3" fill="var(--brand)" />
+      <rect x="44" y="44" width="8" height="8" rx="2.5" fill="var(--white)" />
       <defs>
         <linearGradient
           id={gradId}
@@ -43,8 +43,8 @@ export function Logo({
           y2="90"
           gradientUnits="userSpaceOnUse"
         >
-          <stop stopColor="#FFFFFF" />
-          <stop offset="1" stopColor="#047857" />
+          <stop stopColor="var(--white)" />
+          <stop offset="1" stopColor="var(--brand-deep)" />
         </linearGradient>
       </defs>
     </svg>

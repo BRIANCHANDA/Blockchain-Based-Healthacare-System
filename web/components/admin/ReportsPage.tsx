@@ -19,16 +19,16 @@ type Tab = "clinical" | "operational" | "administrative";
 
 // ── Colour constants ───────────────────────────────────────────────────────────
 const C = {
-  green:  "#166534",
-  teal:   "#0e7490",
-  blue:   "#2563eb",
-  purple: "#7c3aed",
-  amber:  "#d97706",
-  red:    "#dc2626",
-  orange: "#ea580c",
-  slate:  "#374151",
-  gray:   "#6b7280",
-  pink:   "#db2777",
+  green:  "var(--green-800)",
+  teal:   "var(--info-ink)",
+  blue:   "var(--blue-600)",
+  purple: "var(--accent-ink)",
+  amber:  "var(--urgent-ink)",
+  red:    "var(--critical-ink)",
+  orange: "var(--critical-ink)",
+  slate:  "var(--text-secondary)",
+  gray:   "var(--text-secondary)",
+  pink:   "var(--critical-ink)",
 };
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -36,7 +36,7 @@ const PRIORITY_COLORS: Record<string, string> = {
 };
 const ROLE_COLORS: Record<string, string> = {
   practitioner: C.blue, nurse: C.teal, lab_technician: C.amber,
-  radiologist: C.purple, pharmacist: C.green, receptionist: "#0369a1", admin: C.red,
+  radiologist: C.purple, pharmacist: C.green, receptionist: "var(--info-ink)", admin: C.red,
 };
 const GENDER_COLORS: Record<string, string> = { male: C.blue, female: C.pink, other: C.gray };
 const CHART_COLORS = [C.green, C.blue, C.amber, C.red, C.purple, C.teal, C.orange];
@@ -50,26 +50,26 @@ function StatBox({
 }) {
   return (
     <div style={{
-      background: highlight ? `${color}08` : "#fff",
+      background: highlight ? `color-mix(in srgb, ${color} 3%, transparent)` : "var(--white)",
       borderRadius: 14,
-      border: `1px solid ${highlight ? `${color}30` : "#eaecf0"}`,
+      border: `1px solid ${highlight ? `color-mix(in srgb, ${color} 19%, transparent)` : "var(--hc-border)"}`,
       padding: "18px 20px",
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
         <div style={{
-          width: 32, height: 32, borderRadius: 8, background: `${color}15`,
+          width: 32, height: 32, borderRadius: 8, background: `color-mix(in srgb, ${color} 8%, transparent)`,
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>
           <Icon size={15} style={{ color }} />
         </div>
-        <p style={{ fontSize: 11, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+        <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
           {label}
         </p>
       </div>
       <p style={{ fontSize: 26, fontWeight: 800, color, lineHeight: 1 }}>
         {value != null ? String(value) : "—"}
       </p>
-      {sub && <p style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 4 }}>{sub}</p>}
+      {sub && <p style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 4 }}>{sub}</p>}
     </div>
   );
 }
@@ -78,9 +78,9 @@ function SectionCard({ title, children, action }: {
   title: string; children: React.ReactNode; action?: React.ReactNode;
 }) {
   return (
-    <div style={{ background: "#fff", borderRadius: 16, border: "1px solid #eaecf0", overflow: "hidden", marginBottom: 20 }}>
-      <div style={{ padding: "14px 20px", borderBottom: "1px solid #f3f4f6", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <p style={{ fontSize: 13.5, fontWeight: 700, color: "#111" }}>{title}</p>
+    <div style={{ background: "var(--white)", borderRadius: 16, border: "1px solid var(--hc-border)", overflow: "hidden", marginBottom: 20 }}>
+      <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--surface-sunken)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <p style={{ fontSize: 13.5, fontWeight: 700, color: "var(--text-primary)" }}>{title}</p>
         {action}
       </div>
       <div style={{ padding: 20 }}>{children}</div>
@@ -91,11 +91,11 @@ function SectionCard({ title, children, action }: {
 function SectionDivider({ title }: { title: string }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "28px 0 16px" }}>
-      <div style={{ height: 1, flex: 1, background: "#e5e7eb" }} />
-      <p style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.12em", whiteSpace: "nowrap" }}>
+      <div style={{ height: 1, flex: 1, background: "var(--hc-border)" }} />
+      <p style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.12em", whiteSpace: "nowrap" }}>
         {title}
       </p>
-      <div style={{ height: 1, flex: 1, background: "#e5e7eb" }} />
+      <div style={{ height: 1, flex: 1, background: "var(--hc-border)" }} />
     </div>
   );
 }
@@ -103,14 +103,14 @@ function SectionDivider({ title }: { title: string }) {
 function ExecSummary({ lines }: { lines: string[] }) {
   return (
     <div style={{
-      background: "#f8fafc", borderLeft: "4px solid #166534",
+      background: "var(--surface-sunken)", borderLeft: "4px solid var(--green-800)",
       borderRadius: "0 12px 12px 0", padding: "16px 20px", marginBottom: 24,
     }}>
-      <p style={{ fontSize: 10, fontWeight: 700, color: "#166534", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
+      <p style={{ fontSize: 10, fontWeight: 700, color: "var(--green-800)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 10 }}>
         Executive Summary
       </p>
       {lines.map((line, i) => (
-        <p key={i} style={{ fontSize: 13, color: "#374151", lineHeight: 1.7, marginBottom: i < lines.length - 1 ? 8 : 0 }}>
+        <p key={i} style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.7, marginBottom: i < lines.length - 1 ? 8 : 0 }}>
           {line}
         </p>
       ))}
@@ -120,13 +120,13 @@ function ExecSummary({ lines }: { lines: string[] }) {
 
 function Skeleton() {
   return (
-    <div style={{ height: 200, background: "#f1f5f9", borderRadius: 12, animation: "pulse 1.5s ease-in-out infinite" }} />
+    <div style={{ height: 200, background: "var(--surface-sunken)", borderRadius: 12, animation: "pulse 1.5s ease-in-out infinite" }} />
   );
 }
 
 function EmptyState({ message }: { message: string }) {
   return (
-    <p style={{ fontSize: 13, color: "#9ca3af", textAlign: "center", padding: "32px 0" }}>{message}</p>
+    <p style={{ fontSize: 13, color: "var(--text-muted)", textAlign: "center", padding: "32px 0" }}>{message}</p>
   );
 }
 
@@ -138,9 +138,9 @@ function TopDiagnosesTable({ diagnoses, totalVisits }: { diagnoses: any[]; total
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
         <thead>
-          <tr style={{ borderBottom: "2px solid #f3f4f6" }}>
+          <tr style={{ borderBottom: "2px solid var(--surface-sunken)" }}>
             {["#", "ICD Code", "Diagnosis", "Cases", "% of Visits"].map(h => (
-              <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10.5, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+              <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10.5, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
                 {h}
               </th>
             ))}
@@ -151,22 +151,22 @@ function TopDiagnosesTable({ diagnoses, totalVisits }: { diagnoses: any[]; total
             const pct = totalVisits > 0 ? ((diag.count / totalVisits) * 100).toFixed(1) : "0.0";
             const barPct = diagnoses[0]?.count > 0 ? Math.round((diag.count / diagnoses[0].count) * 100) : 0;
             return (
-              <tr key={i} style={{ borderBottom: i < diagnoses.length - 1 ? "1px solid #f9fafb" : "none", background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
-                <td style={{ padding: "10px 12px", fontWeight: 700, color: "#d1d5db", fontSize: 12, width: 36 }}>
+              <tr key={i} style={{ borderBottom: i < diagnoses.length - 1 ? "1px solid var(--surface-sunken)" : "none", background: i % 2 === 0 ? "var(--white)" : "var(--surface-app)" }}>
+                <td style={{ padding: "10px 12px", fontWeight: 700, color: "var(--text-disabled)", fontSize: 12, width: 36 }}>
                   {i + 1}
                 </td>
                 <td style={{ padding: "10px 12px", width: 100 }}>
                   {diag.icdCode
-                    ? <span style={{ fontFamily: "monospace", fontSize: 11.5, fontWeight: 700, color: C.green, background: "#f0fdf4", padding: "2px 7px", borderRadius: 4 }}>{diag.icdCode}</span>
-                    : <span style={{ color: "#d1d5db" }}>—</span>}
+                    ? <span style={{ fontFamily: "var(--font-mono)", fontSize: 11.5, fontWeight: 700, color: C.green, background: "var(--brand-tint)", padding: "2px 7px", borderRadius: 4 }}>{diag.icdCode}</span>
+                    : <span style={{ color: "var(--text-disabled)" }}>—</span>}
                 </td>
-                <td style={{ padding: "10px 12px", fontWeight: 600, color: "#111827" }}>{diag.name}</td>
+                <td style={{ padding: "10px 12px", fontWeight: 600, color: "var(--text-primary)" }}>{diag.name}</td>
                 <td style={{ padding: "10px 12px", fontWeight: 700, color: C.green, minWidth: 60 }}>
                   {Number(diag.count).toLocaleString()}
                 </td>
                 <td style={{ padding: "10px 12px", minWidth: 160 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ flex: 1, height: 6, background: "#f1f5f9", borderRadius: 999, minWidth: 70 }}>
+                    <div style={{ flex: 1, height: 6, background: "var(--surface-sunken)", borderRadius: 999, minWidth: 70 }}>
                       <div style={{ height: "100%", width: `${barPct}%`, background: C.green, borderRadius: 999 }} />
                     </div>
                     <span style={{ fontSize: 12, fontWeight: 600, color: C.slate, minWidth: 42, textAlign: "right" }}>{pct}%</span>
@@ -196,7 +196,7 @@ function PatientDemographics({ data }: { data: { gender: string; count: number }
                 <p style={{ fontSize: 13, fontWeight: 600, color: C.slate, textTransform: "capitalize" }}>{row.gender}</p>
                 <p style={{ fontSize: 13, fontWeight: 700, color }}>{pct}% &nbsp;({row.count.toLocaleString()})</p>
               </div>
-              <div style={{ height: 8, background: "#f1f5f9", borderRadius: 999 }}>
+              <div style={{ height: 8, background: "var(--surface-sunken)", borderRadius: 999 }}>
                 <div style={{ height: "100%", width: `${pct}%`, background: color, borderRadius: 999, transition: "width 0.5s" }} />
               </div>
             </div>
@@ -204,8 +204,8 @@ function PatientDemographics({ data }: { data: { gender: string; count: number }
         })}
       </div>
       <div style={{ textAlign: "center", flexShrink: 0 }}>
-        <p style={{ fontSize: 32, fontWeight: 800, color: "#111827", lineHeight: 1 }}>{total.toLocaleString()}</p>
-        <p style={{ fontSize: 11, color: "#9ca3af", marginTop: 5 }}>unique patients</p>
+        <p style={{ fontSize: 32, fontWeight: 800, color: "var(--text-primary)", lineHeight: 1 }}>{total.toLocaleString()}</p>
+        <p style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 5 }}>unique patients</p>
       </div>
     </div>
   );
@@ -320,34 +320,34 @@ export default function ReportsPage() {
   ];
 
   return (
-    <div style={{ maxWidth: 1200, fontFamily: "'DM Sans', sans-serif" }}>
+    <div style={{ maxWidth: 1200 }}>
       <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.5} }`}</style>
 
       {/* ── Page Header ─────────────────────────────────────────────────────── */}
       <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 20, gap: 16, flexWrap: "wrap" }}>
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-            <h1 style={{ fontSize: 22, fontWeight: 700, color: "#111827", fontFamily: "'Playfair Display', serif" }}>
+            <h1 style={{ margin: 0, font: "700 27px/1.1 var(--font-sans)", letterSpacing: "var(--ls-tight)", color: "var(--text-primary)" }}>
               Reports &amp; Analytics
             </h1>
           </div>
-          <p style={{ fontSize: 13, color: "#9ca3af" }}>
+          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
             {isSuperAdmin ? "System-wide analytics — all institutions" : "Institution-scoped analytics"}
           </p>
         </div>
 
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <input type="date" value={fromDate} onChange={e => setFromDate(e.target.value)}
-            style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #e5e7eb", fontSize: 13, outline: "none", color: "#374151" }} />
-          <span style={{ fontSize: 13, color: "#9ca3af" }}>to</span>
+            style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid var(--hc-border)", fontSize: 13, outline: "none", color: "var(--text-secondary)" }} />
+          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>to</span>
           <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
-            style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid #e5e7eb", fontSize: 13, outline: "none", color: "#374151" }} />
+            style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid var(--hc-border)", fontSize: 13, outline: "none", color: "var(--text-secondary)" }} />
           <button onClick={() => fetchReport(tab)} disabled={isLoading}
-            style={{ width: 36, height: 36, borderRadius: 9, border: "1px solid #e5e7eb", background: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "#6b7280" }}>
+            style={{ width: 36, height: 36, borderRadius: 9, border: "1px solid var(--hc-border)", background: "var(--white)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>
             <RefreshCw size={14} className={isLoading ? "animate-spin" : ""} />
           </button>
           <button onClick={handleExport} disabled={exporting || isLoading}
-            style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 18px", borderRadius: 10, background: "linear-gradient(135deg,#166534,#15803d)", color: "#fff", fontSize: 13, fontWeight: 600, border: "none", cursor: "pointer", opacity: exporting ? 0.7 : 1 }}>
+            style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 18px", borderRadius: 10, background: "var(--brand)", color: "var(--white)", fontSize: 13, fontWeight: 600, border: "none", cursor: "pointer", opacity: exporting ? 0.7 : 1 }}>
             <Download size={14} /> {exporting ? "Exporting…" : "Export PDF"}
           </button>
         </div>
@@ -356,8 +356,8 @@ export default function ReportsPage() {
       {/* ── Institution scope badge ──────────────────────────────────────────── */}
       <div style={{
         display: "flex", alignItems: "center", gap: 8, padding: "8px 14px",
-        background: isSuperAdmin ? "#fef2f2" : "#eff6ff",
-        border: `1px solid ${isSuperAdmin ? "#fecaca" : "#bfdbfe"}`,
+        background: isSuperAdmin ? "var(--coral-050)" : "var(--info-tint)",
+        border: `1px solid ${isSuperAdmin ? "var(--coral-100)" : "var(--blue-100)"}`,
         borderRadius: 10, width: "fit-content", marginBottom: 20,
       }}>
         <Shield size={13} style={{ color: isSuperAdmin ? C.red : C.blue }} />
@@ -369,10 +369,10 @@ export default function ReportsPage() {
       </div>
 
       {/* ── Tabs ────────────────────────────────────────────────────────────── */}
-      <div style={{ display: "flex", gap: 4, marginBottom: 20, background: "#f1f5f9", padding: 4, borderRadius: 12, width: "fit-content" }}>
+      <div style={{ display: "flex", gap: 4, marginBottom: 20, background: "var(--surface-sunken)", padding: 4, borderRadius: 12, width: "fit-content" }}>
         {TABS.map(t => (
           <button key={t.key} onClick={() => setTab(t.key)}
-            style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 18px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 13.5, fontWeight: 600, transition: "all 0.15s", background: tab === t.key ? "#fff" : "transparent", color: tab === t.key ? C.green : "#6b7280", boxShadow: tab === t.key ? "0 1px 4px rgba(0,0,0,0.08)" : "none" }}>
+            style={{ display: "flex", alignItems: "center", gap: 7, padding: "8px 18px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 13.5, fontWeight: 600, transition: "all 0.15s", background: tab === t.key ? "var(--white)" : "transparent", color: tab === t.key ? C.green : "var(--text-secondary)", boxShadow: tab === t.key ? "var(--elev-1)" : "none" }}>
             <t.icon size={14} /> {t.label}
           </button>
         ))}
@@ -380,7 +380,7 @@ export default function ReportsPage() {
 
       {/* ── Period badge ─────────────────────────────────────────────────────── */}
       {d && (
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, padding: "7px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, width: "fit-content" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 20, padding: "7px 14px", background: "var(--brand-tint)", border: "1px solid var(--green-100)", borderRadius: 10, width: "fit-content" }}>
           <Calendar size={12} style={{ color: C.green }} />
           <p style={{ fontSize: 12.5, color: C.green, fontWeight: 600 }}>
             {format(new Date(d.period.from), "dd MMM yyyy")} — {format(new Date(d.period.to), "dd MMM yyyy")}
@@ -422,7 +422,7 @@ export default function ReportsPage() {
             <SectionCard title="Visits Trend">
               <ResponsiveContainer width="100%" height={170}>
                 <LineChart data={d.visits.trend}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-sunken)" />
                   <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={v => v?.slice(5)} />
                   <YAxis tick={{ fontSize: 10 }} />
                   <Tooltip />
@@ -434,7 +434,7 @@ export default function ReportsPage() {
             <SectionCard title="By Priority">
               <ResponsiveContainer width="100%" height={170}>
                 <BarChart data={d.visits.byPriority}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-sunken)" />
                   <XAxis dataKey="priority" tick={{ fontSize: 10 }} />
                   <YAxis tick={{ fontSize: 10 }} />
                   <Tooltip />
@@ -479,10 +479,10 @@ export default function ReportsPage() {
                       <p style={{ fontSize: 13, fontWeight: 600, color: C.slate }}>{item.label}</p>
                       <p style={{ fontSize: 15, fontWeight: 800, color: item.color }}>{pct}%</p>
                     </div>
-                    <div style={{ height: 9, background: "#f1f5f9", borderRadius: 999 }}>
+                    <div style={{ height: 9, background: "var(--surface-sunken)", borderRadius: 999 }}>
                       <div style={{ height: "100%", width: `${pct}%`, background: item.color, borderRadius: 999, transition: "width 0.5s" }} />
                     </div>
-                    <p style={{ fontSize: 11.5, color: "#9ca3af", marginTop: 4 }}>
+                    <p style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 4 }}>
                       {item.completed.toLocaleString()} completed of {item.total.toLocaleString()} total
                     </p>
                   </div>
@@ -493,7 +493,7 @@ export default function ReportsPage() {
 
           <SectionDivider title="Top Diagnoses" />
           <SectionCard title="Most Frequently Recorded Diagnoses"
-            action={<span style={{ fontSize: 11, color: "#9ca3af" }}>Top 10 by case count</span>}>
+            action={<span style={{ fontSize: 11, color: "var(--text-muted)" }}>Top 10 by case count</span>}>
             <TopDiagnosesTable diagnoses={d.topDiagnoses ?? []} totalVisits={d.visits.total} />
           </SectionCard>
 
@@ -539,7 +539,7 @@ export default function ReportsPage() {
                   { status: "Completed", count: d.referrals.completed },
                   { status: "Rejected",  count: d.referrals.rejected },
                 ]}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-sunken)" />
                   <XAxis dataKey="status" tick={{ fontSize: 11 }} />
                   <YAxis tick={{ fontSize: 11 }} />
                   <Tooltip />
@@ -558,7 +558,7 @@ export default function ReportsPage() {
                     { name: "Cancelled", value: d.appointments.cancelled },
                     { name: "Other",     value: Math.max(0, d.appointments.total - d.appointments.attended - d.appointments.cancelled) },
                   ]} dataKey="value" cx="50%" cy="50%" innerRadius={48} outerRadius={72}>
-                    {[C.green, C.red, "#e5e7eb"].map((c, i) => <Cell key={i} fill={c} />)}
+                    {[C.green, C.red, "var(--hc-border)"].map((c, i) => <Cell key={i} fill={c} />)}
                   </Pie>
                   <Tooltip />
                   <Legend />
@@ -570,34 +570,34 @@ export default function ReportsPage() {
           <SectionDivider title="Physician Activity" />
 
           <SectionCard title="Top Physicians by Visit Count"
-            action={<span style={{ fontSize: 11, color: "#9ca3af" }}>Top 10</span>}>
+            action={<span style={{ fontSize: 11, color: "var(--text-muted)" }}>Top 10</span>}>
             {!d.staffActivity.topDoctors?.length
               ? <EmptyState message="No physician data for this period" />
               : (
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                   <thead>
-                    <tr style={{ borderBottom: "2px solid #f3f4f6" }}>
+                    <tr style={{ borderBottom: "2px solid var(--surface-sunken)" }}>
                       {["#", "Physician", "Specialization", "Visits"].map(h => (
-                        <th key={h} style={{ padding: "8px 14px", textAlign: "left", fontSize: 10.5, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em" }}>{h}</th>
+                        <th key={h} style={{ padding: "8px 14px", textAlign: "left", fontSize: 10.5, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {d.staffActivity.topDoctors.slice(0, 10).map((doc: any, i: number) => (
-                      <tr key={doc.doctorId} style={{ borderBottom: i < 9 ? "1px solid #f9fafb" : "none", background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
-                        <td style={{ padding: "11px 14px", fontWeight: 700, color: "#d1d5db", fontSize: 12, width: 36 }}>{i + 1}</td>
+                      <tr key={doc.doctorId} style={{ borderBottom: i < 9 ? "1px solid var(--surface-sunken)" : "none", background: i % 2 === 0 ? "var(--white)" : "var(--surface-app)" }}>
+                        <td style={{ padding: "11px 14px", fontWeight: 700, color: "var(--text-disabled)", fontSize: 12, width: 36 }}>{i + 1}</td>
                         <td style={{ padding: "11px 14px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            <div style={{ width: 30, height: 30, borderRadius: 8, background: "linear-gradient(135deg,#1e293b,#334155)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
+                            <div style={{ width: 30, height: 30, borderRadius: 8, background: "var(--sidebar-bg)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: "var(--white)", flexShrink: 0 }}>
                               {doc.name?.split(" ").map((n: string) => n[0]).join("").slice(0, 2)}
                             </div>
-                            <span style={{ fontWeight: 600, color: "#111" }}>Dr. {doc.name}</span>
+                            <span style={{ fontWeight: 600, color: "var(--text-primary)" }}>Dr. {doc.name}</span>
                           </div>
                         </td>
                         <td style={{ padding: "11px 14px", color: C.gray }}>{doc.specialization ?? "—"}</td>
                         <td style={{ padding: "11px 14px" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <div style={{ flex: 1, height: 6, background: "#f1f5f9", borderRadius: 999, minWidth: 60 }}>
+                            <div style={{ flex: 1, height: 6, background: "var(--surface-sunken)", borderRadius: 999, minWidth: 60 }}>
                               <div style={{ height: "100%", width: `${Math.min(100, (doc.visitCount / (d.staffActivity.topDoctors[0]?.visitCount || 1)) * 100)}%`, background: C.green, borderRadius: 999 }} />
                             </div>
                             <span style={{ fontWeight: 800, color: C.green, minWidth: 30, textAlign: "right" }}>{doc.visitCount}</span>
@@ -626,7 +626,7 @@ export default function ReportsPage() {
             <StatBox label="New This Period" value={d.patients.newInPeriod.toLocaleString()}  sub="registrations"       icon={TrendingUp} color={C.green} />
             <StatBox label="Total Staff"     value={d.staff.total.toLocaleString()}           sub={`${d.staff.unverified} unverified`} icon={Stethoscope} color={C.purple} />
             {isSuperAdmin && (
-              <StatBox label="Institutions" value={d.institutions?.total ?? 0} sub={`${d.institutions?.active ?? 0} active`} icon={Building2} color="#0369a1" />
+              <StatBox label="Institutions" value={d.institutions?.total ?? 0} sub={`${d.institutions?.active ?? 0} active`} icon={Building2} color="var(--info-ink)" />
             )}
           </div>
 
@@ -644,7 +644,7 @@ export default function ReportsPage() {
                 ? (
                   <ResponsiveContainer width="100%" height={190}>
                     <LineChart data={d.patients.registrationTrend}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-sunken)" />
                       <XAxis dataKey="date" tick={{ fontSize: 10 }} tickFormatter={v => v?.slice(5)} />
                       <YAxis tick={{ fontSize: 10 }} />
                       <Tooltip />
@@ -657,7 +657,7 @@ export default function ReportsPage() {
             <SectionCard title="Workforce Distribution by Role">
               <ResponsiveContainer width="100%" height={190}>
                 <BarChart data={d.staff.byRole} layout="vertical">
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-sunken)" />
                   <XAxis type="number" tick={{ fontSize: 10 }} />
                   <YAxis type="category" dataKey="role" tick={{ fontSize: 10 }} width={90} />
                   <Tooltip />
@@ -677,7 +677,7 @@ export default function ReportsPage() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
               <ResponsiveContainer width="100%" height={160}>
                 <BarChart data={d.audit.byAction.slice(0, 8)}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--surface-sunken)" />
                   <XAxis dataKey="action" tick={{ fontSize: 9 }} angle={-30} textAnchor="end" height={46} />
                   <YAxis tick={{ fontSize: 10 }} />
                   <Tooltip />
@@ -688,14 +688,14 @@ export default function ReportsPage() {
               <div>
                 <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
                   <thead>
-                    <tr style={{ borderBottom: "1px solid #f3f4f6" }}>
-                      <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase" }}>Action</th>
-                      <th style={{ padding: "6px 10px", textAlign: "right", fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase" }}>Count</th>
+                    <tr style={{ borderBottom: "1px solid var(--surface-sunken)" }}>
+                      <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" }}>Action</th>
+                      <th style={{ padding: "6px 10px", textAlign: "right", fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase" }}>Count</th>
                     </tr>
                   </thead>
                   <tbody>
                     {d.audit.byAction.slice(0, 8).map((a: any, i: number) => (
-                      <tr key={a.action} style={{ borderBottom: "1px solid #f9fafb", background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
+                      <tr key={a.action} style={{ borderBottom: "1px solid var(--surface-sunken)", background: i % 2 === 0 ? "var(--white)" : "var(--surface-app)" }}>
                         <td style={{ padding: "7px 10px", color: C.slate, textTransform: "capitalize" }}>
                           {a.action?.replace(/_/g, " ")}
                         </td>
@@ -718,18 +718,18 @@ export default function ReportsPage() {
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
                     <thead>
-                      <tr style={{ borderBottom: "2px solid #f3f4f6" }}>
+                      <tr style={{ borderBottom: "2px solid var(--surface-sunken)" }}>
                         {["Institution", "Type", "Patients", "Staff", "Total Visits", "Status"].map(h => (
-                          <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10.5, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.06em" }}>{h}</th>
+                          <th key={h} style={{ padding: "8px 12px", textAlign: "left", fontSize: 10.5, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
                       {d.institutions.list.map((inst: any, i: number) => (
-                        <tr key={inst.id} style={{ borderBottom: "1px solid #f9fafb", background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
-                          <td style={{ padding: "12px 12px", fontWeight: 600, color: "#111" }}>{inst.name}</td>
+                        <tr key={inst.id} style={{ borderBottom: "1px solid var(--surface-sunken)", background: i % 2 === 0 ? "var(--white)" : "var(--surface-app)" }}>
+                          <td style={{ padding: "12px 12px", fontWeight: 600, color: "var(--text-primary)" }}>{inst.name}</td>
                           <td style={{ padding: "12px 12px" }}>
-                            <span style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: "#f0fdf4", color: C.green, textTransform: "capitalize" }}>
+                            <span style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 8px", borderRadius: 999, background: "var(--brand-tint)", color: C.green, textTransform: "capitalize" }}>
                               {inst.type}
                             </span>
                           </td>
@@ -737,7 +737,7 @@ export default function ReportsPage() {
                           <td style={{ padding: "12px 12px", fontWeight: 600, color: C.purple }}>{inst.totalStaff.toLocaleString()}</td>
                           <td style={{ padding: "12px 12px", fontWeight: 600, color: C.green }}>{inst.totalVisits.toLocaleString()}</td>
                           <td style={{ padding: "12px 12px" }}>
-                            <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: inst.isActive ? "#f0fdf4" : "#fef2f2", color: inst.isActive ? "#15803d" : C.red }}>
+                            <span style={{ fontSize: 11.5, fontWeight: 700, padding: "3px 9px", borderRadius: 999, background: inst.isActive ? "var(--brand-tint)" : "var(--coral-050)", color: inst.isActive ? "var(--green-700)" : C.red }}>
                               {inst.isActive ? "Active" : "Inactive"}
                             </span>
                           </td>
@@ -754,9 +754,9 @@ export default function ReportsPage() {
 
       {/* ── Footer ──────────────────────────────────────────────────────────── */}
       {d && (
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 32, paddingTop: 20, borderTop: "1px solid #f3f4f6" }}>
-          <FileText size={12} style={{ color: "#d1d5db" }} />
-          <p style={{ fontSize: 11.5, color: "#d1d5db" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 32, paddingTop: 20, borderTop: "1px solid var(--surface-sunken)" }}>
+          <FileText size={12} style={{ color: "var(--text-disabled)" }} />
+          <p style={{ fontSize: 11.5, color: "var(--text-disabled)" }}>
             {isSuperAdmin ? "System-wide" : d.institutionName} · {tab.charAt(0).toUpperCase() + tab.slice(1)} Report · Generated {format(new Date(d.generatedAt), "dd MMM yyyy 'at' HH:mm")} · HealthChain EMR
           </p>
         </div>

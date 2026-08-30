@@ -25,6 +25,29 @@ import {
 } from "lucide-react";
 import { MinorBadge, ageFromDob } from "@/components/ui/MinorBadge";
 import { PatientGuardiansSection } from "@/components/ui/PatientGuardiansSection";
+import {
+  Page,
+  Card,
+  Field,
+  Input,
+  Select,
+  Textarea,
+  Button,
+  Pill,
+  MonoTag,
+  Avatar,
+  Banner,
+  SectionLabel,
+} from "@/components/dashboard/ui";
+
+/* ==========================================================================
+   Patient detail — registration and demographic data only.
+
+   The same layout serves both view and edit mode; edit swaps the InfoRow
+   readouts for form controls in the two editable sections. Identity and
+   registration stay read-only in both, because a receptionist cannot change
+   a national ID or which institution a patient is registered with.
+   ========================================================================== */
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface PatientRegistration {
@@ -78,6 +101,7 @@ function age(dob: string): number {
   const birth = new Date(dob);
   const now = new Date();
   let a = now.getFullYear() - birth.getFullYear();
+  // Birthday not yet reached this year.
   if (
     now.getMonth() < birth.getMonth() ||
     (now.getMonth() === birth.getMonth() && now.getDate() < birth.getDate())
@@ -103,19 +127,9 @@ function capitalize(s?: string | null) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-const genderColors: Record<string, string> = {
-  male: "#3b82f6",
-  female: "#ec4899",
-  other: "#8b5cf6",
-};
-
-const inputCls =
-  "w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-800 outline-none focus:border-green-400 focus:ring-2 focus:ring-green-400/10 transition-colors";
-
-const selectCls =
-  "w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-sm text-gray-800 outline-none focus:border-green-400 focus:ring-2 focus:ring-green-400/10 transition-colors";
-
 // ── Sub-components ────────────────────────────────────────────────────────────
+
+/** Read-only label/value pair with a leading icon chip. */
 function InfoRow({
   icon: Icon,
   label,
@@ -128,53 +142,58 @@ function InfoRow({
   mono?: boolean;
 }) {
   return (
-    <div className="flex items-start gap-3 py-3 border-b border-gray-50 last:border-0">
-      <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0 mt-0.5">
-        <Icon className="w-4 h-4 text-gray-400" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-xs text-gray-400 mb-0.5">{label}</p>
-        <p
-          className={`text-sm text-gray-800 break-all ${mono ? "font-mono text-xs" : "font-medium"}`}
+    <div
+      className="flex items-start"
+      style={{ gap: 12, padding: "12px 0", borderBottom: "1px solid var(--border-faint)" }}
+    >
+      <span
+        className="inline-flex items-center justify-center flex-shrink-0"
+        style={{
+          width: 30,
+          height: 30,
+          borderRadius: "var(--r-xs)",
+          background: "var(--surface-sunken)",
+          color: "var(--text-muted)",
+        }}
+      >
+        <Icon className="w-4 h-4" />
+      </span>
+      <div className="flex-1 min-w-0 flex flex-col" style={{ gap: 4 }}>
+        <span style={{ font: "400 11.5px/1 var(--font-sans)", color: "var(--text-muted)" }}>
+          {label}
+        </span>
+        <span
+          style={{
+            font: mono
+              ? "500 12px/1.4 var(--font-mono)"
+              : "500 13.5px/1.4 var(--font-sans)",
+            color: "var(--text-primary)",
+            wordBreak: "break-word",
+          }}
         >
           {value || "—"}
-        </p>
+        </span>
       </div>
     </div>
   );
 }
 
-function Field({
-  label,
-  children,
-}: {
-  label: string;
-  children: React.ReactNode;
-}) {
+/** Titled card whose last child row loses its divider. */
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="py-2.5 border-b border-gray-50 last:border-0">
-      <label className="text-xs text-gray-400 mb-1.5 block">{label}</label>
-      {children}
-    </div>
-  );
-}
-
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-      <div className="px-5 py-3.5 border-b border-gray-100">
-        <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
-          {title}
-        </h2>
+    <Card>
+      <SectionLabel
+        style={{ padding: "13px 20px", borderBottom: "1px solid var(--border-faint)" }}
+      >
+        {title}
+      </SectionLabel>
+      <div
+        style={{ padding: "4px 20px 14px" }}
+        className="[&>*:last-child]:border-b-0"
+      >
+        {children}
       </div>
-      <div className="px-5">{children}</div>
-    </div>
+    </Card>
   );
 }
 
@@ -195,6 +214,8 @@ function PasswordResetModal({
   const [done, setDone] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Validation only fires once the field has been touched, so the form does
+  // not scold the user before they have typed anything.
   const tooShort = password.length > 0 && password.length < 8;
   const mismatch = confirm.length > 0 && password !== confirm;
   const canSubmit = password.length >= 8 && password === confirm && !saving;
@@ -209,146 +230,195 @@ function PasswordResetModal({
       });
       setDone(true);
     } catch (err: any) {
-      setError(
-        err.response?.data?.error?.message ?? "Failed to reset password.",
-      );
+      setError(err.response?.data?.error?.message ?? "Failed to reset password.");
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-xl border border-gray-100 w-full max-w-md">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
-              <KeyRound className="w-4 h-4 text-amber-600" />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-gray-900">Reset Password</p>
-              <p className="text-xs text-gray-400">{patientName}</p>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ padding: 16, background: "var(--scrim)", backdropFilter: "blur(4px)" }}
+    >
+      <div
+        className="w-full"
+        style={{
+          maxWidth: 440,
+          background: "var(--surface-card)",
+          borderRadius: "var(--r-md)",
+          border: "1px solid var(--hc-border)",
+          boxShadow: "var(--elev-3)",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          className="flex items-center justify-between"
+          style={{
+            gap: 12,
+            padding: "14px 20px",
+            borderBottom: "1px solid var(--border-faint)",
+          }}
+        >
+          <div className="flex items-center min-w-0" style={{ gap: 11 }}>
+            <span
+              className="inline-flex items-center justify-center flex-shrink-0"
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: "var(--r-xs)",
+                background: "var(--amber-050)",
+                color: "var(--urgent-ink)",
+              }}
+            >
+              <KeyRound className="w-4 h-4" />
+            </span>
+            <div className="min-w-0 flex flex-col" style={{ gap: 3 }}>
+              <p
+                style={{
+                  margin: 0,
+                  font: "700 14px/1 var(--font-sans)",
+                  color: "var(--text-primary)",
+                }}
+              >
+                Reset password
+              </p>
+              <p
+                className="truncate"
+                style={{
+                  margin: 0,
+                  font: "400 12px/1 var(--font-sans)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                {patientName}
+              </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <Button icon={X} variant="ghost" size="sm" onClick={onClose} style={{ width: 30 }} />
         </div>
 
-        <div className="px-6 py-5">
+        <div style={{ padding: 20 }}>
           {done ? (
-            <div className="flex flex-col items-center gap-3 py-4">
-              <div className="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center">
-                <CheckCircle2 className="w-6 h-6 text-green-600" />
-              </div>
-              <p className="text-sm font-semibold text-gray-800 text-center">
+            <div className="flex flex-col items-center text-center" style={{ gap: 12 }}>
+              <span
+                className="inline-flex items-center justify-center"
+                style={{
+                  width: 48,
+                  height: 48,
+                  borderRadius: "var(--r-sm)",
+                  background: "var(--brand-tint)",
+                  color: "var(--green-700)",
+                }}
+              >
+                <CheckCircle2 className="w-6 h-6" />
+              </span>
+              <p
+                style={{
+                  margin: 0,
+                  font: "600 13.5px/1 var(--font-sans)",
+                  color: "var(--text-primary)",
+                }}
+              >
                 Password reset successfully
               </p>
-              <p className="text-xs text-gray-500 text-center">
+              <p
+                style={{
+                  margin: 0,
+                  font: "400 12.5px/1.5 var(--font-sans)",
+                  color: "var(--text-secondary)",
+                }}
+              >
                 Advise the patient to log in with the new password and change it
                 immediately after.
               </p>
-              <button
-                onClick={onClose}
-                className="mt-2 px-5 py-2 rounded-xl text-sm font-semibold text-white"
-                style={{ background: "#166534" }}
-              >
+              <Button variant="primary" onClick={onClose} style={{ marginTop: 4 }}>
                 Done
-              </button>
+              </Button>
             </div>
           ) : (
-            <>
-              <p className="text-xs text-gray-500 mb-4">
-                Set a temporary password for this patient. Hand it to them
-                securely and advise them to change it after logging in.
+            <div className="flex flex-col" style={{ gap: 14 }}>
+              <p
+                style={{
+                  margin: 0,
+                  font: "400 12.5px/1.5 var(--font-sans)",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                Set a temporary password for this patient. Hand it to them securely and
+                advise them to change it after logging in.
               </p>
 
               {error && (
-                <div className="mb-4 flex items-center gap-2 px-3 py-2.5 rounded-lg bg-red-50 border border-red-100">
-                  <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                  <p className="text-xs text-red-700">{error}</p>
-                </div>
+                <Banner tone="critical" icon={AlertCircle}>
+                  {error}
+                </Banner>
               )}
 
-              {/* New password */}
-              <div className="mb-3">
-                <label className="text-xs text-gray-400 mb-1.5 block">
-                  New Password
-                </label>
+              <Field
+                label="New password"
+                error={tooShort ? "Must be at least 8 characters" : undefined}
+              >
                 <div className="relative">
-                  <input
+                  <Input
                     type={showPw ? "text" : "password"}
                     value={password}
+                    invalid={tooShort}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="Minimum 8 characters"
-                    className={`${inputCls} pr-10`}
+                    style={{ paddingRight: 38 }}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPw((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    className="absolute inline-flex items-center justify-center"
+                    style={{
+                      right: 8,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      width: 26,
+                      height: 26,
+                      border: "none",
+                      borderRadius: "var(--r-xs)",
+                      background: "transparent",
+                      color: "var(--text-muted)",
+                      cursor: "pointer",
+                    }}
                   >
-                    {showPw ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
+                    {showPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                   </button>
                 </div>
-                {tooShort && (
-                  <p className="text-xs text-red-500 mt-1">
-                    Must be at least 8 characters
-                  </p>
-                )}
-              </div>
+              </Field>
 
-              {/* Confirm */}
-              <div className="mb-5">
-                <label className="text-xs text-gray-400 mb-1.5 block">
-                  Confirm Password
-                </label>
-                <input
+              <Field
+                label="Confirm password"
+                error={mismatch ? "Passwords do not match" : undefined}
+              >
+                <Input
                   type={showPw ? "text" : "password"}
                   value={confirm}
+                  invalid={mismatch}
                   onChange={(e) => setConfirm(e.target.value)}
                   placeholder="Re-enter password"
-                  className={inputCls}
                 />
-                {mismatch && (
-                  <p className="text-xs text-red-500 mt-1">
-                    Passwords do not match
-                  </p>
-                )}
-              </div>
+              </Field>
 
-              <div className="flex gap-3">
-                <button
-                  onClick={onClose}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
-                >
+              <div className="flex" style={{ gap: 12, marginTop: 4 }}>
+                <Button full onClick={onClose}>
                   Cancel
-                </button>
-                <button
-                  onClick={handleSubmit}
+                </Button>
+                <Button
+                  variant="primary"
+                  full
+                  icon={KeyRound}
+                  loading={saving}
                   disabled={!canSubmit}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold text-white flex items-center justify-center gap-2 disabled:opacity-50 transition-opacity"
-                  style={{
-                    background: "linear-gradient(135deg, #166534, #15803d)",
-                  }}
+                  onClick={handleSubmit}
                 >
-                  {saving ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <KeyRound className="w-4 h-4" />
-                  )}
-                  Reset Password
-                </button>
+                  Reset password
+                </Button>
               </div>
-            </>
+            </div>
           )}
         </div>
       </div>
@@ -357,10 +427,7 @@ function PasswordResetModal({
 }
 
 // ── Main Component ────────────────────────────────────────────────────────────
-export default function PatientDetail({
-  patientId,
-  onBack,
-}: PatientDetailProps) {
+export default function PatientDetail({ patientId, onBack }: PatientDetailProps) {
   const [patient, setPatient] = useState<PatientRegistration | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -385,6 +452,7 @@ export default function PatientDetail({
   // ── Fetch ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!patientId) return;
+    // Guard against a late response for a patient the user has navigated away from.
     let cancelled = false;
 
     (async () => {
@@ -395,7 +463,6 @@ export default function PatientDetail({
 
       try {
         const res = await patientApi.getRegistration(patientId);
-        console.log("[PatientDetail] response:", res.data);
         if (cancelled) return;
 
         const payload = res.data?.data ?? res.data;
@@ -405,11 +472,6 @@ export default function PatientDetail({
         }
         setPatient(payload as PatientRegistration);
       } catch (err: any) {
-        console.error(
-          "[PatientDetail] error:",
-          err.response?.status,
-          err.response?.data,
-        );
         if (!cancelled)
           setError(
             err.response?.data?.error?.message ??
@@ -454,9 +516,7 @@ export default function PatientDetail({
   const handleField =
     (key: keyof EditForm) =>
     (
-      e: React.ChangeEvent<
-        HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement
-      >,
+      e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>,
     ) =>
       setForm((f) => ({ ...f, [key]: e.target.value }));
 
@@ -466,12 +526,11 @@ export default function PatientDetail({
     setSaving(true);
     setSaveError(null);
 
-    // Only send fields that actually changed
+    // Only send fields that actually changed — a PATCH of unchanged values
+    // would still write an audit entry for each of them.
     const payload: Record<string, any> = {};
-    if (form.firstName !== (patient.firstName ?? ""))
-      payload.firstName = form.firstName;
-    if (form.lastName !== (patient.lastName ?? ""))
-      payload.lastName = form.lastName;
+    if (form.firstName !== (patient.firstName ?? "")) payload.firstName = form.firstName;
+    if (form.lastName !== (patient.lastName ?? "")) payload.lastName = form.lastName;
     if (form.middleName !== (patient.middleName ?? ""))
       payload.middleName = form.middleName || null;
     if (form.dateOfBirth !== (patient.dateOfBirth ?? ""))
@@ -479,10 +538,8 @@ export default function PatientDetail({
     if (form.gender !== (patient.gender ?? "")) payload.gender = form.gender;
     if (form.phoneNumber !== (patient.phoneNumber ?? ""))
       payload.phoneNumber = form.phoneNumber;
-    if (form.email !== (patient.email ?? ""))
-      payload.email = form.email || null;
-    if (form.address !== (patient.address ?? ""))
-      payload.address = form.address;
+    if (form.email !== (patient.email ?? "")) payload.email = form.email || null;
+    if (form.address !== (patient.address ?? "")) payload.address = form.address;
     if (form.emergencyContact !== (patient.emergencyContact ?? ""))
       payload.emergencyContact = form.emergencyContact;
     if (form.maritalStatus !== (patient.maritalStatus ?? ""))
@@ -497,21 +554,16 @@ export default function PatientDetail({
     }
 
     try {
-      const res = await api.patch(
-        `/api/patients/${patient.id}/update`,
-        payload,
-      );
+      const res = await api.patch(`/api/patients/${patient.id}/update`, payload);
       const updated = res.data?.data ?? res.data;
-      // Merge back, keep registration metadata untouched
+      // Merge back, keeping registration metadata the PATCH does not return.
       setPatient((prev) =>
         prev ? { ...prev, ...updated, registration: prev.registration } : prev,
       );
       setEditing(false);
     } catch (err: any) {
       setSaveError(
-        err.response?.data?.error?.message ??
-          err.message ??
-          "Failed to save changes.",
+        err.response?.data?.error?.message ?? err.message ?? "Failed to save changes.",
       );
     } finally {
       setSaving(false);
@@ -521,9 +573,14 @@ export default function PatientDetail({
   // ── Loading ────────────────────────────────────────────────────────────────
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-64 gap-3">
-        <Loader2 className="w-6 h-6 animate-spin text-green-600" />
-        <p className="text-sm text-gray-400">Loading patient details…</p>
+      <div
+        className="flex flex-col items-center justify-center"
+        style={{ minHeight: 256, gap: 12 }}
+      >
+        <Loader2 className="w-6 h-6 animate-spin" style={{ color: "var(--brand)" }} />
+        <p style={{ margin: 0, font: "400 13px/1 var(--font-sans)", color: "var(--text-muted)" }}>
+          Loading patient details…
+        </p>
       </div>
     );
   }
@@ -531,25 +588,61 @@ export default function PatientDetail({
   // ── Error ──────────────────────────────────────────────────────────────────
   if (error || !patient) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-64 gap-4">
-        <AlertCircle className="w-8 h-8 text-red-400" />
-        <p className="text-sm text-red-600 font-medium">
+      <Page maxWidth={560}>
+        <Banner tone="critical" icon={AlertCircle} title="Could not load patient">
           {error ?? "Patient not found"}
-        </p>
-        <button onClick={onBack} className="text-sm text-gray-500 underline">
-          Go back
-        </button>
-      </div>
+        </Banner>
+        <Button icon={ArrowLeft} onClick={onBack} style={{ alignSelf: "flex-start" }}>
+          All patients
+        </Button>
+      </Page>
     );
   }
 
-  const initials =
-    `${patient.firstName?.[0] ?? ""}${patient.lastName?.[0] ?? ""}`.toUpperCase();
-  const avatarColor = genderColors[patient.gender] ?? "#6b7280";
   const dobAge = patient.dateOfBirth ? age(patient.dateOfBirth) : null;
   const fullName = [patient.firstName, patient.middleName, patient.lastName]
     .filter(Boolean)
     .join(" ");
+
+  /* Identity and registration are read-only in both modes, so the two blocks
+     are built once and rendered by either branch. */
+  const identitySection = (
+    <Section title="Identity">
+      <InfoRow icon={Hash} label="National ID" value={patient.nationalId} mono />
+      {editing && <InfoRow icon={Hash} label="Patient ID" value={patient.id} mono />}
+    </Section>
+  );
+
+  const registrationSection = (
+    <Section title="Registration">
+      <InfoRow
+        icon={Calendar}
+        label="Registered on"
+        value={patient.createdAt ? formatDate(patient.createdAt) : "—"}
+      />
+      {patient.registration ? (
+        <>
+          <InfoRow
+            icon={Building2}
+            label="Hospital patient number"
+            value={patient.registration.hospitalPatientNumber}
+            mono
+          />
+          <InfoRow
+            icon={ShieldCheck}
+            label="Home institution"
+            value={patient.registration.isHomeInstitution ? "Yes" : "No"}
+          />
+        </>
+      ) : (
+        <InfoRow
+          icon={Building2}
+          label="Hospital patient number"
+          value="Not registered at this institution"
+        />
+      )}
+    </Section>
+  );
 
   return (
     <>
@@ -561,394 +654,286 @@ export default function PatientDetail({
         />
       )}
 
-      <div>
+      <Page>
         {/* Top bar */}
-        <div className="flex items-center justify-between mb-5">
-          <button
-            onClick={onBack}
-            className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-700 transition-colors"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            All Patients
-          </button>
+        <div className="flex items-center justify-between flex-wrap" style={{ gap: 12 }}>
+          <Button variant="ghost" icon={ArrowLeft} onClick={onBack}>
+            All patients
+          </Button>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center" style={{ gap: 10 }}>
             {!editing && (
-              <button
-                onClick={() => setShowResetModal(true)}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold border border-amber-200 text-amber-700 bg-amber-50 hover:bg-amber-100 transition-colors"
-              >
-                <KeyRound className="w-4 h-4" />
-                Reset Password
-              </button>
-            )}
-            {editing ? (
               <>
-                <button
-                  onClick={cancelEdit}
-                  disabled={saving}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-50"
-                >
-                  <X className="w-4 h-4" />
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition-opacity"
+                <Button
+                  icon={KeyRound}
+                  onClick={() => setShowResetModal(true)}
                   style={{
-                    background: "linear-gradient(135deg, #166534, #15803d)",
+                    background: "var(--amber-050)",
+                    borderColor: "var(--amber-100)",
+                    color: "var(--urgent-ink)",
                   }}
                 >
-                  {saving ? (
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                  ) : (
-                    <Save className="w-4 h-4" />
-                  )}
-                  Save Changes
-                </button>
+                  Reset password
+                </Button>
+                <Button icon={Edit3} onClick={enterEdit}>
+                  Edit
+                </Button>
               </>
-            ) : (
-              <button
-                onClick={enterEdit}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold border border-gray-200 text-gray-700 hover:bg-gray-50 transition-colors"
-              >
-                <Edit3 className="w-4 h-4" />
-                Edit
-              </button>
+            )}
+            {editing && (
+              <>
+                <Button icon={X} onClick={cancelEdit} disabled={saving}>
+                  Cancel
+                </Button>
+                <Button variant="primary" icon={Save} loading={saving} onClick={handleSave}>
+                  Save changes
+                </Button>
+              </>
             )}
           </div>
         </div>
 
-        {/* Save error */}
         {saveError && (
-          <div className="mb-4 flex items-center gap-2.5 px-4 py-3 rounded-xl bg-red-50 border border-red-100">
-            <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-            <p className="text-sm text-red-700">{saveError}</p>
-          </div>
+          <Banner tone="critical" icon={AlertCircle}>
+            {saveError}
+          </Banner>
         )}
 
         {/* Hero card */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-5">
-          <div className="flex items-start gap-5">
-            <div
-              className="w-16 h-16 rounded-2xl flex items-center justify-center text-xl font-bold text-white flex-shrink-0"
-              style={{ background: avatarColor }}
-            >
-              {initials}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl font-bold text-gray-900">{fullName}</h1>
-                <span
-                  className={`text-xs font-semibold px-2 py-0.5 rounded-full ${patient.isActive ? "bg-green-50 text-green-700" : "bg-red-50 text-red-600"}`}
+        <Card pad={22}>
+          <div className="flex items-start" style={{ gap: 18 }}>
+            <Avatar name={fullName} size={60} seed={0} />
+
+            <div className="flex-1 min-w-0 flex flex-col" style={{ gap: 8 }}>
+              <div className="flex items-center flex-wrap" style={{ gap: 8 }}>
+                <h1
+                  style={{
+                    margin: 0,
+                    font: "700 21px/1.2 var(--font-sans)",
+                    letterSpacing: "var(--ls-tight)",
+                    color: "var(--text-primary)",
+                  }}
                 >
+                  {fullName}
+                </h1>
+                <Pill tone={patient.isActive ? "success" : "critical"} dot>
                   {patient.isActive ? "Active" : "Inactive"}
-                </span>
+                </Pill>
                 {patient.isMinor && (
                   <MinorBadge
                     age={patient.dateOfBirth ? ageFromDob(patient.dateOfBirth) : undefined}
                   />
                 )}
-                {editing && (
-                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
-                    Editing
-                  </span>
-                )}
+                {editing && <Pill tone="info">Editing</Pill>}
               </div>
-              <p className="text-sm text-gray-500 mt-0.5">
-                <span className="capitalize">{patient.gender}</span>
+
+              <p
+                style={{
+                  margin: 0,
+                  font: "400 13.5px/1.4 var(--font-sans)",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                <span style={{ textTransform: "capitalize" }}>{patient.gender}</span>
                 {dobAge !== null ? ` · ${dobAge} years old` : ""}
-                {patient.bloodType ? " · Blood type " : ""}
+                {patient.bloodType ? " · blood type " : ""}
                 {patient.bloodType && (
-                  <span className="font-semibold text-gray-700">
+                  <span style={{ font: "700 13.5px/1.4 var(--font-mono)", color: "var(--text-primary)" }}>
                     {patient.bloodType}
                   </span>
                 )}
               </p>
-              {patient.registration?.hospitalPatientNumber && (
-                <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-50 border border-gray-100">
-                  <Building2 className="w-3.5 h-3.5 text-gray-400" />
-                  <span className="text-xs font-mono text-gray-600">
+
+              <div className="flex items-center flex-wrap" style={{ gap: 8 }}>
+                {patient.registration?.hospitalPatientNumber && (
+                  <MonoTag>
+                    <Building2 className="w-3 h-3" style={{ marginRight: 5 }} />
                     {patient.registration.hospitalPatientNumber}
-                  </span>
-                  {patient.registration.isHomeInstitution && (
-                    <span className="ml-1 text-xs font-semibold text-green-700 bg-green-50 px-1.5 py-0.5 rounded-md">
-                      Home
+                  </MonoTag>
+                )}
+                {patient.registration?.isHomeInstitution && (
+                  <Pill tone="success">Home institution</Pill>
+                )}
+                {/*
+                 * A minor has no NRC — the temporary clinic ID is their only
+                 * login credential, so it belongs next to their identity.
+                 */}
+                {patient.isMinor && patient.temporaryPatientId && (
+                  <span
+                    className="inline-flex items-center"
+                    style={{
+                      gap: 7,
+                      height: 22,
+                      padding: "0 10px",
+                      borderRadius: "var(--r-pill)",
+                      background: "var(--amber-050)",
+                      border: "1px solid var(--amber-100)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        font: "700 9.5px/1 var(--font-sans)",
+                        letterSpacing: "var(--ls-caps)",
+                        textTransform: "uppercase",
+                        color: "var(--urgent-ink)",
+                      }}
+                    >
+                      Minor ID
                     </span>
-                  )}
-                </div>
-              )}
+                    <span
+                      style={{ font: "700 11px/1 var(--font-mono)", color: "var(--urgent-ink)" }}
+                    >
+                      {patient.temporaryPatientId}
+                    </span>
+                  </span>
+                )}
+              </div>
             </div>
           </div>
-        </div>
+        </Card>
 
-        {/* ── Minor ID display ────────────────────────────────────────────── */}
-        {patient.isMinor && patient.temporaryPatientId && (
-          <div className="mb-5 flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-50 border border-amber-200">
-            <span className="text-xs font-semibold text-amber-600 uppercase tracking-wide">Minor Patient ID</span>
-            <span className="font-mono font-bold text-amber-900 text-sm">{patient.temporaryPatientId}</span>
-          </div>
-        )}
-
-        {/* ── Guardians section (minor only) ──────────────────────────────── */}
+        {/* Guardians (minors only) */}
         {patient.isMinor && !editing && (
-          <div className="mb-5">
-            <PatientGuardiansSection patientId={patient.id} canManage />
-          </div>
+          <PatientGuardiansSection patientId={patient.id} canManage />
         )}
 
-        {/* ── VIEW MODE ─────────────────────────────────────────────────────── */}
-        {!editing && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <Section title="Personal Information">
-              <InfoRow
-                icon={Calendar}
-                label="Date of Birth"
-                value={
-                  patient.dateOfBirth
-                    ? `${formatDate(patient.dateOfBirth)}${dobAge !== null ? ` (age ${dobAge})` : ""}`
-                    : undefined
-                }
-              />
-              <InfoRow
-                icon={Users}
-                label="Gender"
-                value={capitalize(patient.gender)}
-              />
-              <InfoRow
-                icon={Heart}
-                label="Marital Status"
-                value={capitalize(patient.maritalStatus)}
-              />
-              <InfoRow
-                icon={Briefcase}
-                label="Occupation"
-                value={patient.occupation || "—"}
-              />
-            </Section>
-
-            <Section title="Contact Details">
-              <InfoRow
-                icon={Phone}
-                label="Phone Number"
-                value={patient.phoneNumber}
-              />
-              <InfoRow
-                icon={Mail}
-                label="Email Address"
-                value={patient.email || "—"}
-              />
-              <InfoRow
-                icon={MapPin}
-                label="Home Address"
-                value={patient.address}
-              />
-              <InfoRow
-                icon={AlertCircle}
-                label="Emergency Contact"
-                value={patient.emergencyContact}
-              />
-            </Section>
-
-            <Section title="Identity">
-              <InfoRow
-                icon={Hash}
-                label="National ID"
-                value={patient.nationalId}
-                mono
-              />
-            </Section>
-
-            <Section title="Registration">
-              <InfoRow
-                icon={Calendar}
-                label="Registered On"
-                value={patient.createdAt ? formatDate(patient.createdAt) : "—"}
-              />
-              {patient.registration ? (
-                <>
-                  <InfoRow
-                    icon={Building2}
-                    label="Hospital Patient Number"
-                    value={patient.registration.hospitalPatientNumber}
-                    mono
-                  />
-                  <InfoRow
-                    icon={ShieldCheck}
-                    label="Home Institution"
-                    value={
-                      patient.registration.isHomeInstitution ? "Yes" : "No"
-                    }
-                  />
-                </>
-              ) : (
+        {/* ── Sections ─────────────────────────────────────────────────────── */}
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gap: 16,
+            alignItems: "start",
+          }}
+        >
+          {!editing ? (
+            <>
+              <Section title="Personal information">
                 <InfoRow
-                  icon={Building2}
-                  label="Hospital Patient Number"
-                  value="Not registered at this institution"
+                  icon={Calendar}
+                  label="Date of birth"
+                  value={
+                    patient.dateOfBirth
+                      ? `${formatDate(patient.dateOfBirth)}${dobAge !== null ? ` (age ${dobAge})` : ""}`
+                      : undefined
+                  }
                 />
-              )}
-            </Section>
-          </div>
-        )}
-
-        {/* ── EDIT MODE ─────────────────────────────────────────────────────── */}
-        {editing && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <Section title="Personal Information">
-              <Field label="First Name">
-                <input
-                  className={inputCls}
-                  value={form.firstName}
-                  onChange={handleField("firstName")}
-                />
-              </Field>
-              <Field label="Middle Name (optional)">
-                <input
-                  className={inputCls}
-                  value={form.middleName}
-                  onChange={handleField("middleName")}
-                  placeholder="—"
-                />
-              </Field>
-              <Field label="Last Name">
-                <input
-                  className={inputCls}
-                  value={form.lastName}
-                  onChange={handleField("lastName")}
-                />
-              </Field>
-              <Field label="Date of Birth">
-                <input
-                  type="date"
-                  className={inputCls}
-                  value={form.dateOfBirth}
-                  onChange={handleField("dateOfBirth")}
-                />
-              </Field>
-              <Field label="Gender">
-                <select
-                  className={selectCls}
-                  value={form.gender}
-                  onChange={handleField("gender")}
-                >
-                  <option value="">Select…</option>
-                  <option value="male">Male</option>
-                  <option value="female">Female</option>
-                  <option value="other">Other</option>
-                </select>
-              </Field>
-              <Field label="Marital Status">
-                <select
-                  className={selectCls}
-                  value={form.maritalStatus}
-                  onChange={handleField("maritalStatus")}
-                >
-                  <option value="">Select…</option>
-                  <option value="single">Single</option>
-                  <option value="married">Married</option>
-                  <option value="divorced">Divorced</option>
-                  <option value="widowed">Widowed</option>
-                </select>
-              </Field>
-              <Field label="Occupation (optional)">
-                <input
-                  className={inputCls}
-                  value={form.occupation}
-                  onChange={handleField("occupation")}
-                  placeholder="—"
-                />
-              </Field>
-            </Section>
-
-            <Section title="Contact Details">
-              <Field label="Phone Number">
-                <input
-                  className={inputCls}
-                  value={form.phoneNumber}
-                  onChange={handleField("phoneNumber")}
-                />
-              </Field>
-              <Field label="Email Address (optional)">
-                <input
-                  type="email"
-                  className={inputCls}
-                  value={form.email}
-                  onChange={handleField("email")}
-                  placeholder="—"
-                />
-              </Field>
-              <Field label="Home Address">
-                <textarea
-                  className={`${inputCls} resize-none`}
-                  rows={3}
-                  value={form.address}
-                  onChange={handleField("address")}
-                />
-              </Field>
-              <Field label="Emergency Contact">
-                <input
-                  className={inputCls}
-                  value={form.emergencyContact}
-                  onChange={handleField("emergencyContact")}
-                />
-              </Field>
-            </Section>
-
-            {/* Identity + Registration are read-only even in edit mode */}
-            <Section title="Identity">
-              <InfoRow
-                icon={Hash}
-                label="National ID"
-                value={patient.nationalId}
-                mono
-              />
-              <InfoRow icon={Hash} label="Patient ID" value={patient.id} mono />
-            </Section>
-
-            <Section title="Registration">
-              <InfoRow
-                icon={Calendar}
-                label="Registered On"
-                value={patient.createdAt ? formatDate(patient.createdAt) : "—"}
-              />
-              {patient.registration ? (
-                <>
-                  <InfoRow
-                    icon={Building2}
-                    label="Hospital Patient Number"
-                    value={patient.registration.hospitalPatientNumber}
-                    mono
-                  />
-                  <InfoRow
-                    icon={ShieldCheck}
-                    label="Home Institution"
-                    value={
-                      patient.registration.isHomeInstitution ? "Yes" : "No"
-                    }
-                  />
-                </>
-              ) : (
+                <InfoRow icon={Users} label="Gender" value={capitalize(patient.gender)} />
                 <InfoRow
-                  icon={Building2}
-                  label="Hospital Patient Number"
-                  value="Not registered at this institution"
+                  icon={Heart}
+                  label="Marital status"
+                  value={capitalize(patient.maritalStatus)}
                 />
-              )}
-            </Section>
-          </div>
-        )}
+                <InfoRow
+                  icon={Briefcase}
+                  label="Occupation"
+                  value={patient.occupation || "—"}
+                />
+              </Section>
 
-        {/* Notice */}
-        <div className="mt-5 flex items-center gap-2.5 px-4 py-3 rounded-xl bg-blue-50 border border-blue-100">
-          <ShieldCheck className="w-4 h-4 text-blue-500 flex-shrink-0" />
-          <p className="text-xs text-blue-700">
-            Clinical records are only accessible to authorised clinical staff.
-            This view shows registration and demographic information only.
-          </p>
+              <Section title="Contact details">
+                <InfoRow icon={Phone} label="Phone number" value={patient.phoneNumber} />
+                <InfoRow icon={Mail} label="Email address" value={patient.email || "—"} />
+                <InfoRow icon={MapPin} label="Home address" value={patient.address} />
+                <InfoRow
+                  icon={AlertCircle}
+                  label="Emergency contact"
+                  value={patient.emergencyContact}
+                />
+              </Section>
+            </>
+          ) : (
+            <>
+              <Section title="Personal information">
+                <div
+                  style={{
+                    padding: "10px 0",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 14,
+                  }}
+                >
+                  <Field label="First name">
+                    <Input value={form.firstName} onChange={handleField("firstName")} />
+                  </Field>
+                  <Field label="Middle name" hint="Optional">
+                    <Input value={form.middleName} onChange={handleField("middleName")} />
+                  </Field>
+                  <Field label="Last name">
+                    <Input value={form.lastName} onChange={handleField("lastName")} />
+                  </Field>
+                  <Field label="Date of birth">
+                    <Input
+                      type="date"
+                      value={form.dateOfBirth}
+                      onChange={handleField("dateOfBirth")}
+                    />
+                  </Field>
+                  <Field label="Gender">
+                    <Select value={form.gender} onChange={handleField("gender")}>
+                      <option value="">Select…</option>
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                      <option value="other">Other</option>
+                    </Select>
+                  </Field>
+                  <Field label="Marital status">
+                    <Select value={form.maritalStatus} onChange={handleField("maritalStatus")}>
+                      <option value="">Select…</option>
+                      <option value="single">Single</option>
+                      <option value="married">Married</option>
+                      <option value="divorced">Divorced</option>
+                      <option value="widowed">Widowed</option>
+                    </Select>
+                  </Field>
+                  <Field label="Occupation" hint="Optional">
+                    <Input value={form.occupation} onChange={handleField("occupation")} />
+                  </Field>
+                </div>
+              </Section>
+
+              <Section title="Contact details">
+                <div
+                  style={{
+                    padding: "10px 0",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 14,
+                  }}
+                >
+                  <Field label="Phone number">
+                    <Input value={form.phoneNumber} onChange={handleField("phoneNumber")} />
+                  </Field>
+                  <Field label="Email address" hint="Optional">
+                    <Input type="email" value={form.email} onChange={handleField("email")} />
+                  </Field>
+                  <Field label="Home address">
+                    <Textarea
+                      rows={3}
+                      value={form.address}
+                      onChange={handleField("address")}
+                    />
+                  </Field>
+                  <Field label="Emergency contact">
+                    <Input
+                      value={form.emergencyContact}
+                      onChange={handleField("emergencyContact")}
+                    />
+                  </Field>
+                </div>
+              </Section>
+            </>
+          )}
+
+          {identitySection}
+          {registrationSection}
         </div>
-      </div>
+
+        <Banner tone="info" icon={ShieldCheck}>
+          Clinical records are only accessible to authorised clinical staff. This view
+          shows registration and demographic information only.
+        </Banner>
+      </Page>
     </>
   );
 }

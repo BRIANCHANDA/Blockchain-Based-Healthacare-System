@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { stockApi } from "@/lib/api";
 import {
   Package,
@@ -17,6 +17,34 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { format } from "date-fns";
+import {
+  Page,
+  PageHeader,
+  Card,
+  KpiCard,
+  KpiGrid,
+  Field,
+  Input,
+  Select,
+  Button,
+  Pill as Badge,
+  Banner,
+  EmptyState,
+  SkeletonRow,
+  SearchInput,
+  SectionLabel,
+  Modal,
+  hoverRow,
+  type Tone,
+} from "@/components/dashboard/ui";
+
+/* ==========================================================================
+   Pharmacy inventory.
+
+   Filtering happens server-side (stockApi.list takes search + lowOnly), so
+   the stats returned alongside the rows describe the WHOLE stock, not the
+   filtered view — which is what the KPI row wants.
+   ========================================================================== */
 
 const FORM_OPTIONS = [
   "tablet",
@@ -29,15 +57,7 @@ const FORM_OPTIONS = [
   "inhaler",
   "suppository",
 ];
-const UNIT_OPTIONS = [
-  "units",
-  "ml",
-  "mg",
-  "boxes",
-  "strips",
-  "vials",
-  "bottles",
-];
+const UNIT_OPTIONS = ["units", "ml", "mg", "boxes", "strips", "vials", "bottles"];
 
 const emptyForm = {
   medicationName: "",
@@ -52,29 +72,8 @@ const emptyForm = {
   supplier: "",
 };
 
-function StatCard({ label, value, color, bg, border, icon: Icon }: any) {
-  return (
-    <div
-      className="relative rounded-2xl border overflow-hidden p-4"
-      style={{ background: bg, borderColor: border }}
-    >
-      <div
-        className="absolute -right-2 -bottom-2 w-14 h-14 rounded-full opacity-10"
-        style={{ background: color }}
-      />
-      <Icon className="w-4 h-4 mb-2" style={{ color }} />
-      <p className="text-2xl font-extrabold leading-none" style={{ color }}>
-        {value}
-      </p>
-      <p
-        className="text-xs font-semibold mt-1"
-        style={{ color, opacity: 0.65 }}
-      >
-        {label}
-      </p>
-    </div>
-  );
-}
+/* Shared column template for the header row and every body row. */
+const GRID = "minmax(200px, 2.2fr) 110px 110px 140px 120px 108px";
 
 export default function PharmacyInventoryPage() {
   const [stock, setStock] = useState<any[]>([]);
@@ -87,6 +86,7 @@ export default function PharmacyInventoryPage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [lowOnly, setLowOnly] = useState(false);
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -98,13 +98,27 @@ export default function PharmacyInventoryPage() {
   const [restockId, setRestockId] = useState<string | null>(null);
   const [restockQty, setRestockQty] = useState(0);
 
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /*
+   * Search is server-side, so debounce it — otherwise every keystroke fires
+   * its own request against stockApi.list.
+   */
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setDebouncedSearch(search), 400);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [search]);
+
   const load = useCallback(
     async (silent = false) => {
       if (silent) setRefreshing(true);
       else setLoading(true);
       try {
         const res = await stockApi.list({
-          search: search.trim() || undefined,
+          search: debouncedSearch.trim() || undefined,
           lowOnly,
         });
         setStock(res.data.data?.stock ?? []);
@@ -116,7 +130,7 @@ export default function PharmacyInventoryPage() {
         setRefreshing(false);
       }
     },
-    [search, lowOnly],
+    [debouncedSearch, lowOnly],
   );
 
   useEffect(() => {
@@ -129,6 +143,7 @@ export default function PharmacyInventoryPage() {
     setFormError("");
     setModalOpen(true);
   };
+
   const openEdit = (item: any) => {
     setEditing(item);
     setForm({
@@ -159,6 +174,7 @@ export default function PharmacyInventoryPage() {
         ...form,
         quantity: Number(form.quantity),
         reorderLevel: Number(form.reorderLevel),
+        // Empty strings would be stored as empty, not absent.
         expiryDate: form.expiryDate || undefined,
         genericName: form.genericName || undefined,
         batchNumber: form.batchNumber || undefined,
@@ -193,12 +209,12 @@ export default function PharmacyInventoryPage() {
     } catch {}
   };
 
-  const stockStatus = (item: any) => {
-    if (item.quantity === 0)
-      return { label: "Out of Stock", color: "#dc2626", bg: "#fef2f2" };
+  /* Out of stock outranks low stock; both outrank healthy. */
+  const stockStatus = (item: any): { tone: Tone; label: string } => {
+    if (item.quantity === 0) return { tone: "critical", label: "Out of stock" };
     if (item.quantity <= item.reorderLevel)
-      return { label: "Low Stock", color: "#d97706", bg: "#fffbeb" };
-    return { label: "In Stock", color: "#16a34a", bg: "#f0fdf4" };
+      return { tone: "urgent", label: "Low stock" };
+    return { tone: "success", label: "In stock" };
   };
 
   const isExpiringSoon = (d?: string) => {
@@ -209,499 +225,455 @@ export default function PharmacyInventoryPage() {
   const isExpired = (d?: string) =>
     d ? new Date(d).getTime() < Date.now() : false;
 
-  return (
-    <div style={{ fontFamily: "'DM Sans',sans-serif" }}>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1
-            className="text-2xl font-bold text-gray-900"
-            style={{ fontFamily: "'Playfair Display',serif" }}
-          >
-            Inventory
-          </h1>
-          <p className="text-sm text-gray-400 mt-0.5">
-            {loading ? "Loading…" : `${stats.totalItems} medications in stock`}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => load(true)}
-            disabled={refreshing || loading}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-40"
-          >
-            <RefreshCw
-              className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`}
-            />
-          </button>
-          <button
-            onClick={openAdd}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md"
-            style={{ background: "linear-gradient(135deg,#166534,#15803d)" }}
-          >
-            <Plus className="w-4 h-4" /> Add Medication
-          </button>
-        </div>
-      </div>
+  const isFiltered = !!search || lowOnly;
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-5">
-        <StatCard
-          label="Total Items"
-          value={loading ? "—" : stats.totalItems}
-          color="#166534"
-          bg="linear-gradient(135deg,#f0fdf4,#dcfce7)"
-          border="#bbf7d0"
+  return (
+    <Page maxWidth={1200}>
+      <PageHeader
+        eyebrow="Pharmacy"
+        title="Inventory"
+        subtitle={
+          loading ? "Loading…" : `${stats.totalItems ?? 0} medications in stock`
+        }
+        actions={
+          <>
+            <Button variant="primary" icon={Plus} onClick={openAdd}>
+              Add medication
+            </Button>
+            <Button
+              icon={RefreshCw}
+              onClick={() => load(true)}
+              disabled={refreshing || loading}
+              style={{ padding: 0, width: 38 }}
+            />
+          </>
+        }
+      />
+
+      <KpiGrid>
+        <KpiCard
+          label="Total items"
+          value={stats.totalItems ?? 0}
+          sub="Distinct medications"
           icon={Package}
+          tone="success"
+          loading={loading}
         />
-        <StatCard
-          label="Low Stock"
-          value={loading ? "—" : stats.lowStock}
-          color="#d97706"
-          bg="linear-gradient(135deg,#fffbeb,#fef3c7)"
-          border="#fde68a"
+        <KpiCard
+          label="Low stock"
+          value={stats.lowStock ?? 0}
+          sub="At or below reorder level"
           icon={TrendingDown}
+          tone="urgent"
+          loading={loading}
         />
-        <StatCard
-          label="Out of Stock"
-          value={loading ? "—" : stats.outOfStock}
-          color="#dc2626"
-          bg="linear-gradient(135deg,#fef2f2,#fee2e2)"
-          border="#fecaca"
+        <KpiCard
+          label="Out of stock"
+          value={stats.outOfStock ?? 0}
+          sub="Zero on hand"
           icon={AlertTriangle}
+          tone="critical"
+          loading={loading}
         />
-        <StatCard
-          label="Expiring Soon"
-          value={loading ? "—" : stats.expiringSoon}
-          color="#7c3aed"
-          bg="linear-gradient(135deg,#faf5ff,#ede9fe)"
-          border="#ddd6fe"
+        <KpiCard
+          label="Expiring soon"
+          value={stats.expiringSoon ?? 0}
+          sub="Within 90 days"
           icon={Calendar}
+          tone="accent"
+          loading={loading}
         />
-      </div>
+      </KpiGrid>
 
       {/* Search + filter */}
-      <div className="flex gap-3 mb-5">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search medication or generic name…"
-            className="w-full pl-9 pr-8 py-2 rounded-xl border border-gray-200 bg-white text-sm outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/10 transition-all"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-        <button
+      <div className="flex items-center flex-wrap" style={{ gap: 12 }}>
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search medication or generic name…"
+          icon={Search}
+          clearIcon={X}
+          style={{ flex: "1 1 240px", maxWidth: 380 }}
+        />
+        <Button
+          icon={TrendingDown}
           onClick={() => setLowOnly((v) => !v)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border transition-all"
           style={
             lowOnly
               ? {
-                  background: "#fffbeb",
-                  borderColor: "#fde68a",
-                  color: "#d97706",
+                  background: "var(--urgent-tint)",
+                  borderColor: "var(--amber-100)",
+                  color: "var(--urgent-ink)",
                 }
-              : { background: "#fff", borderColor: "#e5e7eb", color: "#6b7280" }
+              : undefined
           }
         >
-          <TrendingDown className="w-3.5 h-3.5" /> Low stock only
-        </button>
+          Low stock only
+        </Button>
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-gray-100 bg-gray-50/50">
-                {[
-                  "Medication",
-                  "Stock",
-                  "Status",
-                  "Batch / Expiry",
-                  "Supplier",
-                  "",
-                ].map((h, i) => (
-                  <th
-                    key={i}
-                    className={`py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide ${i === 0 ? "pl-5 pr-3" : i === 5 ? "pl-3 pr-5" : "px-3"}`}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                Array.from({ length: 6 }).map((_, i) => (
-                  <tr key={i} className="border-b border-gray-50">
-                    {[1, 2, 3, 4, 5, 6].map((j) => (
-                      <td key={j} className="py-4 px-4">
-                        <div
-                          className="h-4 bg-gray-100 rounded animate-pulse"
-                          style={{ width: j === 1 ? "70%" : "50%" }}
-                        />
-                      </td>
-                    ))}
-                  </tr>
-                ))
-              ) : stock.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="py-16 text-center">
-                    <Package className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-                    <p className="text-sm font-semibold text-gray-400">
-                      {search || lowOnly
-                        ? "No medications match"
-                        : "No medications in stock yet"}
-                    </p>
-                    {!search && !lowOnly && (
-                      <button
-                        onClick={openAdd}
-                        className="mt-3 text-sm font-semibold text-green-700 hover:underline"
-                      >
-                        + Add your first medication
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ) : (
-                stock.map((item) => {
-                  const st = stockStatus(item);
-                  const expired = isExpired(item.expiryDate);
-                  const expSoon = isExpiringSoon(item.expiryDate);
-                  return (
-                    <tr
-                      key={item.id}
-                      className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors"
+      <Card>
+        <div style={{ overflowX: "auto" }}>
+          <div style={{ minWidth: 860 }}>
+            <div
+              className="grid items-center"
+              style={{
+                gridTemplateColumns: GRID,
+                gap: 14,
+                padding: "9px 20px",
+                background: "var(--surface-sunken)",
+                borderBottom: "1px solid var(--border-faint)",
+              }}
+            >
+              <SectionLabel>Medication</SectionLabel>
+              <SectionLabel>Stock</SectionLabel>
+              <SectionLabel>Status</SectionLabel>
+              <SectionLabel>Batch / expiry</SectionLabel>
+              <SectionLabel>Supplier</SectionLabel>
+              <SectionLabel style={{ textAlign: "right" }}>Actions</SectionLabel>
+            </div>
+
+            {loading ? (
+              Array.from({ length: 6 }).map((_, i) => <SkeletonRow key={i} />)
+            ) : stock.length === 0 ? (
+              <EmptyState
+                icon={Package}
+                title={
+                  isFiltered ? "No medications match" : "No medications in stock yet"
+                }
+                message={
+                  isFiltered
+                    ? "Try a different search, or clear the low-stock filter."
+                    : "Add your first medication to start tracking stock."
+                }
+                tone="neutral"
+                pad={64}
+                action={
+                  isFiltered ? (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        setSearch("");
+                        setLowOnly(false);
+                      }}
                     >
-                      <td className="py-3.5 pl-5 pr-3">
-                        <p className="text-sm font-semibold text-gray-800">
-                          {item.medicationName}{" "}
-                          <span className="text-gray-400 font-normal">
-                            {item.strength}
-                          </span>
-                        </p>
-                        <p className="text-xs text-gray-400 mt-0.5 capitalize">
-                          {item.dosageForm}
-                          {item.genericName ? ` · ${item.genericName}` : ""}
-                        </p>
-                      </td>
-                      <td className="py-3.5 px-3">
-                        <p className="text-sm font-bold text-gray-900">
-                          {item.quantity}{" "}
-                          <span className="text-xs font-normal text-gray-400">
-                            {item.unit}
-                          </span>
-                        </p>
-                        <p className="text-xs text-gray-400">
-                          reorder at {item.reorderLevel}
-                        </p>
-                      </td>
-                      <td className="py-3.5 px-3">
+                      Clear filters
+                    </Button>
+                  ) : (
+                    <Button variant="primary" size="sm" icon={Plus} onClick={openAdd}>
+                      Add medication
+                    </Button>
+                  )
+                }
+              />
+            ) : (
+              stock.map((item) => {
+                const st = stockStatus(item);
+                const expired = isExpired(item.expiryDate);
+                const expSoon = isExpiringSoon(item.expiryDate);
+
+                return (
+                  <div
+                    key={item.id}
+                    className="grid items-center"
+                    style={{
+                      gridTemplateColumns: GRID,
+                      gap: 14,
+                      padding: "12px 20px",
+                      borderBottom: "1px solid var(--border-faint)",
+                      transition: "background var(--dur-fast) var(--ease-standard)",
+                    }}
+                    {...hoverRow}
+                  >
+                    <div className="min-w-0 flex flex-col" style={{ gap: 4 }}>
+                      <span
+                        className="truncate"
+                        style={{
+                          font: "600 13.5px/1.2 var(--font-sans)",
+                          color: "var(--text-primary)",
+                        }}
+                      >
+                        {item.medicationName}{" "}
                         <span
-                          className="text-xs font-bold px-2.5 py-1 rounded-full"
-                          style={{ background: st.bg, color: st.color }}
+                          style={{ fontWeight: 400, color: "var(--text-secondary)" }}
                         >
-                          {st.label}
+                          {item.strength}
                         </span>
-                      </td>
-                      <td className="py-3.5 px-3">
-                        {item.batchNumber && (
-                          <p className="text-xs font-mono text-gray-600">
-                            {item.batchNumber}
-                          </p>
-                        )}
-                        {item.expiryDate ? (
-                          <p
-                            className={`text-xs ${expired ? "text-red-600 font-semibold" : expSoon ? "text-amber-600 font-semibold" : "text-gray-400"}`}
-                          >
-                            {expired ? "Expired " : expSoon ? "Expires " : ""}
-                            {format(new Date(item.expiryDate), "dd MMM yyyy")}
-                          </p>
-                        ) : (
-                          <p className="text-xs text-gray-300">—</p>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-3 text-sm text-gray-500">
-                        {item.supplier ?? "—"}
-                      </td>
-                      <td className="py-3.5 pl-3 pr-5">
-                        <div className="flex items-center gap-1 justify-end">
-                          {restockId === item.id ? (
-                            <div className="flex items-center gap-1">
-                              <input
-                                type="number"
-                                value={restockQty}
-                                onChange={(e) =>
-                                  setRestockQty(Number(e.target.value))
-                                }
-                                className="w-16 px-2 py-1 rounded-lg border border-gray-200 text-xs outline-none focus:border-green-500"
-                                placeholder="Qty"
-                                autoFocus
-                              />
-                              <button
-                                onClick={() => handleRestock(item.id)}
-                                className="p-1.5 rounded-lg bg-green-50 text-green-600 hover:bg-green-100"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => {
-                                  setRestockId(null);
-                                  setRestockQty(0);
-                                }}
-                                className="p-1.5 rounded-lg bg-gray-50 text-gray-400 hover:bg-gray-100"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ) : (
-                            <>
-                              <button
-                                onClick={() => {
-                                  setRestockId(item.id);
-                                  setRestockQty(0);
-                                }}
-                                title="Restock"
-                                className="p-1.5 rounded-lg text-gray-400 hover:bg-green-50 hover:text-green-600 transition-colors"
-                              >
-                                <PackagePlus className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => openEdit(item)}
-                                title="Edit"
-                                className="p-1.5 rounded-lg text-gray-400 hover:bg-blue-50 hover:text-blue-600 transition-colors"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDelete(item.id)}
-                                title="Delete"
-                                className="p-1.5 rounded-lg text-gray-400 hover:bg-red-50 hover:text-red-600 transition-colors"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                      </span>
+                      <span
+                        className="truncate"
+                        style={{
+                          font: "400 11.5px/1 var(--font-sans)",
+                          color: "var(--text-muted)",
+                          textTransform: "capitalize",
+                        }}
+                      >
+                        {item.dosageForm}
+                        {item.genericName ? ` · ${item.genericName}` : ""}
+                      </span>
+                    </div>
 
-      {/* Add/Edit Modal */}
-      {modalOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-          onClick={() => setModalOpen(false)}
-        >
-          <div
-            className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between sticky top-0 bg-white">
-              <h2
-                className="text-lg font-bold text-gray-900"
-                style={{ fontFamily: "'Playfair Display',serif" }}
-              >
-                {editing ? "Edit Medication" : "Add Medication"}
-              </h2>
-              <button
-                onClick={() => setModalOpen(false)}
-                className="text-gray-400 hover:text-gray-600"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
+                    <div className="flex flex-col" style={{ gap: 4 }}>
+                      <span
+                        style={{
+                          font: "700 13.5px/1 var(--font-sans)",
+                          color: "var(--text-primary)",
+                        }}
+                      >
+                        {item.quantity}{" "}
+                        <span
+                          style={{
+                            font: "400 11px/1 var(--font-sans)",
+                            color: "var(--text-muted)",
+                          }}
+                        >
+                          {item.unit}
+                        </span>
+                      </span>
+                      <span
+                        style={{
+                          font: "400 11px/1 var(--font-sans)",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        reorder at {item.reorderLevel}
+                      </span>
+                    </div>
 
-            <div className="p-6 space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2">
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
-                    Medication Name *
-                  </label>
-                  <input
-                    value={form.medicationName}
-                    onChange={(e) =>
-                      setForm({ ...form, medicationName: e.target.value })
-                    }
-                    placeholder="e.g. Amoxicillin"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-600 focus:bg-white"
-                  />
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
-                    Generic Name
-                  </label>
-                  <input
-                    value={form.genericName}
-                    onChange={(e) =>
-                      setForm({ ...form, genericName: e.target.value })
-                    }
-                    placeholder="optional"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-600 focus:bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
-                    Strength *
-                  </label>
-                  <input
-                    value={form.strength}
-                    onChange={(e) =>
-                      setForm({ ...form, strength: e.target.value })
-                    }
-                    placeholder="e.g. 500mg"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-600 focus:bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
-                    Form
-                  </label>
-                  <select
-                    value={form.dosageForm}
-                    onChange={(e) =>
-                      setForm({ ...form, dosageForm: e.target.value })
-                    }
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-600 focus:bg-white capitalize"
-                  >
-                    {FORM_OPTIONS.map((f) => (
-                      <option key={f} value={f}>
-                        {f}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
-                    Quantity
-                  </label>
-                  <input
-                    type="number"
-                    value={form.quantity}
-                    onChange={(e) =>
-                      setForm({ ...form, quantity: e.target.value })
-                    }
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-600 focus:bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
-                    Unit
-                  </label>
-                  <select
-                    value={form.unit}
-                    onChange={(e) => setForm({ ...form, unit: e.target.value })}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-600 focus:bg-white"
-                  >
-                    {UNIT_OPTIONS.map((u) => (
-                      <option key={u} value={u}>
-                        {u}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
-                    Reorder Level
-                  </label>
-                  <input
-                    type="number"
-                    value={form.reorderLevel}
-                    onChange={(e) =>
-                      setForm({ ...form, reorderLevel: e.target.value })
-                    }
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-600 focus:bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
-                    Batch Number
-                  </label>
-                  <input
-                    value={form.batchNumber}
-                    onChange={(e) =>
-                      setForm({ ...form, batchNumber: e.target.value })
-                    }
-                    placeholder="optional"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-600 focus:bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
-                    Expiry Date
-                  </label>
-                  <input
-                    type="date"
-                    value={form.expiryDate}
-                    onChange={(e) =>
-                      setForm({ ...form, expiryDate: e.target.value })
-                    }
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-600 focus:bg-white"
-                  />
-                </div>
-                <div className="col-span-2">
-                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
-                    Supplier
-                  </label>
-                  <input
-                    value={form.supplier}
-                    onChange={(e) =>
-                      setForm({ ...form, supplier: e.target.value })
-                    }
-                    placeholder="optional"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-600 focus:bg-white"
-                  />
-                </div>
-              </div>
+                    <Badge tone={st.tone} style={{ justifySelf: "start" }}>
+                      {st.label}
+                    </Badge>
 
-              {formError && (
-                <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 border border-red-100">
-                  <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                  <p className="text-sm text-red-700">{formError}</p>
-                </div>
-              )}
-            </div>
+                    <div className="min-w-0 flex flex-col" style={{ gap: 4 }}>
+                      {item.batchNumber && (
+                        <span
+                          className="truncate"
+                          style={{
+                            font: "500 11.5px/1 var(--font-mono)",
+                            color: "var(--text-secondary)",
+                          }}
+                        >
+                          {item.batchNumber}
+                        </span>
+                      )}
+                      {item.expiryDate ? (
+                        <span
+                          style={{
+                            font: `${expired || expSoon ? 600 : 400} 11.5px/1 var(--font-sans)`,
+                            color: expired
+                              ? "var(--critical-ink)"
+                              : expSoon
+                                ? "var(--urgent-ink)"
+                                : "var(--text-muted)",
+                          }}
+                        >
+                          {expired ? "Expired " : expSoon ? "Expires " : ""}
+                          {format(new Date(item.expiryDate), "dd MMM yyyy")}
+                        </span>
+                      ) : (
+                        <span style={{ color: "var(--text-disabled)" }}>—</span>
+                      )}
+                    </div>
 
-            <div className="px-6 py-4 border-t border-gray-100 flex justify-end gap-3 sticky bottom-0 bg-white">
-              <button
-                onClick={() => setModalOpen(false)}
-                className="px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md disabled:opacity-60"
-                style={{
-                  background: "linear-gradient(135deg,#166534,#15803d)",
-                }}
-              >
-                {saving
-                  ? "Saving…"
-                  : editing
-                    ? "Save Changes"
-                    : "Add Medication"}
-              </button>
-            </div>
+                    <span
+                      className="truncate"
+                      style={{
+                        font: "400 12.5px/1 var(--font-sans)",
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      {item.supplier ?? "—"}
+                    </span>
+
+                    <div className="flex items-center justify-end" style={{ gap: 4 }}>
+                      {restockId === item.id ? (
+                        /* Inline restock — quantity to ADD, not the new total. */
+                        <>
+                          <Input
+                            type="number"
+                            value={restockQty}
+                            onChange={(e) => setRestockQty(Number(e.target.value))}
+                            placeholder="Qty"
+                            autoFocus
+                            style={{ width: 60, height: 30, padding: "0 8px", fontSize: 12 }}
+                          />
+                          <Button
+                            size="sm"
+                            icon={CheckCircle2}
+                            onClick={() => handleRestock(item.id)}
+                            style={{
+                              width: 30,
+                              background: "var(--brand-tint)",
+                              borderColor: "var(--green-100)",
+                              color: "var(--green-700)",
+                            }}
+                          />
+                          <Button
+                            size="sm"
+                            icon={X}
+                            variant="ghost"
+                            onClick={() => {
+                              setRestockId(null);
+                              setRestockQty(0);
+                            }}
+                            style={{ width: 26 }}
+                          />
+                        </>
+                      ) : (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            icon={PackagePlus}
+                            onClick={() => {
+                              setRestockId(item.id);
+                              setRestockQty(0);
+                            }}
+                            style={{ width: 28 }}
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            icon={Pencil}
+                            onClick={() => openEdit(item)}
+                            style={{ width: 28 }}
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            icon={Trash2}
+                            onClick={() => handleDelete(item.id)}
+                            style={{ width: 28, color: "var(--critical-ink)" }}
+                          />
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
+      </Card>
+
+      {/* Add / edit modal */}
+      {modalOpen && (
+        <Modal
+          title={editing ? "Edit medication" : "Add medication"}
+          subtitle={editing ? editing.medicationName : "New stock item"}
+          icon={editing ? Pencil : Plus}
+          width={560}
+          scroll
+          closeOnBackdrop
+          onClose={() => setModalOpen(false)}
+          footer={
+            <>
+              <Button full onClick={() => setModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button variant="primary" full loading={saving} onClick={handleSave}>
+                {saving ? "Saving…" : editing ? "Save changes" : "Add medication"}
+              </Button>
+            </>
+          }
+        >
+          <Field label="Medication name" required>
+            <Input
+              value={form.medicationName}
+              onChange={(e) => setForm({ ...form, medicationName: e.target.value })}
+              placeholder="e.g. Amoxicillin"
+            />
+          </Field>
+
+          <Field label="Generic name" hint="Optional">
+            <Input
+              value={form.genericName}
+              onChange={(e) => setForm({ ...form, genericName: e.target.value })}
+            />
+          </Field>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
+              gap: 14,
+            }}
+          >
+            <Field label="Strength" required>
+              <Input
+                value={form.strength}
+                onChange={(e) => setForm({ ...form, strength: e.target.value })}
+                placeholder="e.g. 500mg"
+              />
+            </Field>
+            <Field label="Form">
+              <Select
+                value={form.dosageForm}
+                onChange={(e) => setForm({ ...form, dosageForm: e.target.value })}
+                style={{ textTransform: "capitalize" }}
+              >
+                {FORM_OPTIONS.map((f) => (
+                  <option key={f} value={f}>
+                    {f}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Quantity">
+              <Input
+                type="number"
+                value={form.quantity}
+                onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+              />
+            </Field>
+            <Field label="Unit">
+              <Select
+                value={form.unit}
+                onChange={(e) => setForm({ ...form, unit: e.target.value })}
+              >
+                {UNIT_OPTIONS.map((u) => (
+                  <option key={u} value={u}>
+                    {u}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Reorder level" hint="Flags as low stock at or below this.">
+              <Input
+                type="number"
+                value={form.reorderLevel}
+                onChange={(e) => setForm({ ...form, reorderLevel: e.target.value })}
+              />
+            </Field>
+            <Field label="Batch number" hint="Optional">
+              <Input
+                value={form.batchNumber}
+                onChange={(e) => setForm({ ...form, batchNumber: e.target.value })}
+              />
+            </Field>
+            <Field label="Expiry date" hint="Optional">
+              <Input
+                type="date"
+                value={form.expiryDate}
+                onChange={(e) => setForm({ ...form, expiryDate: e.target.value })}
+              />
+            </Field>
+            <Field label="Supplier" hint="Optional">
+              <Input
+                value={form.supplier}
+                onChange={(e) => setForm({ ...form, supplier: e.target.value })}
+              />
+            </Field>
+          </div>
+
+          {formError && (
+            <Banner tone="critical" icon={AlertCircle}>
+              {formError}
+            </Banner>
+          )}
+        </Modal>
       )}
-    </div>
+    </Page>
   );
 }

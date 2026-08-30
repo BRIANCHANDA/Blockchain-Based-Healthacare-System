@@ -8,19 +8,19 @@ import { PhoneInput } from "@/components/ui/PhoneInput";
 
 function SkeletonCard() {
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-5 space-y-3">
-      <div className="h-5 bg-gray-100 rounded animate-pulse w-2/3" />
-      <div className="h-4 bg-gray-100 rounded animate-pulse w-1/3" />
-      <div className="h-4 bg-gray-100 rounded animate-pulse w-1/2" />
+    <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] p-5 space-y-3">
+      <div className="h-5 bg-[var(--surface-sunken)] rounded animate-pulse w-2/3" />
+      <div className="h-4 bg-[var(--surface-sunken)] rounded animate-pulse w-1/3" />
+      <div className="h-4 bg-[var(--surface-sunken)] rounded animate-pulse w-1/2" />
     </div>
   );
 }
 
 const TYPE_COLORS: Record<string, { bg: string; color: string }> = {
-  hospital: { bg: "#eff6ff", color: "#2563eb" },
-  clinic: { bg: "#f0fdf4", color: "#16a34a" },
-  laboratory: { bg: "#fdf4ff", color: "#9333ea" },
-  pharmacy: { bg: "#fff7ed", color: "#ea580c" },
+  hospital: { bg: "var(--info-tint)", color: "var(--blue-600)" },
+  clinic: { bg: "var(--brand-tint)", color: "var(--success-ink)" },
+  laboratory: { bg: "var(--violet-050)", color: "var(--violet-500)" },
+  pharmacy: { bg: "var(--coral-050)", color: "var(--critical-ink)" },
 };
 
 export default function AdminInstitutionsPage() {
@@ -111,13 +111,13 @@ export default function AdminInstitutionsPage() {
   if (user && !isSuperAdmin) {
     return (
       <div className="flex flex-col items-center justify-center py-32 gap-4">
-        <ShieldAlert className="w-12 h-12 text-red-300" />
-        <p className="text-sm font-semibold text-gray-500">
+        <ShieldAlert className="w-12 h-12 text-[var(--coral-100)]" />
+        <p className="text-sm font-semibold text-[var(--text-secondary)]">
           Access restricted to Super Admins
         </p>
         <button
           onClick={() => router.replace("/dashboard/admin")}
-          className="text-xs text-green-700 underline"
+          className="text-xs text-[var(--green-700)] underline"
         >
           Back to Dashboard
         </button>
@@ -126,16 +126,13 @@ export default function AdminInstitutionsPage() {
   }
 
   return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
+    <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1
-            className="text-2xl font-bold text-gray-900"
-            style={{ fontFamily: "'Playfair Display', serif" }}
-          >
+          <h1 style={{ margin: 0, font: "700 27px/1.1 var(--font-sans)", letterSpacing: "var(--ls-tight)", color: "var(--text-primary)" }}>
             Institutions
           </h1>
-          <p className="text-sm text-gray-400 mt-0.5">
+          <p className="text-sm text-[var(--text-muted)] mt-0.5">
             {institutions.length} registered institution
             {institutions.length !== 1 ? "s" : ""}
           </p>
@@ -143,7 +140,7 @@ export default function AdminInstitutionsPage() {
         <div className="flex gap-2">
           <button
             onClick={() => load(true)}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+            className="flex items-center gap-2 px-4 py-2 rounded-[var(--r-sm)] border border-[var(--hc-border)] text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--surface-sunken)] transition-colors"
           >
             <RefreshCw
               className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
@@ -155,8 +152,8 @@ export default function AdminInstitutionsPage() {
               setError("");
               setSuccess("");
             }}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md"
-            style={{ background: "linear-gradient(135deg, #166534, #15803d)" }}
+            className="flex items-center gap-2 px-4 py-2 rounded-[var(--r-sm)] text-sm font-semibold text-[var(--white)] transition-all hover:shadow-[var(--elev-2)]"
+            style={{ background: "var(--brand)" }}
           >
             <Plus className="w-4 h-4" /> Add Institution
           </button>
@@ -164,7 +161,7 @@ export default function AdminInstitutionsPage() {
       </div>
 
       {success && (
-        <div className="mb-4 p-3 rounded-xl bg-green-50 border border-green-200 text-sm text-green-700 flex items-center justify-between">
+        <div className="mb-4 p-3 rounded-[var(--r-sm)] bg-[var(--brand-tint)] border border-[var(--green-200)] text-sm text-[var(--green-700)] flex items-center justify-between">
           {success}
           <button onClick={() => setSuccess("")}>
             <X className="w-4 h-4" />
@@ -173,14 +170,14 @@ export default function AdminInstitutionsPage() {
       )}
 
       {showForm && (
-        <div className="bg-white rounded-2xl border border-green-100 shadow-sm p-6 mb-6">
+        <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--green-100)] shadow-[var(--elev-1)] p-6 mb-6">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-base font-bold text-gray-900">
+            <h2 className="text-base font-bold text-[var(--text-primary)]">
               New Institution
             </h2>
             <button
               onClick={() => setShowForm(false)}
-              className="text-gray-400 hover:text-gray-600"
+              className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
             >
               <X className="w-4 h-4" />
             </button>
@@ -215,7 +212,7 @@ export default function AdminInstitutionsPage() {
               },
             ].map(({ key, label, placeholder, type }) => (
               <div key={key}>
-                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+                <label className="block text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide mb-1.5">
                   {label}
                 </label>
                 <input
@@ -225,12 +222,12 @@ export default function AdminInstitutionsPage() {
                     setForm((f) => ({ ...f, [key]: e.target.value }))
                   }
                   placeholder={placeholder}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-600 focus:ring-2 focus:ring-green-600/10 focus:bg-white transition-all"
+                  className="w-full px-3.5 py-2.5 rounded-[var(--r-sm)] border border-[var(--hc-border)] bg-[var(--surface-sunken)] text-sm outline-none focus:border-[var(--green-600)] focus:ring-2 focus:ring-[var(--green-600)] focus:bg-[var(--surface-card)] transition-all"
                 />
               </div>
             ))}
             <div>
-              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+              <label className="block text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide mb-1.5">
                 Phone
               </label>
               <PhoneInput
@@ -239,7 +236,7 @@ export default function AdminInstitutionsPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
+              <label className="block text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide mb-1.5">
                 Type
               </label>
               <select
@@ -247,7 +244,7 @@ export default function AdminInstitutionsPage() {
                 onChange={(e) =>
                   setForm((f) => ({ ...f, institutionType: e.target.value }))
                 }
-                className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-600 focus:ring-2 focus:ring-green-600/10 transition-all"
+                className="w-full px-3.5 py-2.5 rounded-[var(--r-sm)] border border-[var(--hc-border)] bg-[var(--surface-sunken)] text-sm outline-none focus:border-[var(--green-600)] focus:ring-2 focus:ring-[var(--green-600)] transition-all"
               >
                 {["hospital", "clinic", "laboratory", "pharmacy"].map((t) => (
                   <option key={t} value={t}>
@@ -257,20 +254,20 @@ export default function AdminInstitutionsPage() {
               </select>
             </div>
           </div>
-          {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+          {error && <p className="mt-3 text-sm text-[var(--critical-ink)]">{error}</p>}
           <div className="flex gap-3 mt-5">
             <button
               onClick={() => setShowForm(false)}
-              className="px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50"
+              className="px-4 py-2.5 rounded-[var(--r-sm)] border border-[var(--hc-border)] text-sm font-semibold text-[var(--text-secondary)] hover:bg-[var(--surface-sunken)]"
             >
               Cancel
             </button>
             <button
               onClick={handleSubmit}
               disabled={submitting}
-              className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition-all hover:shadow-md"
+              className="px-5 py-2.5 rounded-[var(--r-sm)] text-sm font-semibold text-[var(--white)] disabled:opacity-50 transition-all hover:shadow-[var(--elev-2)]"
               style={{
-                background: "linear-gradient(135deg, #166534, #15803d)",
+                background: "var(--brand)",
               }}
             >
               {submitting ? "Creating…" : "Create Institution"}
@@ -284,25 +281,25 @@ export default function AdminInstitutionsPage() {
           Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
         ) : institutions.length === 0 ? (
           <div className="col-span-3 py-20 text-center">
-            <Building2 className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-            <p className="text-sm font-semibold text-gray-400">
+            <Building2 className="w-12 h-12 text-[var(--text-disabled)] mx-auto mb-3" />
+            <p className="text-sm font-semibold text-[var(--text-muted)]">
               No institutions found
             </p>
           </div>
         ) : (
           institutions.map((inst) => {
             const tc = TYPE_COLORS[inst.institutionType] ?? {
-              bg: "#f3f4f6",
-              color: "#6b7280",
+              bg: "var(--surface-sunken)",
+              color: "var(--text-secondary)",
             };
             return (
               <div
                 key={inst.id}
-                className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 hover:shadow-md transition-shadow"
+                className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-5 hover:shadow-[var(--elev-2)] transition-shadow"
               >
                 <div className="flex items-start justify-between mb-3">
                   <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center"
+                    className="w-10 h-10 rounded-[var(--r-sm)] flex items-center justify-center"
                     style={{ background: tc.bg }}
                   >
                     <Building2
@@ -317,19 +314,19 @@ export default function AdminInstitutionsPage() {
                     {inst.institutionType}
                   </span>
                 </div>
-                <h3 className="font-bold text-gray-900 text-sm mb-1">
+                <h3 className="font-bold text-[var(--text-primary)] text-sm mb-1">
                   {inst.institutionName}
                 </h3>
-                <p className="text-xs text-gray-400 font-mono mb-3">
+                <p className="text-xs text-[var(--text-muted)] font-mono mb-3">
                   {inst.institutionCode}
                 </p>
-                <div className="flex items-center justify-between text-xs text-gray-500">
+                <div className="flex items-center justify-between text-xs text-[var(--text-secondary)]">
                   <span>License: {inst.licenseNumber}</span>
                   {inst.bedCapacity && <span>{inst.bedCapacity} beds</span>}
                 </div>
-                <div className="mt-3 pt-3 border-t border-gray-50">
+                <div className="mt-3 pt-3 border-t border-[var(--border-faint)]">
                   <span
-                    className={`text-xs font-semibold px-2 py-0.5 rounded-full ${inst.isActive ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}`}
+                    className={`text-xs font-semibold px-2 py-0.5 rounded-full ${inst.isActive ? "bg-[var(--brand-tint)] text-[var(--green-700)]" : "bg-[var(--surface-sunken)] text-[var(--text-secondary)]"}`}
                   >
                     {inst.isActive ? "Active" : "Inactive"}
                   </span>

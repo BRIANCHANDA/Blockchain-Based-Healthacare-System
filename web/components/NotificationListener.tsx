@@ -16,7 +16,7 @@
 "use client";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
-import { FlaskConical, X, AlertTriangle, Bell } from "lucide-react";
+import { FlaskConical, X, AlertTriangle } from "lucide-react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 
@@ -109,18 +109,15 @@ export default function NotificationListener() {
   if (notices.length === 0) return null;
 
   return (
-    <div
-      className="fixed top-5 right-5 z-[60] space-y-2 w-80"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
-    >
+    <div className="fixed top-5 right-5 z-[60] space-y-2 w-80" style={{ fontFamily: "var(--font-sans)" }}>
       {notices.map((n) => (
         <div
           key={n.id}
-          className="rounded-2xl shadow-lg border overflow-hidden cursor-pointer transition-transform hover:scale-[1.02]"
+          className="rounded-[var(--r-lg)] shadow-[var(--elev-3)] border overflow-hidden cursor-pointer transition-transform hover:scale-[1.02]"
           style={
             n.critical
-              ? { background: "#7f1d1d", borderColor: "#991b1b" }
-              : { background: "#fff", borderColor: "#e5e7eb" }
+              ? { background: "var(--critical-ink)", borderColor: "var(--coral-600)" }
+              : { background: "var(--surface-card)", borderColor: "var(--hc-border)" }
           }
           onClick={() => {
             if (n.visitId)
@@ -128,36 +125,36 @@ export default function NotificationListener() {
             dismiss(n.id);
           }}
         >
-          {n.critical && <div className="h-1 bg-red-400 animate-pulse" />}
+          {n.critical && <div className="h-1 animate-pulse" style={{ background: "var(--coral-100)" }} />}
           <div className="flex items-start gap-3 p-3.5">
             <div
-              className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+              className="w-9 h-9 rounded-[var(--r-sm)] flex items-center justify-center flex-shrink-0"
               style={{
-                background: n.critical ? "rgba(255,255,255,0.15)" : "#f0fdf4",
+                background: n.critical ? "var(--on-dark-raise)" : "var(--brand-tint)",
               }}
             >
               {n.critical ? (
-                <AlertTriangle size={17} className="text-red-300" />
+                <AlertTriangle size={17} style={{ color: "var(--coral-100)" }} />
               ) : (
-                <FlaskConical size={17} className="text-green-700" />
+                <FlaskConical size={17} style={{ color: "var(--brand)" }} />
               )}
             </div>
             <div className="flex-1 min-w-0">
               <p
                 className="text-sm font-bold leading-tight"
-                style={{ color: n.critical ? "#fff" : "#111827" }}
+                style={{ color: n.critical ? "var(--white)" : "var(--text-primary)" }}
               >
                 {n.title}
               </p>
               <p
                 className="text-xs mt-0.5 truncate"
-                style={{ color: n.critical ? "#fecaca" : "#6b7280" }}
+                style={{ color: n.critical ? "var(--coral-100)" : "var(--text-secondary)" }}
               >
                 {n.body}
               </p>
               <p
                 className="text-[10px] mt-1 font-semibold"
-                style={{ color: n.critical ? "#fca5a5" : "#9ca3af" }}
+                style={{ color: n.critical ? "var(--on-dark-text)" : "var(--text-muted)" }}
               >
                 Tap to open visit
               </p>
@@ -167,9 +164,9 @@ export default function NotificationListener() {
                 e.stopPropagation();
                 dismiss(n.id);
               }}
-              className="p-1 rounded-lg flex-shrink-0"
+              className="p-1 rounded-[var(--r-xs)] flex-shrink-0"
               style={{
-                color: n.critical ? "rgba(255,255,255,0.5)" : "#9ca3af",
+                color: n.critical ? "var(--on-dark-text-dim)" : "var(--text-muted)",
               }}
             >
               <X size={14} />

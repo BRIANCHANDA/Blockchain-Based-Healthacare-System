@@ -32,16 +32,16 @@ const DEPT_TYPES = [
 ];
 
 const TYPE_COLOR: Record<string, { bg: string; text: string; border: string }> = {
-  clinical:       { bg: "#eff6ff", text: "#2563eb", border: "#bfdbfe" },
-  diagnostic:     { bg: "#f5f3ff", text: "#7c3aed", border: "#ddd6fe" },
-  support:        { bg: "#f0fdf4", text: "#16a34a", border: "#bbf7d0" },
-  administrative: { bg: "#fffbeb", text: "#d97706", border: "#fde68a" },
-  pharmacy:       { bg: "#ecfeff", text: "#0e7490", border: "#a5f3fc" },
-  nursing:        { bg: "#fdf2f8", text: "#db2777", border: "#fbcfe8" },
+  clinical:       { bg: "var(--info-tint)", text: "var(--blue-600)", border: "var(--blue-100)" },
+  diagnostic:     { bg: "var(--violet-050)", text: "var(--accent-ink)", border: "var(--violet-100)" },
+  support:        { bg: "var(--brand-tint)", text: "var(--green-600)", border: "var(--green-100)" },
+  administrative: { bg: "var(--amber-050)", text: "var(--urgent-ink)", border: "var(--amber-100)" },
+  pharmacy:       { bg: "var(--info-tint)", text: "var(--info-ink)", border: "var(--blue-100)" },
+  nursing:        { bg: "var(--coral-050)", text: "var(--critical-ink)", border: "var(--coral-100)" },
 };
 
 function typeBadge(t: string | null) {
-  const c = TYPE_COLOR[t?.toLowerCase() ?? ""] ?? { bg: "#f3f4f6", text: "#374151", border: "#e5e7eb" };
+  const c = TYPE_COLOR[t?.toLowerCase() ?? ""] ?? { bg: "var(--surface-sunken)", text: "var(--text-secondary)", border: "var(--hc-border)" };
   const label = DEPT_TYPES.find(d => d.value === t)?.label ?? (t || "—");
   return (
     <span style={{
@@ -60,14 +60,14 @@ function Toast({ msg, ok }: { msg: string; ok: boolean }) {
       position: "fixed", bottom: 24, right: 24, zIndex: 9999,
       display: "flex", alignItems: "center", gap: 10,
       padding: "12px 18px", borderRadius: 12, maxWidth: 360,
-      background: ok ? "#f0fdf4" : "#fef2f2",
-      border: `1px solid ${ok ? "#bbf7d0" : "#fecaca"}`,
-      boxShadow: "0 4px 24px rgba(0,0,0,0.10)",
+      background: ok ? "var(--brand-tint)" : "var(--coral-050)",
+      border: `1px solid ${ok ? "var(--green-100)" : "var(--coral-100)"}`,
+      boxShadow: "var(--elev-3)",
     }}>
       {ok
-        ? <CheckCircle2 style={{ width: 17, color: "#16a34a", flexShrink: 0 }} />
-        : <AlertCircle style={{ width: 17, color: "#dc2626", flexShrink: 0 }} />}
-      <span style={{ fontSize: 13, fontWeight: 600, color: ok ? "#15803d" : "#dc2626" }}>{msg}</span>
+        ? <CheckCircle2 style={{ width: 17, color: "var(--success-ink)", flexShrink: 0 }} />
+        : <AlertCircle style={{ width: 17, color: "var(--critical-ink)", flexShrink: 0 }} />}
+      <span style={{ fontSize: 13, fontWeight: 600, color: ok ? "var(--green-700)" : "var(--critical-ink)" }}>{msg}</span>
     </div>
   );
 }
@@ -124,31 +124,31 @@ function DeptModal({
 
   const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
     <div>
-      <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "#374151", marginBottom: 5 }}>{label}</label>
+      <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", marginBottom: 5 }}>{label}</label>
       {children}
     </div>
   );
 
   const inp = {
     width: "100%", padding: "9px 12px", borderRadius: 8, fontSize: 13,
-    border: "1px solid #d1d5db", outline: "none", boxSizing: "border-box" as const,
+    border: "1px solid var(--text-disabled)", outline: "none", boxSizing: "border-box" as const,
   };
 
   return (
     <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000,
+      position: "fixed", inset: 0, background: "var(--scrim)", zIndex: 1000,
       display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
     }} onClick={onClose}>
       <div style={{
-        background: "#fff", borderRadius: 16, width: "100%", maxWidth: 480,
-        padding: 28, boxShadow: "0 20px 60px rgba(0,0,0,0.18)",
+        background: "var(--white)", borderRadius: 16, width: "100%", maxWidth: 480,
+        padding: 28, boxShadow: "var(--elev-3)",
       }} onClick={e => e.stopPropagation()}>
         {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
-          <h2 style={{ fontSize: 16, fontWeight: 700, color: "#111827", margin: 0 }}>
+          <h2 style={{ fontSize: 16, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
             {editing ? "Edit Department" : "New Department"}
           </h2>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "#9ca3af" }}>
+          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)" }}>
             <X style={{ width: 18 }} />
           </button>
         </div>
@@ -159,7 +159,7 @@ function DeptModal({
               <input value={code} onChange={e => setCode(e.target.value.toUpperCase())} placeholder="e.g. CARD" style={inp} />
             </Field>
             <Field label="Type">
-              <select value={type} onChange={e => setType(e.target.value)} style={{ ...inp, background: "#fff" }}>
+              <select value={type} onChange={e => setType(e.target.value)} style={{ ...inp, background: "var(--white)" }}>
                 <option value="">— Select type —</option>
                 {DEPT_TYPES.map(d => <option key={d.value} value={d.value}>{d.label}</option>)}
               </select>
@@ -180,19 +180,19 @@ function DeptModal({
         </div>
 
         {err && (
-          <p style={{ marginTop: 12, fontSize: 12, color: "#dc2626", display: "flex", alignItems: "center", gap: 6 }}>
+          <p style={{ marginTop: 12, fontSize: 12, color: "var(--critical-ink)", display: "flex", alignItems: "center", gap: 6 }}>
             <AlertCircle style={{ width: 13 }} />{err}
           </p>
         )}
 
         <div style={{ display: "flex", gap: 10, marginTop: 22, justifyContent: "flex-end" }}>
           <button onClick={onClose} style={{
-            padding: "9px 18px", borderRadius: 9, border: "1px solid #e5e7eb",
-            background: "#fff", fontSize: 13, fontWeight: 600, color: "#374151", cursor: "pointer",
+            padding: "9px 18px", borderRadius: 9, border: "1px solid var(--hc-border)",
+            background: "var(--white)", fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", cursor: "pointer",
           }}>Cancel</button>
           <button onClick={submit} disabled={saving} style={{
             padding: "9px 20px", borderRadius: 9, border: "none",
-            background: saving ? "#86efac" : "#16a34a", color: "#fff",
+            background: saving ? "var(--green-300)" : "var(--green-600)", color: "var(--white)",
             fontSize: 13, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer",
           }}>
             {saving ? "Saving…" : editing ? "Save Changes" : "Create Department"}
@@ -229,36 +229,36 @@ function DeactivateConfirm({
 
   return (
     <div style={{
-      position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000,
+      position: "fixed", inset: 0, background: "var(--scrim)", zIndex: 1000,
       display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
     }} onClick={onClose}>
       <div style={{
-        background: "#fff", borderRadius: 14, width: "100%", maxWidth: 380,
-        padding: 26, boxShadow: "0 16px 48px rgba(0,0,0,0.15)",
+        background: "var(--white)", borderRadius: 14, width: "100%", maxWidth: 380,
+        padding: 26, boxShadow: "var(--elev-3)",
       }} onClick={e => e.stopPropagation()}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
           <div style={{
-            width: 38, height: 38, borderRadius: 10, background: "#fef2f2",
+            width: 38, height: 38, borderRadius: 10, background: "var(--coral-050)",
             display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
           }}>
-            <Trash2 style={{ width: 17, color: "#dc2626" }} />
+            <Trash2 style={{ width: 17, color: "var(--critical-ink)" }} />
           </div>
           <div>
-            <p style={{ fontSize: 15, fontWeight: 700, color: "#111827", margin: 0 }}>Deactivate Department</p>
-            <p style={{ fontSize: 13, color: "#6b7280", marginTop: 5 }}>
+            <p style={{ fontSize: 15, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>Deactivate Department</p>
+            <p style={{ fontSize: 13, color: "var(--text-secondary)", marginTop: 5 }}>
               <strong>{dept.departmentName}</strong> will be hidden from lists and cannot be assigned to new wards. Existing wards are unaffected.
             </p>
           </div>
         </div>
-        {err && <p style={{ fontSize: 12, color: "#dc2626", marginTop: 10 }}>{err}</p>}
+        {err && <p style={{ fontSize: 12, color: "var(--critical-ink)", marginTop: 10 }}>{err}</p>}
         <div style={{ display: "flex", gap: 10, marginTop: 18, justifyContent: "flex-end" }}>
           <button onClick={onClose} style={{
-            padding: "8px 16px", borderRadius: 8, border: "1px solid #e5e7eb",
-            background: "#fff", fontSize: 13, fontWeight: 600, color: "#374151", cursor: "pointer",
+            padding: "8px 16px", borderRadius: 8, border: "1px solid var(--hc-border)",
+            background: "var(--white)", fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", cursor: "pointer",
           }}>Cancel</button>
           <button onClick={go} disabled={busy} style={{
             padding: "8px 16px", borderRadius: 8, border: "none",
-            background: busy ? "#fca5a5" : "#dc2626", color: "#fff",
+            background: busy ? "var(--coral-100)" : "var(--critical-ink)", color: "var(--white)",
             fontSize: 13, fontWeight: 700, cursor: busy ? "not-allowed" : "pointer",
           }}>
             {busy ? "Deactivating…" : "Deactivate"}
@@ -343,7 +343,7 @@ export default function DepartmentsPage() {
   if (!institutionId) {
     return (
       <div style={{ padding: 48, textAlign: "center" }}>
-        <p style={{ color: "#9ca3af", fontSize: 14 }}>No institution assigned to your account.</p>
+        <p style={{ color: "var(--text-muted)", fontSize: 14 }}>No institution assigned to your account.</p>
       </div>
     );
   }
@@ -355,28 +355,28 @@ export default function DepartmentsPage() {
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
             <div style={{
-              width: 36, height: 36, borderRadius: 10, background: "#eff6ff",
+              width: 36, height: 36, borderRadius: 10, background: "var(--info-tint)",
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              <Layers style={{ width: 18, color: "#2563eb" }} />
+              <Layers style={{ width: 18, color: "var(--blue-600)" }} />
             </div>
-            <h1 style={{ fontSize: 20, fontWeight: 800, color: "#111827", margin: 0 }}>Departments</h1>
+            <h1 style={{ margin: 0, font: "700 27px/1.1 var(--font-sans)", letterSpacing: "var(--ls-tight)", color: "var(--text-primary)" }}>Departments</h1>
           </div>
-          <p style={{ fontSize: 13, color: "#6b7280", margin: 0 }}>
+          <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0 }}>
             Manage clinical and support departments for your institution.
           </p>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
           <button onClick={load} style={{
             display: "flex", alignItems: "center", gap: 6, padding: "8px 14px",
-            borderRadius: 9, border: "1px solid #e5e7eb", background: "#fff",
-            fontSize: 13, fontWeight: 600, color: "#374151", cursor: "pointer",
+            borderRadius: 9, border: "1px solid var(--hc-border)", background: "var(--white)",
+            fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", cursor: "pointer",
           }}>
             <RefreshCw style={{ width: 13 }} />Refresh
           </button>
           <button onClick={() => { setEditTarget(null); setModal("create"); }} style={{
             display: "flex", alignItems: "center", gap: 6, padding: "8px 16px",
-            borderRadius: 9, border: "none", background: "#16a34a", color: "#fff",
+            borderRadius: 9, border: "none", background: "var(--brand)", color: "var(--on-brand)",
             fontSize: 13, fontWeight: 700, cursor: "pointer",
           }}>
             <Plus style={{ width: 14 }} />Add Department
@@ -387,26 +387,26 @@ export default function DepartmentsPage() {
       {/* ── Stats row ── */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 12, marginBottom: 24 }}>
         {[
-          { label: "Total Active", value: active.length, color: "#2563eb" },
-          { label: "Clinical", value: typeCounts["clinical"] ?? 0, color: "#7c3aed" },
-          { label: "Diagnostic", value: typeCounts["diagnostic"] ?? 0, color: "#0e7490" },
-          { label: "Support", value: typeCounts["support"] ?? 0, color: "#16a34a" },
-          { label: "Other", value: active.length - (typeCounts["clinical"] ?? 0) - (typeCounts["diagnostic"] ?? 0) - (typeCounts["support"] ?? 0), color: "#d97706" },
+          { label: "Total Active", value: active.length, color: "var(--blue-600)" },
+          { label: "Clinical", value: typeCounts["clinical"] ?? 0, color: "var(--accent-ink)" },
+          { label: "Diagnostic", value: typeCounts["diagnostic"] ?? 0, color: "var(--info-ink)" },
+          { label: "Support", value: typeCounts["support"] ?? 0, color: "var(--success-ink)" },
+          { label: "Other", value: active.length - (typeCounts["clinical"] ?? 0) - (typeCounts["diagnostic"] ?? 0) - (typeCounts["support"] ?? 0), color: "var(--urgent-ink)" },
         ].map(s => (
           <div key={s.label} style={{
-            background: "#fff", border: "1px solid #f0f0f0", borderRadius: 12,
-            padding: "14px 16px", boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+            background: "var(--white)", border: "1px solid var(--border-faint)", borderRadius: 12,
+            padding: "14px 16px", boxShadow: "var(--elev-1)",
           }}>
             <p style={{ fontSize: 24, fontWeight: 800, color: s.color, margin: 0, lineHeight: 1 }}>{s.value}</p>
-            <p style={{ fontSize: 11, color: "#9ca3af", fontWeight: 600, margin: "4px 0 0" }}>{s.label}</p>
+            <p style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600, margin: "4px 0 0" }}>{s.label}</p>
           </div>
         ))}
       </div>
 
       {/* ── Filters ── */}
       <div style={{
-        background: "#fff", border: "1px solid #f0f0f0", borderRadius: 12,
-        padding: "14px 18px", marginBottom: 16, boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+        background: "var(--white)", border: "1px solid var(--border-faint)", borderRadius: 12,
+        padding: "14px 18px", marginBottom: 16, boxShadow: "var(--elev-1)",
         display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
       }}>
         <input
@@ -415,16 +415,16 @@ export default function DepartmentsPage() {
           placeholder="Search by name, code or type…"
           style={{
             flex: 1, minWidth: 200, padding: "8px 12px", borderRadius: 8,
-            border: "1px solid #e5e7eb", fontSize: 13, outline: "none",
+            border: "1px solid var(--hc-border)", fontSize: 13, outline: "none",
           }}
         />
         <button
           onClick={() => setShowInactive(v => !v)}
           style={{
             display: "flex", alignItems: "center", gap: 6, padding: "8px 14px",
-            borderRadius: 8, border: `1px solid ${showInactive ? "#7c3aed" : "#e5e7eb"}`,
-            background: showInactive ? "#f5f3ff" : "#fff",
-            color: showInactive ? "#7c3aed" : "#374151",
+            borderRadius: 8, border: `1px solid ${showInactive ? "var(--accent-ink)" : "var(--hc-border)"}`,
+            background: showInactive ? "var(--violet-050)" : "var(--white)",
+            color: showInactive ? "var(--accent-ink)" : "var(--text-secondary)",
             fontSize: 13, fontWeight: 600, cursor: "pointer",
           }}
         >
@@ -435,26 +435,26 @@ export default function DepartmentsPage() {
 
       {/* ── Table ── */}
       <div style={{
-        background: "#fff", border: "1px solid #f0f0f0", borderRadius: 14,
-        overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
+        background: "var(--white)", border: "1px solid var(--border-faint)", borderRadius: 14,
+        overflow: "hidden", boxShadow: "var(--elev-1)",
       }}>
         {loading ? (
-          <div style={{ padding: 48, textAlign: "center", color: "#9ca3af", fontSize: 14 }}>Loading departments…</div>
+          <div style={{ padding: 48, textAlign: "center", color: "var(--text-muted)", fontSize: 14 }}>Loading departments…</div>
         ) : filtered.length === 0 ? (
           <div style={{ padding: 48, textAlign: "center" }}>
-            <Layers style={{ width: 36, color: "#d1d5db", marginBottom: 10 }} />
-            <p style={{ color: "#9ca3af", fontSize: 14 }}>
+            <Layers style={{ width: 36, color: "var(--text-disabled)", marginBottom: 10 }} />
+            <p style={{ color: "var(--text-muted)", fontSize: 14 }}>
               {search ? "No departments match your search." : "No departments yet. Add one to get started."}
             </p>
           </div>
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
-              <tr style={{ background: "#f9fafb", borderBottom: "1px solid #f0f0f0" }}>
+              <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border-faint)" }}>
                 {["Code", "Department", "Type", "Location", "Phone", "Status", ""].map(h => (
                   <th key={h} style={{
                     padding: "11px 16px", textAlign: "left", fontSize: 11,
-                    fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.05em",
+                    fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em",
                   }}>{h}</th>
                 ))}
               </tr>
@@ -462,41 +462,41 @@ export default function DepartmentsPage() {
             <tbody>
               {filtered.map((d, i) => (
                 <tr key={d.id} style={{
-                  borderBottom: i < filtered.length - 1 ? "1px solid #f9fafb" : "none",
+                  borderBottom: i < filtered.length - 1 ? "1px solid var(--surface-sunken)" : "none",
                   opacity: d.isActive ? 1 : 0.55,
-                  background: d.isActive ? "transparent" : "#fafafa",
+                  background: d.isActive ? "transparent" : "var(--surface-app)",
                 }}>
                   <td style={{ padding: "13px 16px" }}>
                     <span style={{
-                      fontSize: 12, fontWeight: 700, color: "#374151",
-                      background: "#f3f4f6", padding: "2px 8px", borderRadius: 6,
-                      fontFamily: "monospace",
+                      fontSize: 12, fontWeight: 700, color: "var(--text-secondary)",
+                      background: "var(--surface-sunken)", padding: "2px 8px", borderRadius: 6,
+                      fontFamily: "var(--font-mono)",
                     }}>{d.departmentCode}</span>
                   </td>
                   <td style={{ padding: "13px 16px" }}>
-                    <p style={{ fontSize: 13, fontWeight: 600, color: "#111827", margin: 0 }}>{d.departmentName}</p>
+                    <p style={{ fontSize: 13, fontWeight: 600, color: "var(--text-primary)", margin: 0 }}>{d.departmentName}</p>
                   </td>
                   <td style={{ padding: "13px 16px" }}>{typeBadge(d.departmentType)}</td>
                   <td style={{ padding: "13px 16px" }}>
                     {d.location ? (
-                      <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#6b7280" }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--text-secondary)" }}>
                         <MapPin style={{ width: 11, flexShrink: 0 }} />{d.location}
                       </span>
-                    ) : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
+                    ) : <span style={{ color: "var(--text-disabled)", fontSize: 12 }}>—</span>}
                   </td>
                   <td style={{ padding: "13px 16px" }}>
                     {d.phone ? (
-                      <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "#6b7280" }}>
+                      <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--text-secondary)" }}>
                         <Phone style={{ width: 11, flexShrink: 0 }} />{d.phone}
                       </span>
-                    ) : <span style={{ color: "#d1d5db", fontSize: 12 }}>—</span>}
+                    ) : <span style={{ color: "var(--text-disabled)", fontSize: 12 }}>—</span>}
                   </td>
                   <td style={{ padding: "13px 16px" }}>
                     <span style={{
                       fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 999,
-                      background: d.isActive ? "#f0fdf4" : "#fef2f2",
-                      color: d.isActive ? "#16a34a" : "#dc2626",
-                      border: `1px solid ${d.isActive ? "#bbf7d0" : "#fecaca"}`,
+                      background: d.isActive ? "var(--brand-tint)" : "var(--coral-050)",
+                      color: d.isActive ? "var(--green-600)" : "var(--critical-ink)",
+                      border: `1px solid ${d.isActive ? "var(--green-100)" : "var(--coral-100)"}`,
                     }}>
                       {d.isActive ? "Active" : "Inactive"}
                     </span>
@@ -511,8 +511,8 @@ export default function DepartmentsPage() {
                             style={{
                               display: "flex", alignItems: "center", gap: 5,
                               padding: "5px 10px", borderRadius: 7,
-                              border: "1px solid #e5e7eb", background: "#fff",
-                              fontSize: 12, fontWeight: 600, color: "#374151", cursor: "pointer",
+                              border: "1px solid var(--hc-border)", background: "var(--white)",
+                              fontSize: 12, fontWeight: 600, color: "var(--text-secondary)", cursor: "pointer",
                             }}
                           >
                             <Pencil style={{ width: 11 }} />Edit
@@ -523,8 +523,8 @@ export default function DepartmentsPage() {
                             style={{
                               display: "flex", alignItems: "center", gap: 5,
                               padding: "5px 10px", borderRadius: 7,
-                              border: "1px solid #fecaca", background: "#fef2f2",
-                              fontSize: 12, fontWeight: 600, color: "#dc2626", cursor: "pointer",
+                              border: "1px solid var(--coral-100)", background: "var(--coral-050)",
+                              fontSize: 12, fontWeight: 600, color: "var(--critical-ink)", cursor: "pointer",
                             }}
                           >
                             <Trash2 style={{ width: 11 }} />Deactivate
@@ -537,8 +537,8 @@ export default function DepartmentsPage() {
                           style={{
                             display: "flex", alignItems: "center", gap: 5,
                             padding: "5px 10px", borderRadius: 7,
-                            border: "1px solid #bbf7d0", background: "#f0fdf4",
-                            fontSize: 12, fontWeight: 600, color: "#16a34a", cursor: "pointer",
+                            border: "1px solid var(--green-100)", background: "var(--brand-tint)",
+                            fontSize: 12, fontWeight: 600, color: "var(--success-ink)", cursor: "pointer",
                           }}
                         >
                           <RotateCcw style={{ width: 11 }} />Reactivate

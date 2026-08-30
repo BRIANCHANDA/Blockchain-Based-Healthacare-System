@@ -98,8 +98,8 @@ function Field({
 }) {
   return (
     <div>
-      <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">
-        {label} {required && <span className="text-red-500">*</span>}
+      <label className="block text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide mb-1.5">
+        {label} {required && <span className="text-[var(--coral-500)]">*</span>}
       </label>
       {children}
     </div>
@@ -107,7 +107,7 @@ function Field({
 }
 
 const inputClass =
-  "w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-600 focus:ring-2 focus:ring-green-600/10 focus:bg-white transition-all";
+  "w-full px-3.5 py-2.5 rounded-[var(--r-sm)] border border-[var(--hc-border)] bg-[var(--surface-sunken)] text-sm outline-none focus:border-[var(--green-600)] focus:ring-2 focus:ring-[var(--green-600)] focus:bg-[var(--surface-card)] transition-all";
 
 export default function NewStaffPage() {
   const router = useRouter();
@@ -260,27 +260,25 @@ export default function NewStaffPage() {
     return (
       <div
         className="max-w-lg mx-auto"
-        style={{ fontFamily: "'DM Sans', sans-serif" }}
       >
-        <div className="bg-white rounded-2xl border border-green-100 shadow-sm p-10 text-center">
-          <div className="w-16 h-16 rounded-full bg-green-50 flex items-center justify-center mx-auto mb-4">
-            <CheckCircle2 className="w-8 h-8 text-green-600" />
+        <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--green-100)] shadow-[var(--elev-1)] p-10 text-center">
+          <div className="w-16 h-16 rounded-full bg-[var(--brand-tint)] flex items-center justify-center mx-auto mb-4">
+            <CheckCircle2 className="w-8 h-8 text-[var(--green-700)]" />
           </div>
           <h2
-            className="text-xl font-bold text-gray-900 mb-2"
-            style={{ fontFamily: "'Playfair Display', serif" }}
+            className="text-xl font-bold text-[var(--text-primary)] mb-2"
           >
             Staff Member Created
           </h2>
-          <p className="text-sm text-gray-500 mb-6">
+          <p className="text-sm text-[var(--text-secondary)] mb-6">
             {form.firstName} {form.lastName} has been added to the system.
           </p>
           <div className="flex gap-3 justify-center">
             <button
               onClick={() => router.push("/dashboard/admin/staff")}
-              className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md"
+              className="px-5 py-2.5 rounded-[var(--r-sm)] text-sm font-semibold text-[var(--white)] transition-all hover:shadow-[var(--elev-2)]"
               style={{
-                background: "linear-gradient(135deg, #166534, #15803d)",
+                background: "var(--brand)",
               }}
             >
               Back to Staff
@@ -308,7 +306,7 @@ export default function NewStaffPage() {
                   qualifications: "",
                 });
               }}
-              className="px-5 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50"
+              className="px-5 py-2.5 rounded-[var(--r-sm)] text-sm font-semibold border border-[var(--hc-border)] text-[var(--text-secondary)] hover:bg-[var(--surface-sunken)]"
             >
               Add Another
             </button>
@@ -330,39 +328,35 @@ export default function NewStaffPage() {
   return (
     <div
       className="max-w-2xl mx-auto"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
     >
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <button
           onClick={() => router.back()}
-          className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors"
+          className="w-9 h-9 rounded-[var(--r-sm)] border border-[var(--hc-border)] flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--surface-sunken)] transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div>
-          <h1
-            className="text-2xl font-bold text-gray-900"
-            style={{ fontFamily: "'Playfair Display', serif" }}
-          >
+          <h1 style={{ margin: 0, font: "700 27px/1.1 var(--font-sans)", letterSpacing: "var(--ls-tight)", color: "var(--text-primary)" }}>
             Add Staff Member
           </h1>
-          <p className="text-sm text-gray-400 mt-0.5">
+          <p className="text-sm text-[var(--text-muted)] mt-0.5">
             Register a new clinical staff account
           </p>
         </div>
       </div>
 
       {error && (
-        <div className="flex items-start gap-2 p-3 rounded-xl bg-red-50 border border-red-100 mb-4">
-          <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-          <p className="text-sm text-red-700">{error}</p>
+        <div className="flex items-start gap-2 p-3 rounded-[var(--r-sm)] bg-[var(--coral-050)] border border-[var(--coral-100)] mb-4">
+          <AlertCircle className="w-4 h-4 text-[var(--coral-500)] mt-0.5 flex-shrink-0" />
+          <p className="text-sm text-[var(--critical-ink)]">{error}</p>
         </div>
       )}
 
       {/* Role selector */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-4">
-        <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-4">
+      <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-6 mb-4">
+        <h2 className="text-sm font-bold text-[var(--text-secondary)] uppercase tracking-wide mb-4">
           Role
         </h2>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -370,15 +364,15 @@ export default function NewStaffPage() {
             <button
               key={value}
               onClick={() => setFormField("role", value)}
-              className="px-3 py-2.5 rounded-xl text-xs font-semibold border transition-all text-center"
+              className="px-3 py-2.5 rounded-[var(--r-sm)] text-xs font-semibold border transition-all text-center"
               style={
                 form.role === value
                   ? {
-                      background: "#f0fdf4",
-                      borderColor: "#166534",
-                      color: "#166534",
+                      background: "var(--brand-tint)",
+                      borderColor: "var(--green-800)",
+                      color: "var(--green-800)",
                     }
-                  : { borderColor: "#e5e7eb", color: "#6b7280" }
+                  : { borderColor: "var(--hc-border)", color: "var(--text-secondary)" }
               }
             >
               {label}
@@ -388,8 +382,8 @@ export default function NewStaffPage() {
       </div>
 
       {/* Personal info */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-4">
-        <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-4">
+      <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-6 mb-4">
+        <h2 className="text-sm font-bold text-[var(--text-secondary)] uppercase tracking-wide mb-4">
           Personal Information
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -427,18 +421,18 @@ export default function NewStaffPage() {
                 else
                   setEmailError("");
               }}
-              className={`${inputClass} ${emailError ? "border-red-300 focus:border-red-500 focus:ring-red-500/10" : ""}`}
+              className={`${inputClass} ${emailError ? "border-[var(--coral-100)] focus:border-[var(--coral-500)] focus:ring-[var(--coral-500)]" : ""}`}
             />
             {emailError && (
-              <p className="mt-1 text-xs text-red-500">{emailError}</p>
+              <p className="mt-1 text-xs text-[var(--coral-500)]">{emailError}</p>
             )}
           </Field>
         </div>
       </div>
 
       {/* Professional details */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-4">
-        <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-4">
+      <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-6 mb-4">
+        <h2 className="text-sm font-bold text-[var(--text-secondary)] uppercase tracking-wide mb-4">
           Professional Details
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -455,12 +449,12 @@ export default function NewStaffPage() {
           <Field label="Hospital / Institution" required={isSuperAdmin}>
             {!isSuperAdmin ? (
               <div
-                className={`${inputClass} flex items-center bg-gray-50 text-gray-700 cursor-not-allowed`}
+                className={`${inputClass} flex items-center bg-[var(--surface-sunken)] text-[var(--text-secondary)] cursor-not-allowed`}
               >
                 {ownInstitutionName ?? "Your hospital"}
               </div>
             ) : loadingInstitutions ? (
-              <div className="flex items-center gap-2 text-gray-500">
+              <div className="flex items-center gap-2 text-[var(--text-secondary)]">
                 <Loader2 className="w-4 h-4 animate-spin" /> Loading
                 hospitals...
               </div>
@@ -555,8 +549,8 @@ export default function NewStaffPage() {
       </div>
 
       {/* Password – optional with note */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-6">
-        <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wide mb-4">
+      <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-6 mb-6">
+        <h2 className="text-sm font-bold text-[var(--text-secondary)] uppercase tracking-wide mb-4">
           Account Password
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -582,7 +576,7 @@ export default function NewStaffPage() {
         {form.password &&
           form.confirmPassword &&
           form.password !== form.confirmPassword && (
-            <p className="text-xs text-red-500 mt-2">Passwords do not match</p>
+            <p className="text-xs text-[var(--coral-500)] mt-2">Passwords do not match</p>
           )}
       </div>
 
@@ -590,15 +584,15 @@ export default function NewStaffPage() {
       <div className="flex gap-3 justify-end">
         <button
           onClick={() => router.back()}
-          className="px-5 py-2.5 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50"
+          className="px-5 py-2.5 rounded-[var(--r-sm)] text-sm font-semibold border border-[var(--hc-border)] text-[var(--text-secondary)] hover:bg-[var(--surface-sunken)]"
         >
           Cancel
         </button>
         <button
           onClick={handleSubmit}
           disabled={submitting || loadingInstitutions}
-          className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition-all hover:shadow-md"
-          style={{ background: "linear-gradient(135deg, #166534, #15803d)" }}
+          className="flex items-center gap-2 px-6 py-2.5 rounded-[var(--r-sm)] text-sm font-semibold text-[var(--white)] disabled:opacity-50 transition-all hover:shadow-[var(--elev-2)]"
+          style={{ background: "var(--brand)" }}
         >
           {submitting ? (
             <Loader2 className="w-4 h-4 animate-spin" />

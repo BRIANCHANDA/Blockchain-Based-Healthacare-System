@@ -21,6 +21,33 @@ import {
   Stethoscope,
   QrCode,
 } from "lucide-react";
+import {
+  Page,
+  Card,
+  CardHeader,
+  Field,
+  Input,
+  Button,
+  Banner,
+  Avatar,
+  MonoTag,
+  DataRow,
+  SegmentedControl,
+  EmptyState,
+  hoverRow,
+  TONES,
+  type Tone,
+} from "@/components/dashboard/ui";
+
+/* ==========================================================================
+   New-visit wizard.
+
+   Four steps, but only two of them write: step 2 creates the visit, step 3
+   assigns a nurse. That ordering matters — the visit exists from step 3
+   onward, so backing out after step 2 leaves a real record behind rather
+   than discarding a draft. Step 3 can be skipped; a nurse can be assigned
+   later from the visit page.
+   ========================================================================== */
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -37,39 +64,17 @@ interface ActiveVisit {
 // ── Schema ────────────────────────────────────────────────────────────────────
 const visitSchema = z.object({
   visitType: z.enum(["outpatient", "inpatient", "emergency", "consultation"]),
-  priority: z
-    .enum(["routine", "urgent", "emergency", "critical"])
-    .default("routine"),
+  priority: z.enum(["routine", "urgent", "emergency", "critical"]).default("routine"),
   wardOrRoom: z.string().optional(),
 });
 type VisitForm = z.infer<typeof visitSchema>;
 
 // ── Priority / visit type config ──────────────────────────────────────────────
-const PRIORITIES = [
-  {
-    value: "routine",
-    label: "Routine",
-    color: "#166534",
-    bg: "rgba(22,101,52,0.08)",
-  },
-  {
-    value: "urgent",
-    label: "Urgent",
-    color: "#d97706",
-    bg: "rgba(217,119,6,0.08)",
-  },
-  {
-    value: "emergency",
-    label: "Emergency",
-    color: "#dc2626",
-    bg: "rgba(220,38,38,0.08)",
-  },
-  {
-    value: "critical",
-    label: "Critical",
-    color: "#7c3aed",
-    bg: "rgba(124,58,237,0.08)",
-  },
+const PRIORITIES: { value: string; label: string; tone: Tone }[] = [
+  { value: "routine", label: "Routine", tone: "success" },
+  { value: "urgent", label: "Urgent", tone: "urgent" },
+  { value: "emergency", label: "Emergency", tone: "critical" },
+  { value: "critical", label: "Critical", tone: "accent" },
 ];
 
 const VISIT_TYPES = [
@@ -82,48 +87,164 @@ const VISIT_TYPES = [
 // ── Step indicator ────────────────────────────────────────────────────────────
 function Steps({ current }: { current: 1 | 2 | 3 | 4 }) {
   const steps = [
-    { n: 1, label: "Find Patient" },
-    { n: 2, label: "Visit Details" },
-    { n: 3, label: "Assign Nurse" },
+    { n: 1, label: "Find patient" },
+    { n: 2, label: "Visit details" },
+    { n: 3, label: "Assign nurse" },
     { n: 4, label: "Confirm" },
   ];
   return (
-    <div className="flex items-center gap-2 mb-7">
+    <div className="flex items-center flex-wrap" style={{ gap: 8 }}>
       {steps.map(({ n, label }, i) => {
         const done = current > n;
         const active = current === n;
+        const reached = done || active;
         return (
-          <div key={n} className="flex items-center gap-2">
-            <div className="flex items-center gap-2">
-              <div
-                className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-                style={{
-                  background: done || active ? "#166534" : "#f3f4f6",
-                  color: done || active ? "#fff" : "#9ca3af",
-                  boxShadow: active ? "0 0 0 4px #dcfce7" : undefined,
-                }}
-              >
-                {done ? <CheckCircle2 className="w-4 h-4" /> : n}
-              </div>
-              <span
-                className={`text-sm font-semibold hidden sm:block ${
-                  active
-                    ? "text-gray-900"
-                    : done
-                      ? "text-gray-500"
-                      : "text-gray-400"
-                }`}
-              >
-                {label}
-              </span>
-            </div>
+          <div key={n} className="flex items-center" style={{ gap: 8 }}>
+            <span
+              className="inline-flex items-center justify-center flex-shrink-0"
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: "50%",
+                background: reached ? "var(--brand)" : "var(--surface-sunken)",
+                color: reached ? "var(--on-brand)" : "var(--text-muted)",
+                font: "700 12px/1 var(--font-sans)",
+                // Only the step in progress gets the focus halo.
+                boxShadow: active ? "0 0 0 4px var(--brand-fill)" : undefined,
+                transition: "all var(--dur-base) var(--ease-standard)",
+              }}
+            >
+              {done ? <CheckCircle2 className="w-4 h-4" /> : n}
+            </span>
+            <span
+              className="hidden sm:block"
+              style={{
+                font: `${active ? 700 : 500} 13px/1 var(--font-sans)`,
+                color: active
+                  ? "var(--text-primary)"
+                  : done
+                    ? "var(--text-secondary)"
+                    : "var(--text-muted)",
+              }}
+            >
+              {label}
+            </span>
             {i < steps.length - 1 && (
-              <div
-                className="h-px w-6 flex-shrink-0"
-                style={{ background: current > n ? "#166534" : "#e5e7eb" }}
+              <span
+                className="flex-shrink-0"
+                style={{
+                  width: 24,
+                  height: 1,
+                  background: done ? "var(--brand)" : "var(--hc-border)",
+                }}
               />
             )}
           </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/** Selected-patient chip shown at the top of steps 1 and 2. */
+function PatientChip({
+  patient,
+  onChange,
+  tone = "brand",
+}: {
+  patient: PatientSummary;
+  onChange: () => void;
+  tone?: "brand" | "plain";
+}) {
+  return (
+    <div
+      className="flex items-center"
+      style={{
+        gap: 12,
+        padding: 14,
+        borderRadius: "var(--r-md)",
+        background: tone === "brand" ? "var(--brand-tint)" : "var(--surface-card)",
+        border: `1px solid ${tone === "brand" ? "var(--green-100)" : "var(--hc-border)"}`,
+      }}
+    >
+      <Avatar name={`${patient.firstName} ${patient.lastName}`} size={38} seed={0} />
+      <div className="flex-1 min-w-0 flex flex-col" style={{ gap: 4 }}>
+        <p
+          className="truncate"
+          style={{
+            margin: 0,
+            font: "700 13.5px/1 var(--font-sans)",
+            color: "var(--text-primary)",
+          }}
+        >
+          {patient.firstName} {patient.lastName}
+        </p>
+        <p
+          className="truncate"
+          style={{
+            margin: 0,
+            font: "400 11px/1 var(--font-mono)",
+            color: "var(--text-muted)",
+          }}
+        >
+          {patient.id}
+        </p>
+      </div>
+      <Button variant="ghost" size="sm" onClick={onChange}>
+        Change
+      </Button>
+    </div>
+  );
+}
+
+/** Radio group rendered as selectable chips (visit type / priority). */
+function ChipRadio({
+  options,
+  selected,
+  register,
+  name,
+}: {
+  options: { value: string; label: string; tone?: Tone }[];
+  selected: string;
+  register: any;
+  name: string;
+}) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
+        gap: 8,
+      }}
+    >
+      {options.map((o) => {
+        const on = selected === o.value;
+        const t = o.tone ? TONES[o.tone] : null;
+        return (
+          <label
+            key={o.value}
+            className="flex items-center justify-center"
+            style={{
+              height: 40,
+              padding: "0 12px",
+              borderRadius: "var(--r-sm)",
+              cursor: "pointer",
+              font: `${on ? 700 : 500} 12.5px/1 var(--font-sans)`,
+              // A toned option colours itself when chosen; an untoned one
+              // falls back to the brand fill.
+              background: on ? (t ? t.tint : "var(--brand)") : "var(--surface-sunken)",
+              color: on
+                ? t
+                  ? t.ink
+                  : "var(--on-brand)"
+                : "var(--text-secondary)",
+              border: `1px solid ${on ? (t ? t.ink : "var(--brand)") : "var(--hc-border)"}`,
+              transition: "all var(--dur-fast) var(--ease-standard)",
+            }}
+          >
+            <input type="radio" value={o.value} {...register(name)} className="sr-only" />
+            {o.label}
+          </label>
         );
       })}
     </div>
@@ -145,9 +266,7 @@ function NewVisitPageInner() {
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<PatientSummary[]>([]);
   const [searchError, setSearchError] = useState("");
-  const [selectedPatient, setSelectedPatient] = useState<PatientSummary | null>(
-    null,
-  );
+  const [selectedPatient, setSelectedPatient] = useState<PatientSummary | null>(null);
 
   // Active visit check
   const [activeVisit, setActiveVisit] = useState<ActiveVisit | null>(null);
@@ -160,12 +279,12 @@ function NewVisitPageInner() {
     register,
     handleSubmit,
     watch,
-    formState: { errors },
   } = useForm<VisitForm>({
     resolver: zodResolver(visitSchema) as Resolver<VisitForm>,
     defaultValues: { visitType: "outpatient", priority: "routine" },
   });
   const priority = watch("priority");
+  const visitType = watch("visitType");
 
   // Step 3 — nurse assignment
   const [createdVisit, setCreatedVisit] = useState<{
@@ -193,16 +312,14 @@ function NewVisitPageInner() {
         const visits: any[] = res.data.data?.visits ?? [];
         const existing = visits.find((v: any) => v.patientId === patientId);
         if (existing) {
-          setActiveVisit({
-            visitNumber: existing.visitNumber,
-            visitId: existing.id,
-          });
+          setActiveVisit({ visitNumber: existing.visitNumber, visitId: existing.id });
         } else if (shouldAdvance) {
           setStep(2);
         }
       } catch {
-        // Fail silently — if check errors and we should advance, still advance
-        // so a network hiccup doesn't block the receptionist; server rejects duplicates.
+        // Fail silently — if the check errors and we should advance, still
+        // advance so a network hiccup doesn't block the receptionist; the
+        // server rejects duplicates anyway.
         if (shouldAdvance) setStep(2);
       } finally {
         setCheckingVisit(false);
@@ -236,17 +353,14 @@ function NewVisitPageInner() {
       .then((res) => {
         const staff = res.data.data?.staff ?? [];
         setNurses(
-          staff.map((n: any) => ({
-            id: n.id,
-            name: `${n.firstName} ${n.lastName}`,
-          })),
+          staff.map((n: any) => ({ id: n.id, name: `${n.firstName} ${n.lastName}` })),
         );
       })
       .catch(() => setNurses([]))
       .finally(() => setNursesLoading(false));
   }, [step]);
 
-  // Search patients
+  // Search patients (debounced — one request per pause in typing)
   const handleSearch = useCallback((q: string) => {
     setSearchQuery(q);
     setSelectedPatient(null);
@@ -337,27 +451,33 @@ function NewVisitPageInner() {
     setAssignError("");
   };
 
-  const inputCls =
-    "w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white text-gray-900 text-sm outline-none transition-all focus:border-green-500 focus:ring-2 focus:ring-green-500/10 placeholder:text-gray-400";
-
   return (
-    <div
-      className="max-w-2xl mx-auto"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
-    >
+    <Page maxWidth={700}>
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <button
-          onClick={() =>
-            step > 1 ? setStep((step - 1) as 1 | 2 | 3 | 4) : router.back()
-          }
-          className="p-2 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors text-gray-500"
-        >
-          <ChevronLeft className="w-4 h-4" />
-        </button>
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">New Visit</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
+      <div className="flex items-center" style={{ gap: 12 }}>
+        <Button
+          icon={ChevronLeft}
+          onClick={() => (step > 1 ? setStep((step - 1) as 1 | 2 | 3 | 4) : router.back())}
+          style={{ padding: 0, width: 38 }}
+        />
+        <div className="min-w-0 flex flex-col" style={{ gap: 5 }}>
+          <h1
+            style={{
+              margin: 0,
+              font: "700 22px/1.1 var(--font-sans)",
+              letterSpacing: "var(--ls-tight)",
+              color: "var(--text-primary)",
+            }}
+          >
+            New visit
+          </h1>
+          <p
+            style={{
+              margin: 0,
+              font: "400 13px/1.4 var(--font-sans)",
+              color: "var(--text-secondary)",
+            }}
+          >
             Register a patient visit and assign them to a nurse
           </p>
         </div>
@@ -367,516 +487,393 @@ function NewVisitPageInner() {
 
       {/* ── STEP 1: Find Patient ────────────────────────────────────────────── */}
       {step === 1 && (
-        <div className="space-y-4">
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
-            {/* Header + Search / Scan tab toggle */}
-            <div className="flex items-center justify-between mb-5">
-              <div className="flex items-center gap-2">
-                {findMode === "scan" ? (
-                  <QrCode className="w-4 h-4 text-green-700" />
-                ) : (
-                  <Search className="w-4 h-4 text-green-700" />
-                )}
-                <h2 className="text-sm font-bold text-gray-800">
-                  Find Patient
-                </h2>
-              </div>
+        <>
+          <Card>
+            <CardHeader
+              icon={findMode === "scan" ? QrCode : Search}
+              title="Find patient"
+              right={
+                <SegmentedControl<"search" | "scan">
+                  value={findMode}
+                  onChange={switchMode}
+                  options={[
+                    { value: "search", label: "Search" },
+                    { value: "scan", label: "Scan QR" },
+                  ]}
+                />
+              }
+            />
 
-              <div
-                className="flex gap-0.5 p-1 rounded-xl"
-                style={{ background: "#f3f4f6" }}
-              >
-                <button
-                  onClick={() => switchMode("search")}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-                  style={
-                    findMode === "search"
-                      ? {
-                          background: "#fff",
-                          color: "#166534",
-                          boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-                        }
-                      : { color: "#9ca3af" }
-                  }
-                >
-                  <Search className="w-3 h-3" /> Search
-                </button>
-                <button
-                  onClick={() => switchMode("scan")}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-                  style={
-                    findMode === "scan"
-                      ? {
-                          background: "#fff",
-                          color: "#166534",
-                          boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-                        }
-                      : { color: "#9ca3af" }
-                  }
-                >
-                  <QrCode className="w-3 h-3" /> Scan QR
-                </button>
-              </div>
-            </div>
+            <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
+              {/* ── Search mode ── */}
+              {findMode === "search" && !selectedPatient && (
+                <>
+                  <Field hint="Search by the patient's name or ID.">
+                    <div className="relative">
+                      <Search
+                        className="absolute w-4 h-4"
+                        style={{
+                          left: 12,
+                          top: "50%",
+                          transform: "translateY(-50%)",
+                          color: "var(--text-muted)",
+                        }}
+                      />
+                      <Input
+                        value={searchQuery}
+                        onChange={(e) => handleSearch(e.target.value)}
+                        placeholder="Enter patient ID or name…"
+                        autoFocus
+                        style={{ paddingLeft: 36, paddingRight: 36 }}
+                      />
+                      {searching && (
+                        <Loader2
+                          className="absolute w-4 h-4 animate-spin"
+                          style={{
+                            right: 12,
+                            top: "50%",
+                            transform: "translateY(-50%)",
+                            color: "var(--text-muted)",
+                          }}
+                        />
+                      )}
+                    </div>
+                  </Field>
 
-            {/* ── Search mode ── */}
-            {findMode === "search" && !selectedPatient && (
-              <>
-                <div className="relative">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                  <input
-                    value={searchQuery}
-                    onChange={(e) => handleSearch(e.target.value)}
-                    placeholder="Enter patient ID or name…"
-                    className={`${inputCls} pl-10`}
-                    autoFocus
-                  />
-                  {searching && (
-                    <Loader2 className="absolute right-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 animate-spin" />
+                  {searchError && (
+                    <Banner tone="critical" icon={AlertCircle}>
+                      {searchError}
+                    </Banner>
                   )}
-                </div>
 
-                <p className="text-xs text-gray-400 mt-2.5 flex items-center gap-1.5">
-                  <AlertCircle className="w-3 h-3" /> Search by patient's name
-                  or ID
-                </p>
-
-                {searchError && (
-                  <p className="text-xs text-red-600 mt-2 flex items-center gap-1.5">
-                    <AlertCircle className="w-3.5 h-3.5" /> {searchError}
-                  </p>
-                )}
-
-                {searchResults.length > 0 && (
-                  <div className="mt-4 space-y-2">
-                    {searchResults.map((patient: PatientSummary) => {
-                      const isSelected = false;
-                      return (
+                  {searchResults.length > 0 && (
+                    <div className="flex flex-col" style={{ gap: 6 }}>
+                      {searchResults.map((patient: PatientSummary) => (
                         <button
                           key={patient.id}
                           onClick={() => {
                             setSelectedPatient(patient);
-                            // Manual selection: show Continue button, don't auto-advance
+                            // Manual selection: show Continue, don't auto-advance.
                             checkActiveVisit(patient.id, false);
                           }}
-                          className="w-full flex items-center gap-3 p-3.5 rounded-xl border transition-all text-left"
-                          style={
-                            isSelected
-                              ? {
-                                  borderColor: "#166534",
-                                  background: "#f0fdf4",
-                                }
-                              : { borderColor: "#f3f4f6", background: "#fff" }
-                          }
+                          className="w-full flex items-center text-left"
+                          style={{
+                            gap: 12,
+                            padding: 12,
+                            borderRadius: "var(--r-sm)",
+                            border: "1px solid var(--border-faint)",
+                            background: "transparent",
+                            cursor: "pointer",
+                          }}
+                          {...hoverRow}
                         >
-                          <div
-                            className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-                            style={{ background: "#166534" }}
-                          >
-                            {patient.firstName?.[0]}
-                            {patient.lastName?.[0]}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-semibold text-gray-800">
-                              {patient.firstName} {patient.lastName}
-                            </p>
-                          </div>
-                          <ChevronRight
-                            className="w-4 h-4"
+                          <Avatar
+                            name={`${patient.firstName} ${patient.lastName}`}
+                            size={36}
+                            seed={0}
+                          />
+                          <span
+                            className="flex-1 min-w-0 truncate"
                             style={{
-                              color: isSelected ? "#166534" : "#d1d5db",
+                              font: "600 13.5px/1 var(--font-sans)",
+                              color: "var(--text-primary)",
                             }}
+                          >
+                            {patient.firstName} {patient.lastName}
+                          </span>
+                          <ChevronRight
+                            className="w-4 h-4 flex-shrink-0"
+                            style={{ color: "var(--text-disabled)" }}
                           />
                         </button>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {searchQuery &&
-                  !searching &&
-                  searchResults.length === 0 &&
-                  !searchError && (
-                    <div className="mt-4 py-8 text-center">
-                      <User className="w-8 h-8 text-gray-200 mx-auto mb-2" />
-                      <p className="text-sm text-gray-400">No patients found</p>
+                      ))}
                     </div>
                   )}
-              </>
-            )}
 
-            {/* ── Scan mode ── */}
-            {findMode === "scan" && !selectedPatient && (
-              <PatientQRScanner
-                onFound={(patient) => {
-                  setSelectedPatient(patient as PatientSummary);
-                  // Auto-advance after check: QR already confirmed the patient
-                  checkActiveVisit(patient.id, true);
-                }}
-                hint="Hold the patient's QR code steady in the frame. Once scanned you'll go straight to visit details — no extra tap needed."
-              />
-            )}
+                  {searchQuery && !searching && searchResults.length === 0 && !searchError && (
+                    <EmptyState
+                      icon={User}
+                      title="No patients found"
+                      message="Check the spelling, or register the patient first."
+                      tone="neutral"
+                      pad={28}
+                    />
+                  )}
+                </>
+              )}
 
-            {/* ── Active-visit check + Continue (shared for both modes) ── */}
-            {selectedPatient && (
-              <div className="space-y-3">
-                {/* Selected patient card */}
-                <div className="flex items-center gap-3 p-3.5 rounded-xl border border-green-100 bg-green-50">
-                  <div
-                    className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-                    style={{ background: "#166534" }}
-                  >
-                    {selectedPatient.firstName?.[0]}
-                    {selectedPatient.lastName?.[0]}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-800">
-                      {selectedPatient.firstName} {selectedPatient.lastName}
-                    </p>
-                    <p className="text-xs text-gray-400 font-mono truncate">
-                      {selectedPatient.id}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => {
+              {/* ── Scan mode ── */}
+              {findMode === "scan" && !selectedPatient && (
+                <PatientQRScanner
+                  onFound={(patient) => {
+                    setSelectedPatient(patient as PatientSummary);
+                    // Auto-advance after check: QR already confirmed the patient
+                    checkActiveVisit(patient.id, true);
+                  }}
+                  hint="Hold the patient's QR code steady in the frame. Once scanned you'll go straight to visit details — no extra tap needed."
+                />
+              )}
+
+              {/* ── Active-visit check + Continue (shared for both modes) ── */}
+              {selectedPatient && (
+                <>
+                  <PatientChip
+                    patient={selectedPatient}
+                    onChange={() => {
                       setSelectedPatient(null);
                       setActiveVisit(null);
                     }}
-                    className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2 flex-shrink-0"
-                  >
-                    Change
-                  </button>
-                </div>
+                  />
 
-                {/* Checking */}
-                {checkingVisit && (
-                  <div className="flex items-center gap-2.5 p-3.5 rounded-xl bg-gray-50 border border-gray-100">
-                    <Loader2 className="w-4 h-4 animate-spin text-gray-400 flex-shrink-0" />
-                    <p className="text-sm text-gray-500">
-                      Checking for active visits…
-                    </p>
-                  </div>
-                )}
-
-                {/* Blocked — active visit exists */}
-                {!checkingVisit && activeVisit && (
-                  <div
-                    className="flex items-start gap-2.5 p-4 rounded-xl border"
-                    style={{
-                      background: "rgba(217,119,6,0.06)",
-                      borderColor: "rgba(217,119,6,0.3)",
-                    }}
-                  >
-                    <AlertCircle
-                      className="w-4 h-4 flex-shrink-0 mt-0.5"
-                      style={{ color: "#d97706" }}
-                    />
-                    <div className="flex-1 min-w-0">
+                  {checkingVisit && (
+                    <div
+                      className="flex items-center"
+                      style={{
+                        gap: 10,
+                        padding: 14,
+                        borderRadius: "var(--r-sm)",
+                        background: "var(--surface-sunken)",
+                      }}
+                    >
+                      <Loader2
+                        className="w-4 h-4 animate-spin flex-shrink-0"
+                        style={{ color: "var(--text-muted)" }}
+                      />
                       <p
-                        className="text-sm font-semibold"
-                        style={{ color: "#92400e" }}
+                        style={{
+                          margin: 0,
+                          font: "400 13px/1 var(--font-sans)",
+                          color: "var(--text-secondary)",
+                        }}
                       >
-                        Active visit already exists
+                        Checking for active visits…
                       </p>
-                      <p
-                        className="text-xs mt-0.5"
-                        style={{ color: "#b45309" }}
-                      >
-                        Visit{" "}
-                        <span className="font-mono font-bold">
-                          {activeVisit.visitNumber}
-                        </span>{" "}
-                        is currently in progress for {selectedPatient.firstName}{" "}
-                        {selectedPatient.lastName}. A patient can only have one
-                        active visit at a time.
-                      </p>
-                      <button
-                        onClick={() =>
-                          router.push(
-                            `/dashboard/receptionist/visits/${activeVisit.visitId}`,
-                          )
-                        }
-                        className="mt-2.5 inline-flex items-center gap-1.5 text-xs font-semibold underline underline-offset-2"
-                        style={{ color: "#d97706" }}
-                      >
-                        View existing visit
-                        <ChevronRight className="w-3 h-3" />
-                      </button>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Search mode only: explicit Continue button; scan mode auto-advances */}
-                {!checkingVisit && !activeVisit && findMode === "search" && (
-                  <button
-                    onClick={() => setStep(2)}
-                    className="w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-white text-sm font-semibold shadow-sm hover:shadow-md transition-all"
-                    style={{
-                      background: "linear-gradient(135deg, #166534, #15803d)",
-                    }}
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                    Continue with {selectedPatient.firstName}{" "}
-                    {selectedPatient.lastName}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
+                  {/*
+                   * A patient can hold only one active visit, so an existing
+                   * one blocks the wizard rather than warning about it.
+                   */}
+                  {!checkingVisit && activeVisit && (
+                    <Banner
+                      tone="urgent"
+                      icon={AlertCircle}
+                      title="Active visit already exists"
+                      action={
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          iconRight={ChevronRight}
+                          onClick={() =>
+                            router.push(
+                              `/dashboard/receptionist/visits/${activeVisit.visitId}`,
+                            )
+                          }
+                          style={{ color: "var(--urgent-ink)" }}
+                        >
+                          View visit
+                        </Button>
+                      }
+                    >
+                      Visit {activeVisit.visitNumber} is currently in progress for{" "}
+                      {selectedPatient.firstName} {selectedPatient.lastName}.
+                    </Banner>
+                  )}
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-            <p className="text-sm text-gray-600 mb-3">
+                  {/* Search mode only: explicit Continue; scan mode auto-advances. */}
+                  {!checkingVisit && !activeVisit && findMode === "search" && (
+                    <Button
+                      variant="primary"
+                      full
+                      iconRight={ChevronRight}
+                      onClick={() => setStep(2)}
+                    >
+                      Continue with {selectedPatient.firstName} {selectedPatient.lastName}
+                    </Button>
+                  )}
+                </>
+              )}
+            </div>
+          </Card>
+
+          <Card pad={18}>
+            <p
+              style={{
+                margin: "0 0 12px",
+                font: "400 13px/1 var(--font-sans)",
+                color: "var(--text-secondary)",
+              }}
+            >
               Patient not in the system yet?
             </p>
             <button
               onClick={() => router.push("/dashboard/receptionist/register")}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl border-2 border-dashed border-green-200 hover:border-green-400 text-sm font-semibold text-green-700 hover:bg-green-50/50 transition-all w-full justify-center"
+              className="w-full inline-flex items-center justify-center"
+              style={{
+                gap: 8,
+                height: 42,
+                borderRadius: "var(--r-md)",
+                border: "1.5px dashed var(--green-200)",
+                background: "transparent",
+                color: "var(--green-700)",
+                font: "600 13.5px/1 var(--font-sans)",
+                cursor: "pointer",
+                transition: "background var(--dur-fast) var(--ease-standard)",
+              }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.background = "var(--brand-tint)")
+              }
+              onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
             >
-              <UserPlus className="w-4 h-4" /> Register New Patient First
+              <UserPlus className="w-4 h-4" />
+              Register new patient first
             </button>
-          </div>
-        </div>
+          </Card>
+        </>
       )}
 
       {/* ── STEP 2: Visit Details ─────────────────────────────────────────── */}
       {step === 2 && selectedPatient && (
-        <form onSubmit={handleSubmit(onSubmitVisit)} className="space-y-4">
-          {/* Selected patient */}
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-              style={{ background: "#166534" }}
-            >
-              {selectedPatient.firstName?.[0]}
-              {selectedPatient.lastName?.[0]}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-gray-800">
-                {selectedPatient.firstName} {selectedPatient.lastName}
-              </p>
-              <p className="text-xs text-gray-400 font-mono truncate">
-                {selectedPatient.id}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
+        <form
+          onSubmit={handleSubmit(onSubmitVisit)}
+          style={{ display: "flex", flexDirection: "column", gap: 16 }}
+        >
+          <Card pad={14}>
+            <PatientChip
+              patient={selectedPatient}
+              tone="plain"
+              onChange={() => {
                 setSelectedPatient(null);
                 setActiveVisit(null);
                 setStep(1);
               }}
-              className="text-xs text-gray-400 hover:text-gray-600 underline underline-offset-2"
-            >
-              Change
-            </button>
-          </div>
+            />
+          </Card>
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 space-y-5">
-            <div className="flex items-center gap-2 mb-1">
-              <ClipboardList className="w-4 h-4 text-green-700" />
-              <h2 className="text-sm font-bold text-gray-800">
-                Visit Information
-              </h2>
-            </div>
+          <Card>
+            <CardHeader icon={ClipboardList} title="Visit information" />
+            <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 18 }}>
+              <Field label="Visit type" required>
+                <ChipRadio
+                  options={VISIT_TYPES}
+                  selected={visitType}
+                  register={register}
+                  name="visitType"
+                />
+              </Field>
 
-            {/* Visit Type */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-semibold text-gray-700">
-                Visit Type <span className="text-red-500">*</span>
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {VISIT_TYPES.map((t) => (
-                  <label
-                    key={t.value}
-                    className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition-all"
-                    style={
-                      watch("visitType") === t.value
-                        ? {
-                            background: "#166534",
-                            color: "#fff",
-                            borderColor: "#166534",
-                          }
-                        : {
-                            background: "#f9fafb",
-                            color: "#6b7280",
-                            borderColor: "#e5e7eb",
-                          }
-                    }
-                  >
-                    <input
-                      type="radio"
-                      value={t.value}
-                      {...register("visitType")}
-                      className="sr-only"
-                    />
-                    {t.label}
-                  </label>
-                ))}
-              </div>
-            </div>
+              <Field label="Priority" required>
+                <ChipRadio
+                  options={PRIORITIES}
+                  selected={priority}
+                  register={register}
+                  name="priority"
+                />
+              </Field>
 
-            {/* Priority */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-semibold text-gray-700">
-                Priority <span className="text-red-500">*</span>
-              </label>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {PRIORITIES.map((p) => (
-                  <label
-                    key={p.value}
-                    className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition-all"
-                    style={
-                      priority === p.value
-                        ? {
-                            background: p.bg,
-                            color: p.color,
-                            borderColor: p.color,
-                          }
-                        : {
-                            background: "#f9fafb",
-                            color: "#6b7280",
-                            borderColor: "#e5e7eb",
-                          }
-                    }
-                  >
-                    <input
-                      type="radio"
-                      value={p.value}
-                      {...register("priority")}
-                      className="sr-only"
-                    />
-                    {p.label}
-                  </label>
-                ))}
-              </div>
+              <Field label="Ward / room" hint="Optional — can be set later.">
+                <Input placeholder="e.g. OPD Ward 3, Room 12B" {...register("wardOrRoom")} />
+              </Field>
             </div>
-
-            {/* Ward / Room */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-semibold text-gray-700">
-                Ward / Room{" "}
-                <span className="text-xs font-normal text-gray-400">
-                  (optional)
-                </span>
-              </label>
-              <input
-                {...register("wardOrRoom")}
-                placeholder="e.g. OPD Ward 3, Room 12B"
-                className={inputCls}
-              />
-            </div>
-          </div>
+          </Card>
 
           {submitError && (
-            <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-red-50 border border-red-100">
-              <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-red-700">{submitError}</p>
-            </div>
+            <Banner tone="critical" icon={AlertCircle}>
+              {submitError}
+            </Banner>
           )}
 
-          <div className="flex items-center justify-between gap-3 pb-6">
-            <button
-              type="button"
-              onClick={() => setStep(1)}
-              className="px-5 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              Back
-            </button>
-            <button
+          <div className="flex items-center justify-between" style={{ gap: 12 }}>
+            <Button onClick={() => setStep(1)}>Back</Button>
+            <Button
               type="submit"
-              disabled={submitting}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white text-sm font-semibold shadow-sm disabled:opacity-60 hover:shadow-md transition-all"
-              style={{
-                background: "linear-gradient(135deg, #166534, #15803d)",
-              }}
+              variant="primary"
+              icon={Activity}
+              loading={submitting}
             >
-              {submitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Creating Visit…
-                </>
-              ) : (
-                <>
-                  <Activity className="w-4 h-4" /> Create Visit
-                </>
-              )}
-            </button>
+              {submitting ? "Creating visit…" : "Create visit"}
+            </Button>
           </div>
         </form>
       )}
 
       {/* ── STEP 3: Assign Nurse ────────────────────────────────────────────── */}
       {step === 3 && createdVisit && (
-        <div className="space-y-4">
-          <div
-            className="flex items-center gap-3 p-4 rounded-2xl border"
-            style={{ background: "#f0fdf4", borderColor: "#bbf7d0" }}
+        <>
+          <Banner
+            tone="success"
+            icon={CheckCircle2}
+            title={`Visit ${createdVisit.visitNumber} created`}
           >
-            <CheckCircle2
-              className="w-5 h-5 flex-shrink-0"
-              style={{ color: "#166534" }}
-            />
-            <div>
-              <p className="text-sm font-bold text-green-900">
-                Visit {createdVisit.visitNumber} created
-              </p>
-              <p className="text-xs text-green-700 mt-0.5">
-                Now assign a nurse so the patient appears in their triage queue.
-              </p>
-            </div>
-          </div>
+            Now assign a nurse so the patient appears in their triage queue.
+          </Banner>
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-2">
-              <Stethoscope className="w-4 h-4 text-green-700" />
-              <h2 className="text-sm font-bold text-gray-800">
-                Select a Nurse
-              </h2>
-            </div>
+          <Card>
+            <CardHeader icon={Stethoscope} title="Select a nurse" />
 
             {nursesLoading ? (
-              <div className="flex items-center justify-center py-12 gap-2">
-                <Loader2 className="w-5 h-5 animate-spin text-green-700" />
-                <span className="text-sm text-gray-400">Loading nurses…</span>
+              <div
+                className="flex items-center justify-center"
+                style={{ padding: 48, gap: 9 }}
+              >
+                <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--brand)" }} />
+                <span
+                  style={{ font: "400 13px/1 var(--font-sans)", color: "var(--text-muted)" }}
+                >
+                  Loading nurses…
+                </span>
               </div>
             ) : nurses.length === 0 ? (
-              <div className="py-10 text-center">
-                <p className="text-sm text-gray-400">
-                  No nurses available in your institution.
-                </p>
-              </div>
+              <EmptyState
+                icon={Stethoscope}
+                title="No nurses available"
+                message="No nurses are online in your institution right now. You can skip this and assign one later."
+                tone="neutral"
+              />
             ) : (
-              <div className="p-3 space-y-2">
+              <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 6 }}>
                 {nurses.map((nurse) => {
                   const selected = selectedNurseId === nurse.id;
                   return (
                     <button
                       key={nurse.id}
                       onClick={() => setSelectedNurseId(nurse.id)}
-                      className="w-full flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all"
-                      style={
-                        selected
-                          ? { borderColor: "#166534", background: "#f0fdf4" }
-                          : { borderColor: "#f3f4f6", background: "#fff" }
-                      }
+                      className="w-full flex items-center text-left"
+                      style={{
+                        gap: 12,
+                        padding: 12,
+                        borderRadius: "var(--r-sm)",
+                        border: `1px solid ${selected ? "var(--brand)" : "var(--border-faint)"}`,
+                        background: selected ? "var(--brand-tint)" : "transparent",
+                        cursor: "pointer",
+                        transition: "all var(--dur-fast) var(--ease-standard)",
+                      }}
                     >
-                      <div
-                        className="w-9 h-9 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-                        style={{ background: selected ? "#166534" : "#d1d5db" }}
-                      >
-                        {nurse.name?.[0] || "N"}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-gray-800 truncate">
+                      <Avatar name={nurse.name} size={36} seed={2} />
+                      <div className="flex-1 min-w-0 flex flex-col" style={{ gap: 4 }}>
+                        <span
+                          className="truncate"
+                          style={{
+                            font: "600 13.5px/1 var(--font-sans)",
+                            color: "var(--text-primary)",
+                          }}
+                        >
                           {nurse.name}
-                        </p>
-                        <p className="text-xs text-gray-400 font-mono">
+                        </span>
+                        <span
+                          style={{
+                            font: "400 11px/1 var(--font-mono)",
+                            color: "var(--text-muted)",
+                          }}
+                        >
                           {nurse.id.slice(0, 12)}…
-                        </p>
+                        </span>
                       </div>
                       {selected && (
                         <CheckCircle2
                           className="w-4 h-4 flex-shrink-0"
-                          style={{ color: "#166534" }}
+                          style={{ color: "var(--green-700)" }}
                         />
                       )}
                     </button>
@@ -884,121 +881,119 @@ function NewVisitPageInner() {
                 })}
               </div>
             )}
-          </div>
+          </Card>
 
           {assignError && (
-            <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-red-50 border border-red-100">
-              <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-red-700">{assignError}</p>
-            </div>
+            <Banner tone="critical" icon={AlertCircle}>
+              {assignError}
+            </Banner>
           )}
 
-          <div className="flex items-center justify-between gap-3 pb-6">
-            <button
-              onClick={() => setStep(4)}
-              className="px-5 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-500 hover:bg-gray-50 transition-colors"
-            >
+          <div className="flex items-center justify-between" style={{ gap: 12 }}>
+            <Button variant="ghost" onClick={() => setStep(4)}>
               Skip for now
-            </button>
-            <button
+            </Button>
+            <Button
+              variant="primary"
+              icon={Stethoscope}
+              loading={assigning}
+              disabled={!selectedNurseId}
               onClick={handleAssignNurse}
-              disabled={!selectedNurseId || assigning}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-white text-sm font-semibold shadow-sm disabled:opacity-50 hover:shadow-md transition-all"
-              style={{
-                background: "linear-gradient(135deg, #166534, #15803d)",
-              }}
             >
-              {assigning ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Assigning…
-                </>
-              ) : (
-                <>
-                  <Stethoscope className="w-4 h-4" /> Assign Nurse
-                </>
-              )}
-            </button>
+              {assigning ? "Assigning…" : "Assign nurse"}
+            </Button>
           </div>
-        </div>
+        </>
       )}
 
       {/* ── STEP 4: Success ─────────────────────────────────────────────────── */}
       {step === 4 && createdVisit && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-8 text-center space-y-5">
-          <div
-            className="w-16 h-16 rounded-full flex items-center justify-center mx-auto"
-            style={{ background: "rgba(22,101,52,0.1)" }}
-          >
-            <CheckCircle2 className="w-8 h-8" style={{ color: "#166534" }} />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold text-gray-900">Visit Created!</h2>
-            <p className="text-sm text-gray-500 mt-1">
+        <Card pad={32}>
+          <div className="flex flex-col items-center text-center" style={{ gap: 14 }}>
+            <span
+              className="inline-flex items-center justify-center"
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: "var(--r-md)",
+                background: "var(--brand-tint)",
+                color: "var(--green-700)",
+              }}
+            >
+              <CheckCircle2 className="w-7 h-7" />
+            </span>
+
+            <h2
+              style={{
+                margin: 0,
+                font: "700 22px/1.2 var(--font-sans)",
+                letterSpacing: "var(--ls-tight)",
+                color: "var(--text-primary)",
+              }}
+            >
+              Visit created
+            </h2>
+
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 380,
+                font: "400 13.5px/1.5 var(--font-sans)",
+                color: "var(--text-secondary)",
+              }}
+            >
               {selectedNurseId
                 ? "The patient has been added to the assigned nurse's triage queue."
                 : "The visit is live. Assign a nurse from the visit page when ready."}
             </p>
-          </div>
 
-          <div className="bg-gray-50 rounded-xl p-4 text-left space-y-3">
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Visit Number</span>
-              <span className="font-bold font-mono text-gray-800">
-                {createdVisit.visitNumber}
-              </span>
-            </div>
-            <div className="flex justify-between text-sm">
-              <span className="text-gray-500">Patient</span>
-              <span className="font-semibold text-gray-800">
-                {selectedPatient?.firstName} {selectedPatient?.lastName}
-              </span>
-            </div>
-            {selectedNurseId && (
-              <div className="flex justify-between text-sm">
-                <span className="text-gray-500">Assigned Nurse</span>
-                <span className="font-semibold text-gray-800">
-                  {nurses.find((n) => n.id === selectedNurseId)?.name ??
-                    "Assigned"}
-                </span>
-              </div>
-            )}
             <div
-              className="flex items-center gap-2 p-3 rounded-xl mt-2"
+              className="w-full text-left"
               style={{
-                background: "rgba(22,101,52,0.08)",
-                border: "1px solid rgba(22,101,52,0.15)",
+                marginTop: 6,
+                padding: "4px 16px 12px",
+                borderRadius: "var(--r-sm)",
+                background: "var(--surface-sunken)",
               }}
             >
-              <Activity
-                className="w-4 h-4 flex-shrink-0"
-                style={{ color: "#166534" }}
+              <DataRow
+                label="Visit number"
+                value={<MonoTag>{createdVisit.visitNumber}</MonoTag>}
               />
-              <p className="text-xs font-medium" style={{ color: "#166534" }}>
+              <DataRow
+                label="Patient"
+                value={`${selectedPatient?.firstName ?? ""} ${selectedPatient?.lastName ?? ""}`}
+              />
+              {selectedNurseId && (
+                <DataRow
+                  label="Assigned nurse"
+                  value={nurses.find((n) => n.id === selectedNurseId)?.name ?? "Assigned"}
+                />
+              )}
+            </div>
+
+            <div className="w-full" style={{ marginTop: 2 }}>
+              <Banner tone="success" icon={Activity}>
                 This visit is now live in the queue.
-              </p>
+              </Banner>
+            </div>
+
+            <div className="w-full flex" style={{ gap: 12, marginTop: 6 }}>
+              <Button full onClick={handleReset}>
+                New visit
+              </Button>
+              <Button
+                variant="primary"
+                full
+                onClick={() => router.push("/dashboard/receptionist/queue")}
+              >
+                View queue
+              </Button>
             </div>
           </div>
-
-          <div className="flex gap-3">
-            <button
-              onClick={handleReset}
-              className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              New Visit
-            </button>
-            <button
-              onClick={() => router.push("/dashboard/receptionist/queue")}
-              className="flex-1 px-4 py-2.5 rounded-xl text-sm font-semibold text-white"
-              style={{
-                background: "linear-gradient(135deg, #166534, #15803d)",
-              }}
-            >
-              View Queue
-            </button>
-          </div>
-        </div>
+        </Card>
       )}
-    </div>
+    </Page>
   );
 }
 
@@ -1006,9 +1001,11 @@ export default function NewVisitPage() {
   return (
     <Suspense
       fallback={
-        <div className="flex items-center justify-center h-64 gap-3">
-          <Loader2 className="w-5 h-5 animate-spin text-green-700" />
-          <span className="text-sm text-gray-500">Loading…</span>
+        <div className="flex items-center justify-center" style={{ height: 256, gap: 10 }}>
+          <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--brand)" }} />
+          <span style={{ font: "400 13.5px/1 var(--font-sans)", color: "var(--text-secondary)" }}>
+            Loading…
+          </span>
         </div>
       }
     >

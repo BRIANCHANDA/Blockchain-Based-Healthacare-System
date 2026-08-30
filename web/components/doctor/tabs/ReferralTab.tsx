@@ -5,20 +5,33 @@ import { CreateReferralModal } from "@/components/doctor/tabs/CreateReferalModal
 import { InternalReferralModal } from "@/components/doctor/tabs/InternalReferralModal";
 import {
   ArrowLeftRight,
-  PlusCircle,
   Building2,
-  Clock,
-  CheckCircle2,
-  XCircle,
-  Hourglass,
-  AlertTriangle,
-  Zap,
   ChevronRight,
   Stethoscope,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
+import {
+  Pill as Badge,
+  MonoTag,
+  Button,
+  EmptyState,
+  SkeletonBlock,
+  SectionLabel,
+  TONES,
+} from "@/components/dashboard/ui";
+import { getReferralUrgency, getReferralStatus } from "./referralVocab";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+/* ==========================================================================
+   Referrals tab.
+
+   Two distinct routes out of a visit:
+     · Internal — another specialist in this institution (an appointment)
+     · External — another institution entirely (anchored on the blockchain)
+
+   The list below shows OUTGOING referrals for the whole practitioner, not
+   just this visit — /api/referrals/outgoing takes no visit filter.
+   ========================================================================== */
+
 interface Referral {
   id: string;
   referralNumber: string;
@@ -33,183 +46,138 @@ interface Referral {
   receivingInstitutionName: string;
 }
 
-// ── Config ────────────────────────────────────────────────────────────────────
-const URGENCY: Record<
-  string,
-  {
-    color: string;
-    bg: string;
-    border: string;
-    dot: string;
-    label: string;
-    icon: any;
-  }
-> = {
-  routine: {
-    color: "#166534",
-    bg: "#f0fdf4",
-    border: "#bbf7d0",
-    dot: "#16a34a",
-    label: "Routine",
-    icon: Clock,
-  },
-  urgent: {
-    color: "#d97706",
-    bg: "#fffbeb",
-    border: "#fde68a",
-    dot: "#f59e0b",
-    label: "Urgent",
-    icon: AlertTriangle,
-  },
-  emergency: {
-    color: "#ea580c",
-    bg: "#fff7ed",
-    border: "#fed7aa",
-    dot: "#f97316",
-    label: "Emergency",
-    icon: AlertTriangle,
-  },
-  critical: {
-    color: "#dc2626",
-    bg: "#fef2f2",
-    border: "#fecaca",
-    dot: "#ef4444",
-    label: "Critical",
-    icon: Zap,
-  },
-};
-const getU = (u: string) => URGENCY[u] ?? URGENCY.routine;
-
-const STATUS: Record<
-  string,
-  { color: string; bg: string; border: string; label: string; icon: any }
-> = {
-  pending: {
-    color: "#d97706",
-    bg: "#fffbeb",
-    border: "#fde68a",
-    label: "Pending",
-    icon: Hourglass,
-  },
-  accepted: {
-    color: "#1d4ed8",
-    bg: "#eff6ff",
-    border: "#bfdbfe",
-    label: "Accepted",
-    icon: CheckCircle2,
-  },
-  completed: {
-    color: "#166534",
-    bg: "#f0fdf4",
-    border: "#bbf7d0",
-    label: "Completed",
-    icon: CheckCircle2,
-  },
-  rejected: {
-    color: "#dc2626",
-    bg: "#fef2f2",
-    border: "#fecaca",
-    label: "Rejected",
-    icon: XCircle,
-  },
-  cancelled: {
-    color: "#6b7280",
-    bg: "#f9fafb",
-    border: "#e5e7eb",
-    label: "Cancelled",
-    icon: XCircle,
-  },
-};
-const getS = (s: string) => STATUS[s] ?? STATUS.pending;
-
 // ── Referral card ─────────────────────────────────────────────────────────────
 function ReferralCard({ referral }: { referral: Referral }) {
-  const u = getU(referral.urgency);
-  const s = getS(referral.status);
+  const u = getReferralUrgency(referral.urgency);
+  const s = getReferralStatus(referral.status);
+  const sTone = TONES[s.tone];
   const StatusIcon = s.icon;
-  const UrgencyIcon = u.icon;
 
   return (
     <div
-      className="rounded-2xl border overflow-hidden"
-      style={{ borderColor: s.border }}
+      style={{
+        border: "1px solid var(--hc-border)",
+        borderRadius: "var(--r-md)",
+        overflow: "hidden",
+      }}
     >
-      {/* Status strip */}
       <div
-        className="flex items-center justify-between px-4 py-2.5"
-        style={{ background: s.bg }}
+        className="flex items-center justify-between"
+        style={{ gap: 10, padding: "10px 16px", background: sTone.tint }}
       >
-        <div className="flex items-center gap-2">
-          <StatusIcon className="w-3.5 h-3.5" style={{ color: s.color }} />
+        <span className="inline-flex items-center" style={{ gap: 8 }}>
+          <StatusIcon className="w-3.5 h-3.5" style={{ color: sTone.ink }} />
           <span
-            className="text-xs font-bold uppercase tracking-wide"
-            style={{ color: s.color }}
+            style={{
+              font: "700 11px/1 var(--font-sans)",
+              letterSpacing: "var(--ls-caps)",
+              textTransform: "uppercase",
+              color: sTone.ink,
+            }}
           >
             {s.label}
           </span>
-        </div>
-        <span className="text-xs font-mono text-gray-500">
-          {referral.referralNumber}
         </span>
+        <MonoTag style={{ height: 18, fontSize: 10, background: "var(--surface-card)" }}>
+          {referral.referralNumber}
+        </MonoTag>
       </div>
 
-      <div className="px-4 py-3.5 bg-white space-y-2.5">
-        {/* Patient + institution */}
-        <div>
-          <p className="text-sm font-bold text-gray-900">
+      <div
+        style={{
+          padding: 16,
+          background: "var(--surface-card)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 10,
+        }}
+      >
+        <div className="flex flex-col" style={{ gap: 5 }}>
+          <p
+            style={{
+              margin: 0,
+              font: "700 13.5px/1 var(--font-sans)",
+              color: "var(--text-primary)",
+            }}
+          >
             {referral.patientName}
           </p>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <Building2 className="w-3 h-3 text-gray-400" />
-            <p className="text-xs text-gray-500">
-              {referral.receivingInstitutionName}
-            </p>
-          </div>
+          <span
+            className="inline-flex items-center"
+            style={{
+              gap: 6,
+              font: "400 12px/1 var(--font-sans)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            <Building2 className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+            {referral.receivingInstitutionName}
+          </span>
         </div>
 
-        {/* Reason */}
-        <p className="text-xs text-gray-600 leading-relaxed">
+        <p
+          style={{
+            margin: 0,
+            font: "400 12.5px/1.6 var(--font-sans)",
+            color: "var(--text-secondary)",
+          }}
+        >
           {referral.reason}
         </p>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between pt-1">
-          <span
-            className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded-full"
-            style={{
-              background: u.bg,
-              color: u.color,
-              border: `1px solid ${u.border}`,
-            }}
-          >
-            <UrgencyIcon className="w-2.5 h-2.5" />
+        <div className="flex items-center justify-between flex-wrap" style={{ gap: 10 }}>
+          <Badge tone={u.tone} icon={u.icon} style={{ height: 20, fontSize: 10 }}>
             {u.label}
-          </span>
-          <div className="text-right">
-            <p className="text-[10px] text-gray-400">
-              {formatDistanceToNow(new Date(referral.referredAt), {
-                addSuffix: true,
-              })}
-            </p>
+          </Badge>
+
+          <div className="text-right flex flex-col" style={{ gap: 3 }}>
+            <span
+              style={{
+                font: "400 11px/1 var(--font-sans)",
+                color: "var(--text-muted)",
+              }}
+            >
+              {formatDistanceToNow(new Date(referral.referredAt), { addSuffix: true })}
+            </span>
             {referral.acceptedAt && (
-              <p className="text-[10px] text-blue-500">
+              <span
+                style={{ font: "500 11px/1 var(--font-sans)", color: "var(--info-ink)" }}
+              >
                 Accepted {format(new Date(referral.acceptedAt), "dd MMM HH:mm")}
-              </p>
+              </span>
             )}
             {referral.completedAt && (
-              <p className="text-[10px] text-green-600">
-                Completed{" "}
-                {format(new Date(referral.completedAt), "dd MMM HH:mm")}
-              </p>
+              <span
+                style={{ font: "500 11px/1 var(--font-sans)", color: "var(--green-800)" }}
+              >
+                Completed {format(new Date(referral.completedAt), "dd MMM HH:mm")}
+              </span>
             )}
           </div>
         </div>
 
-        {/* Response notes */}
         {referral.responseNotes && (
-          <div className="flex gap-2 px-3 py-2 rounded-xl bg-gray-50 border border-gray-100">
-            <ChevronRight className="w-3.5 h-3.5 text-gray-400 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-gray-600 italic">
+          <div
+            className="flex"
+            style={{
+              gap: 8,
+              padding: "10px 12px",
+              borderRadius: "var(--r-xs)",
+              background: "var(--surface-sunken)",
+            }}
+          >
+            <ChevronRight
+              className="w-3.5 h-3.5 flex-shrink-0"
+              style={{ color: "var(--text-muted)", marginTop: 2 }}
+            />
+            <p
+              style={{
+                margin: 0,
+                font: "400 12px/1.5 var(--font-sans)",
+                color: "var(--text-secondary)",
+                fontStyle: "italic",
+              }}
+            >
               {referral.responseNotes}
             </p>
           </div>
@@ -260,91 +228,77 @@ export function ReferralTab({
     load();
   }, [load]);
 
+  const actions = (
+    <>
+      <Button icon={Stethoscope} onClick={() => setShowInternal(true)}>
+        Internal
+      </Button>
+      <Button
+        variant="primary"
+        icon={ArrowLeftRight}
+        onClick={() => setShowExternal(true)}
+        style={{ background: "var(--blue-600)", boxShadow: "none" }}
+      >
+        External
+      </Button>
+    </>
+  );
+
   return (
-    <div
-      className="p-5 space-y-4"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
-    >
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
-            Referrals
-          </p>
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="flex items-center justify-between flex-wrap" style={{ gap: 12 }}>
+        <div className="flex flex-col" style={{ gap: 5 }}>
+          <SectionLabel>Referrals</SectionLabel>
           {referrals.length > 0 && (
-            <p className="text-xs text-gray-500 mt-0.5">
-              {referrals.length} referral{referrals.length !== 1 ? "s" : ""}{" "}
-              sent
-            </p>
+            <span
+              style={{
+                font: "400 12px/1 var(--font-sans)",
+                color: "var(--text-secondary)",
+              }}
+            >
+              {referrals.length} referral{referrals.length !== 1 ? "s" : ""} sent
+            </span>
           )}
         </div>
 
         {!isCompleted && (
-          <div className="flex items-center gap-2">
-            {/* Internal — same institution, different specialist */}
-            <button
-              onClick={() => setShowInternal(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold border border-green-200 text-green-700 hover:bg-green-50 transition-all"
-            >
-              <Stethoscope className="w-3.5 h-3.5" />
-              Internal
-            </button>
-
-            {/* External — cross-institution blockchain referral */}
-            <button
-              onClick={() => setShowExternal(true)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md hover:-translate-y-px"
-              style={{
-                background: "linear-gradient(135deg, #1d4ed8, #1e40af)",
-              }}
-            >
-              <ArrowLeftRight className="w-3.5 h-3.5" />
-              External
-            </button>
+          <div className="flex items-center" style={{ gap: 10 }}>
+            {actions}
           </div>
         )}
       </div>
 
-      {/* ── List ───────────────────────────────────────────────────────── */}
       {loading ? (
-        <div className="space-y-3">
+        <div className="flex flex-col" style={{ gap: 12 }}>
           {[...Array(2)].map((_, i) => (
-            <div
-              key={i}
-              className="h-32 rounded-2xl bg-gray-50 animate-pulse"
-            />
+            <SkeletonBlock key={i} height={128} radius="var(--r-md)" />
           ))}
         </div>
       ) : referrals.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 py-12 rounded-2xl border border-dashed border-gray-200 bg-gray-50/60">
-          <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center">
-            <ArrowLeftRight className="w-5 h-5 text-blue-400" />
-          </div>
-          <p className="text-sm font-semibold text-gray-400">
-            No referrals yet
-          </p>
-          {!isCompleted && (
-            <div className="flex items-center gap-2 mt-2">
-              <button
-                onClick={() => setShowInternal(true)}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold border border-green-200 text-green-700 hover:bg-green-50 transition-all"
-              >
-                <Stethoscope className="w-3.5 h-3.5" /> Internal
-              </button>
-              <button
-                onClick={() => setShowExternal(true)}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold text-white"
-                style={{
-                  background: "linear-gradient(135deg, #1d4ed8, #1e40af)",
-                }}
-              >
-                <ArrowLeftRight className="w-3.5 h-3.5" /> External
-              </button>
-            </div>
-          )}
+        <div
+          style={{
+            borderRadius: "var(--r-md)",
+            border: "1.5px dashed var(--hc-border)",
+            background: "var(--surface-sunken)",
+          }}
+        >
+          <EmptyState
+            icon={ArrowLeftRight}
+            title="No referrals yet"
+            message="Refer this patient to a colleague or another institution."
+            tone="info"
+            pad={40}
+            action={
+              !isCompleted ? (
+                <div className="flex items-center" style={{ gap: 10 }}>
+                  {actions}
+                </div>
+              ) : undefined
+            }
+          />
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="flex flex-col" style={{ gap: 12 }}>
           {referrals.map((r) => (
             <ReferralCard key={r.id} referral={r} />
           ))}

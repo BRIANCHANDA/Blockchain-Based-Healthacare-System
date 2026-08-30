@@ -3,19 +3,20 @@
 /*
  * Shared chrome for every role's dashboard.
  *
- * All seven portals previously carried their own near-identical copy of this
- * sidebar, top bar and footer — around 2,400 lines of duplicated markup that
- * had already drifted apart (different background shades, three different
- * active-state treatments, and an active-link bug fixed in one copy only).
+ * Styling follows the HealthChain design system imported from
+ * claude.ai/design ("MedLink EMR Sidebar Layout"): a deep-green sidebar
+ * carrying the brand, against a near-white application surface. Values come
+ * from the token layer in app/design-tokens.css — reference the semantic
+ * aliases (--brand, --text-primary, --r-md) rather than raw hex, so a palette
+ * change stays a one-line edit there.
  *
- * The admin portal's treatment is the reference design, so it lives here once
- * and each role supplies only what actually differs: its navigation, its portal
- * label, and optionally a context card or a header chip.
+ * All seven portals share this one component. Each supplies only what differs:
+ * its navigation, its portal label, and optionally a header element.
  */
 
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { ChevronRight, LogOut, Menu, X } from "lucide-react";
+import { ChevronRight, LogOut, Menu, X, Building2 } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { ProfileDrawer } from "@/components/ProfileDrawer";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -25,10 +26,11 @@ export interface NavItem {
   label: string;
   href: string;
   icon: React.ElementType;
+  /** Optional count shown as an amber pill, e.g. items awaiting action. */
+  badge?: number;
 }
 
 export interface NavGroup {
-  /** Omit for a single ungrouped list. */
   label?: string;
   items: NavItem[];
 }
@@ -38,20 +40,16 @@ export function DashboardShell({
   basePath,
   navGroups,
   roleLabel,
-  contextCard,
   headerExtra,
   children,
 }: {
-  /** Shown under the brand, e.g. "Nurse Portal". */
+  /** Shown in the sidebar pill, e.g. "Reception portal". */
   portalLabel: string;
-  /** The portal root, e.g. "/dashboard/nurse". Matched exactly for its own item. */
+  /** Portal root, e.g. "/dashboard/receptionist". Matched exactly for its own item. */
   basePath: string;
   navGroups: NavGroup[];
-  /** Shown beneath the user's name in the sidebar footer. */
+  /** Shown beneath the user's name in the profile button. */
   roleLabel: string;
-  /** Optional badge above the navigation (the admin portal's scope indicator). */
-  contextCard?: React.ReactNode;
-  /** Optional element in the top bar, before the clock. */
   headerExtra?: React.ReactNode;
   children: React.ReactNode;
 }) {
@@ -78,6 +76,7 @@ export function DashboardShell({
   }, []);
 
   const initials = `${user?.firstName?.[0] ?? ""}${user?.lastName?.[0] ?? ""}`;
+  const institutionName = (user as any)?.institutionName ?? null;
 
   /*
    * A bare startsWith let a route match a sibling sharing its prefix — for
@@ -106,132 +105,341 @@ export function DashboardShell({
   });
 
   return (
-    <div className="min-h-screen bg-[#f7f9f8] text-slate-900">
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "var(--surface-app)",
+        fontFamily: "var(--font-sans)",
+        color: "var(--text-primary)",
+      }}
+    >
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-slate-950/40 backdrop-blur-[2px] lg:hidden"
+          className="fixed inset-0 z-40 lg:hidden"
+          style={{ background: "var(--sidebar-scrim)", backdropFilter: "blur(2px)" }}
           onClick={() => setSidebarOpen(false)}
         />
       )}
 
       {/* ── Sidebar ───────────────────────────────────────────────────────── */}
       <aside
-        className={`
-          fixed inset-y-0 left-0 z-50 w-[250px]
-          bg-white border-r border-slate-200
-          flex flex-col
-          transition-transform duration-300 ease-out
-          lg:translate-x-0
-          ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}
-        `}
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col transition-transform duration-300 lg:translate-x-0 ${
+          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+        style={{
+          width: 274,
+          background: "var(--sidebar-bg)",
+          borderRight: "1px solid var(--sidebar-line)",
+        }}
       >
-        {/* Brand */}
-        <div className="h-[72px] px-5 flex items-center border-b border-slate-100">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-xl overflow-hidden flex-shrink-0 shadow-sm">
-              <Logo size={36} />
-            </div>
-
-            <div className="min-w-0">
+        {/* Brand block */}
+        <div
+          style={{
+            padding: "22px 20px 18px",
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+            borderBottom: "1px solid var(--sidebar-line)",
+          }}
+        >
+          <div className="flex items-center gap-3">
+            <Logo size={38} />
+            <div className="min-w-0 flex flex-col gap-[3px]">
               <p
-                className="text-[16px] font-bold text-slate-900 leading-none"
-                style={{ fontFamily: "'Playfair Display', serif" }}
+                style={{
+                  margin: 0,
+                  font: "600 19px/1 var(--font-display)",
+                  color: "var(--white)",
+                  letterSpacing: "-0.01em",
+                }}
               >
                 MedLink
               </p>
-
-              <p className="mt-1 text-[10.5px] font-bold tracking-[0.14em] uppercase text-emerald-600">
-                {portalLabel}
+              <p
+                style={{
+                  margin: 0,
+                  font: "500 11px/1 var(--font-mono)",
+                  color: "var(--sidebar-accent)",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                ZAMBIA · EMR
               </p>
             </div>
           </div>
 
+          {/* Portal pill — the pulse signals a live, auto-refreshing view. */}
+          <div
+            className="self-start flex items-center gap-[7px]"
+            style={{
+              height: 24,
+              padding: "0 10px 0 8px",
+              borderRadius: "var(--r-pill)",
+              background: "var(--sidebar-active)",
+              border: "1px solid var(--sidebar-active-line)",
+            }}
+          >
+            <span className="relative flex" style={{ width: 6, height: 6 }}>
+              <span
+                className="absolute inset-0 rounded-full"
+                style={{
+                  background: "var(--green-300)",
+                  animation: "hcPing 2.4s cubic-bezier(0,0,0.2,1) infinite",
+                }}
+              />
+              <span
+                className="relative rounded-full"
+                style={{ width: 6, height: 6, background: "var(--green-300)" }}
+              />
+            </span>
+            <span
+              style={{
+                font: "700 10px/1 var(--font-sans)",
+                letterSpacing: "var(--ls-caps)",
+                textTransform: "uppercase",
+                color: "var(--green-200)",
+              }}
+            >
+              {portalLabel}
+            </span>
+          </div>
+
+          {/* Which institution the user is acting for — the scope of everything
+              they see. Super admins have none, so it is hidden. */}
+          {institutionName && (
+            <div
+              className="flex items-center gap-[10px]"
+              style={{
+                padding: "10px 12px",
+                borderRadius: "var(--r-sm)",
+                background: "var(--sidebar-raise)",
+                border: "1px solid var(--sidebar-line)",
+              }}
+            >
+              <Building2 className="w-4 h-4 flex-shrink-0" style={{ color: "var(--green-300)" }} />
+              <div className="min-w-0 flex flex-col gap-[2px]">
+                <p
+                  style={{
+                    margin: 0,
+                    font: "600 9.5px/1 var(--font-sans)",
+                    letterSpacing: "var(--ls-caps)",
+                    textTransform: "uppercase",
+                    color: "var(--sidebar-text-dim)",
+                  }}
+                >
+                  Institution
+                </p>
+                <p
+                  className="truncate"
+                  style={{
+                    margin: 0,
+                    font: "600 13px/1.2 var(--font-sans)",
+                    color: "var(--green-050)",
+                  }}
+                >
+                  {institutionName}
+                </p>
+              </div>
+            </div>
+          )}
+
           <button
-            className="ml-auto lg:hidden p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="absolute right-4 top-6 lg:hidden p-1.5 rounded-[var(--r-xs)]"
+            style={{ color: "var(--sidebar-text-dim)" }}
             onClick={() => setSidebarOpen(false)}
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {contextCard && <div className="px-4 pt-4 pb-3">{contextCard}</div>}
-
         {/* Navigation */}
-        <nav className="flex-1 overflow-y-auto px-3 pb-4 pt-2 scrollbar-thin">
+        <nav
+          className="flex-1 overflow-y-auto flex flex-col"
+          style={{ padding: "16px 14px", gap: 18 }}
+        >
           {navGroups.map((group, gi) => (
-            <div key={group.label ?? `group-${gi}`} className="mb-5">
+            <div
+              key={group.label ?? `group-${gi}`}
+              className="flex flex-col"
+              style={{ gap: 4 }}
+            >
               {group.label && (
-                <p className="px-3 py-2 text-[11px] font-bold uppercase tracking-[0.13em] text-slate-400">
+                <p
+                  style={{
+                    margin: "0 0 4px 12px",
+                    font: "700 9.5px/1 var(--font-sans)",
+                    letterSpacing: "var(--ls-caps)",
+                    textTransform: "uppercase",
+                    color: "var(--sidebar-text-faint)",
+                  }}
+                >
                   {group.label}
                 </p>
               )}
 
-              <div className="space-y-0.5">
-                {group.items.map(({ label, href, icon: Icon }) => {
-                  const active = isActiveHref(href);
+              {group.items.map(({ label, href, icon: Icon, badge }) => {
+                const active = isActiveHref(href);
 
-                  return (
+                return (
+                  <div key={href} className="relative flex">
+                    {active && (
+                      <span
+                        style={{
+                          position: "absolute",
+                          left: -14,
+                          top: 12,
+                          width: 3,
+                          height: 20,
+                          borderRadius: "0 2px 2px 0",
+                          background: "var(--green-300)",
+                        }}
+                      />
+                    )}
+
                     <button
-                      key={href}
                       onClick={() => {
                         router.push(href);
                         setSidebarOpen(false);
                       }}
-                      className={`
-                        relative w-full flex items-center gap-3
-                        px-3 py-2.5 rounded-xl text-left
-                        text-[13.5px] font-medium transition-all
-                        ${
-                          active
-                            ? "bg-emerald-50 text-emerald-800"
-                            : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-                        }
-                      `}
+                      className="flex-1 flex items-center text-left"
+                      style={{
+                        gap: 11,
+                        height: 44,
+                        padding: "0 10px 0 12px",
+                        borderRadius: "var(--r-sm)",
+                        border: active
+                          ? "1px solid var(--sidebar-active-line)"
+                          : "1px solid transparent",
+                        background: active ? "var(--sidebar-active)" : "transparent",
+                        color: active ? "var(--white)" : "var(--sidebar-text)",
+                        font: `${active ? 600 : 500} 14px/1 var(--font-sans)`,
+                        cursor: "pointer",
+                        transition: "background var(--dur-fast) var(--ease-standard)",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!active)
+                          e.currentTarget.style.background = "var(--sidebar-raise)";
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!active) e.currentTarget.style.background = "transparent";
+                      }}
                     >
-                      {active && (
-                        <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-emerald-600" />
-                      )}
+                      <Icon className="w-[18px] h-[18px] flex-shrink-0" />
+                      <span className="flex-1 min-w-0 truncate">{label}</span>
 
-                      <Icon
-                        className={`w-[16px] h-[16px] flex-shrink-0 ${
-                          active ? "text-emerald-600" : "text-slate-400"
-                        }`}
-                      />
-
-                      <span className="flex-1">{label}</span>
-
-                      {active && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                      )}
+                      {badge ? (
+                        <span
+                          className="inline-flex items-center justify-center"
+                          style={{
+                            minWidth: 20,
+                            height: 20,
+                            padding: "0 6px",
+                            borderRadius: "var(--r-pill)",
+                            // Dark ink on the amber fill: --urgent-ink on
+                            // --urgent is only ~2.4:1 and unreadable at 11px.
+                            background: "var(--urgent)",
+                            color: "var(--ink-900)",
+                            font: "700 11px/1 var(--font-sans)",
+                          }}
+                        >
+                          {badge}
+                        </span>
+                      ) : active ? (
+                        <ChevronRight className="w-[15px] h-[15px]" />
+                      ) : null}
                     </button>
-                  );
-                })}
-              </div>
+                  </div>
+                );
+              })}
             </div>
           ))}
         </nav>
 
-        {/* User area */}
-        <div className="border-t border-slate-100 p-3">
+        {/* Clock — mono numerals so the width does not jitter each minute. */}
+        <div
+          className="flex items-baseline justify-between"
+          style={{
+            margin: "0 14px",
+            padding: "12px 14px",
+            borderRadius: "var(--r-sm)",
+            background: "var(--sidebar-raise)",
+            gap: 8,
+          }}
+        >
+          <p
+            style={{
+              margin: 0,
+              font: "500 20px/1 var(--font-mono)",
+              color: "var(--green-050)",
+              letterSpacing: "-0.01em",
+            }}
+          >
+            {timeStr}
+          </p>
+          <p
+            style={{
+              margin: 0,
+              font: "500 11px/1 var(--font-sans)",
+              color: "var(--sidebar-text-dim)",
+            }}
+          >
+            {dateStr}
+          </p>
+        </div>
+
+        {/* Profile + sign out */}
+        <div style={{ padding: 14, display: "flex", flexDirection: "column", gap: 6 }}>
           <button
             onClick={() => setProfileOpen(true)}
-            className="w-full flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 transition-colors text-left"
+            className="flex items-center text-left"
+            style={{
+              gap: 11,
+              padding: "9px 10px",
+              border: "1px solid var(--sidebar-line)",
+              borderRadius: "var(--r-sm)",
+              background: "var(--sidebar-raise)",
+              cursor: "pointer",
+            }}
           >
-            <div className="w-9 h-9 rounded-full bg-emerald-700 text-white flex items-center justify-center text-[12.5px] font-bold flex-shrink-0">
+            <span
+              className="inline-flex items-center justify-center rounded-full"
+              style={{
+                width: 36,
+                height: 36,
+                background: "var(--sidebar-avatar)",
+                color: "var(--green-200)",
+                font: "600 13px/1 var(--font-sans)",
+              }}
+            >
               {initials || "?"}
-            </div>
+            </span>
 
-            <div className="flex-1 min-w-0">
-              <p className="text-[13px] font-semibold text-slate-800 truncate">
+            <div className="flex-1 min-w-0 flex flex-col gap-[3px]">
+              <p
+                className="truncate"
+                style={{
+                  margin: 0,
+                  font: "600 13.5px/1.1 var(--font-sans)",
+                  color: "var(--white)",
+                }}
+              >
                 {user?.firstName} {user?.lastName}
               </p>
-
-              <p className="text-[11.5px] text-slate-400 truncate mt-0.5">
+              <p
+                style={{
+                  margin: 0,
+                  font: "500 11.5px/1 var(--font-sans)",
+                  color: "var(--sidebar-text-dim)",
+                }}
+              >
                 {roleLabel}
               </p>
             </div>
 
-            <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+            <ChevronRight
+              className="w-4 h-4"
+              style={{ color: "var(--sidebar-text-faint)" }}
+            />
           </button>
 
           <button
@@ -239,88 +447,111 @@ export function DashboardShell({
               clearAuth();
               router.push("/login");
             }}
-            className="w-full mt-1 flex items-center gap-2.5 px-3 py-2 rounded-lg text-[13px] font-medium text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+            className="flex items-center"
+            style={{
+              gap: 9,
+              height: 40,
+              padding: "0 12px",
+              border: "none",
+              borderRadius: "var(--r-sm)",
+              background: "transparent",
+              color: "var(--sidebar-text-dim)",
+              font: "500 13px/1 var(--font-sans)",
+              cursor: "pointer",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "var(--sidebar-danger)";
+              e.currentTarget.style.color = "var(--coral-500)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "transparent";
+              e.currentTarget.style.color = "var(--sidebar-text-dim)";
+            }}
           >
-            <LogOut className="w-3.5 h-3.5" />
+            <LogOut className="w-[15px] h-[15px]" />
             Sign out
           </button>
         </div>
       </aside>
 
       {/* ── Main ──────────────────────────────────────────────────────────── */}
-      <div className="lg:pl-[250px] min-h-screen flex flex-col">
-        <header className="sticky top-0 z-30 h-[64px] bg-white/90 backdrop-blur-xl border-b border-slate-200/80">
-          <div className="h-full px-4 sm:px-6 flex items-center gap-4">
-            <button
-              className="lg:hidden w-9 h-9 rounded-xl border border-slate-200 bg-white flex items-center justify-center text-slate-500 hover:bg-slate-50"
-              onClick={() => setSidebarOpen(true)}
+      <div className="lg:pl-[274px] min-h-screen flex flex-col">
+        <header
+          className="sticky top-0 z-30 flex items-center"
+          style={{
+            height: 64,
+            background: "var(--surface-glass)",
+            backdropFilter: "blur(12px)",
+            borderBottom: "1px solid var(--hc-border)",
+            padding: "0 var(--sp-6)",
+            gap: "var(--sp-4)",
+          }}
+        >
+          <button
+            className="lg:hidden inline-flex items-center justify-center"
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: "var(--r-md)",
+              border: "1px solid var(--hc-border)",
+              background: "var(--white)",
+              color: "var(--text-muted)",
+            }}
+            onClick={() => setSidebarOpen(true)}
+          >
+            <Menu className="w-4 h-4" />
+          </button>
+
+          <div className="min-w-0">
+            <p
+              className="truncate"
+              style={{
+                margin: 0,
+                font: "600 15px/1.2 var(--font-sans)",
+                color: "var(--text-primary)",
+              }}
             >
-              <Menu className="w-4.5 h-4.5" />
-            </button>
-
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="hidden sm:block w-1 h-7 rounded-full bg-emerald-600" />
-
-              <div className="min-w-0">
-                <p className="text-[15px] font-bold text-slate-900 truncate">
-                  {activeLabel}
-                </p>
-
-                <p className="hidden sm:block text-[12px] text-slate-400 mt-0.5">
-                  {time.toLocaleDateString("en-ZM", {
-                    weekday: "long",
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                  })}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex-1" />
-
-            {headerExtra}
-
-            <div className="hidden xl:flex flex-col items-end pr-3 border-r border-slate-200">
-              <span className="text-[13px] font-bold text-slate-700 tabular-nums">
-                {timeStr}
-              </span>
-              <span className="text-[10.5px] text-slate-400">{dateStr}</span>
-            </div>
-
-            <NotificationBell />
-
-            <button
-              onClick={() => setProfileOpen(true)}
-              className="flex items-center gap-2.5 pl-2 hover:opacity-80 transition-opacity"
+              {activeLabel}
+            </p>
+            <p
+              className="hidden sm:block"
+              style={{
+                margin: 0,
+                font: "400 12px/1.2 var(--font-sans)",
+                color: "var(--text-muted)",
+                marginTop: 2,
+              }}
             >
-              <div className="w-8 h-8 rounded-full bg-emerald-700 text-white flex items-center justify-center text-[11.5px] font-bold shadow-sm">
-                {initials || "?"}
-              </div>
-
-              <div className="hidden sm:block text-left">
-                <p className="text-[12.5px] font-semibold text-slate-800 leading-none">
-                  {user?.firstName} {user?.lastName}
-                </p>
-                <p className="text-[11px] text-slate-400 mt-1">{roleLabel}</p>
-              </div>
-
-              <ChevronRight className="hidden sm:block w-3 h-3 text-slate-300" />
-            </button>
+              {time.toLocaleDateString("en-ZM", {
+                weekday: "long",
+                year: "numeric",
+                month: "long",
+                day: "numeric",
+              })}
+            </p>
           </div>
+
+          <div className="flex-1" />
+
+          {headerExtra}
+          <NotificationBell />
         </header>
 
-        <main
-          key={pathname}
-          className="flex-1 px-4 sm:px-6 lg:px-7 py-6 overflow-y-auto"
-        >
+        <main key={pathname} className="flex-1" style={{ padding: "var(--sp-6)" }}>
           {children}
         </main>
 
-        <footer className="px-6 py-4 border-t border-slate-200/70 bg-white/50">
+        <footer
+          style={{
+            padding: "var(--sp-4) var(--sp-6)",
+            borderTop: "1px solid var(--border-faint)",
+          }}
+        >
           <div className="flex flex-col sm:flex-row items-center justify-between gap-2 max-w-[1280px] mx-auto">
-            <p className="text-[11.5px] text-slate-400">MedLink EMR</p>
-            <p className="text-[11.5px] text-slate-400">
+            <p style={{ margin: 0, font: "400 11.5px/1 var(--font-sans)", color: "var(--text-muted)" }}>
+              MedLink EMR
+            </p>
+            <p style={{ margin: 0, font: "400 11.5px/1 var(--font-sans)", color: "var(--text-muted)" }}>
               Copperbelt University · {new Date().getFullYear()}
             </p>
           </div>

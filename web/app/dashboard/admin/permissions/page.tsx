@@ -21,18 +21,18 @@ const USER_TYPE_LABEL: Record<string, string> = {
 };
 
 const PERM_TYPE_STYLE: Record<string, { bg: string; color: string }> = {
-  read: { bg: "#eff6ff", color: "#2563eb" },
-  write: { bg: "#fff7ed", color: "#ea580c" },
-  full: { bg: "#fdf4ff", color: "#9333ea" },
+  read: { bg: "var(--info-tint)", color: "var(--blue-600)" },
+  write: { bg: "var(--coral-050)", color: "var(--critical-ink)" },
+  full: { bg: "var(--violet-050)", color: "var(--violet-500)" },
 };
 
 function SkeletonRow() {
   return (
-    <tr className="border-b border-gray-50">
+    <tr className="border-b border-[var(--border-faint)]">
       {[1, 2, 3, 4, 5].map((i) => (
         <td key={i} className="py-4 px-3">
           <div
-            className="h-4 bg-gray-100 rounded animate-pulse"
+            className="h-4 bg-[var(--surface-sunken)] rounded animate-pulse"
             style={{ width: i === 1 ? "70%" : "55%" }}
           />
         </td>
@@ -96,22 +96,19 @@ export default function AdminPermissionsPage() {
   );
 
   return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
+    <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1
-            className="text-2xl font-bold text-gray-900"
-            style={{ fontFamily: "'Playfair Display', serif" }}
-          >
+          <h1 style={{ margin: 0, font: "700 27px/1.1 var(--font-sans)", letterSpacing: "var(--ls-tight)", color: "var(--text-primary)" }}>
             Permissions
           </h1>
-          <p className="text-sm text-gray-400 mt-0.5">
+          <p className="text-sm text-[var(--text-muted)] mt-0.5">
             Blockchain-backed access control overview
           </p>
         </div>
         <button
           onClick={() => load(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+          className="flex items-center gap-2 px-4 py-2 rounded-[var(--r-sm)] border border-[var(--hc-border)] text-sm font-medium text-[var(--text-secondary)] hover:bg-[var(--surface-sunken)] transition-colors"
         >
           <RefreshCw
             className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
@@ -126,31 +123,31 @@ export default function AdminPermissionsPage() {
           {
             label: "Active",
             value: activePerms.length,
-            color: "#16a34a",
-            bg: "#f0fdf4",
+            color: "var(--success-ink)",
+            bg: "var(--brand-tint)",
           },
           {
             label: "Expired",
             value: expiredPerms.length,
-            color: "#6b7280",
-            bg: "#f3f4f6",
+            color: "var(--text-secondary)",
+            bg: "var(--surface-sunken)",
           },
           {
             label: "Pending Requests",
             value: requests.filter((r) => r.status === "pending").length,
-            color: "#d97706",
-            bg: "#fffbeb",
+            color: "var(--urgent-ink)",
+            bg: "var(--amber-050)",
           },
           {
             label: "Total Requests",
             value: requests.length,
-            color: "#2563eb",
-            bg: "#eff6ff",
+            color: "var(--blue-600)",
+            bg: "var(--info-tint)",
           },
         ].map(({ label, value, color, bg }) => (
           <div
             key={label}
-            className="bg-white rounded-xl border border-gray-100 shadow-sm px-4 py-3"
+            className="bg-[var(--surface-card)] rounded-[var(--r-sm)] border border-[var(--border-faint)] shadow-[var(--elev-1)] px-4 py-3"
           >
             <p
               className="text-xs font-semibold uppercase tracking-wide mb-1"
@@ -158,14 +155,14 @@ export default function AdminPermissionsPage() {
             >
               {label}
             </p>
-            <p className="text-2xl font-bold text-gray-900">{value}</p>
+            <p className="text-2xl font-bold text-[var(--text-primary)]">{value}</p>
           </div>
         ))}
       </div>
 
       {/* Tabs + search */}
       <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
-        <div className="flex gap-1 bg-white rounded-xl border border-gray-100 shadow-sm p-1">
+        <div className="flex gap-1 bg-[var(--surface-card)] rounded-[var(--r-sm)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-1">
           {(
             [
               ["active", "Active Permissions"],
@@ -175,11 +172,11 @@ export default function AdminPermissionsPage() {
             <button
               key={key}
               onClick={() => setTab(key)}
-              className="px-4 py-1.5 rounded-lg text-sm font-semibold transition-all"
+              className="px-4 py-1.5 rounded-[var(--r-xs)] text-sm font-semibold transition-all"
               style={
                 tab === key
-                  ? { background: "#166534", color: "#fff" }
-                  : { color: "#6b7280" }
+                  ? { background: "var(--green-800)", color: "var(--white)" }
+                  : { color: "var(--text-secondary)" }
               }
             >
               {label}
@@ -187,17 +184,17 @@ export default function AdminPermissionsPage() {
           ))}
         </div>
         <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Filter…"
-            className="w-full pl-10 pr-8 py-2 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-600 focus:ring-2 focus:ring-green-600/10 focus:bg-white transition-all"
+            className="w-full pl-10 pr-8 py-2 rounded-[var(--r-sm)] border border-[var(--hc-border)] bg-[var(--surface-sunken)] text-sm outline-none focus:border-[var(--green-600)] focus:ring-2 focus:ring-[var(--green-600)] focus:bg-[var(--surface-card)] transition-all"
           />
           {search && (
             <button
               onClick={() => setSearch("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -206,11 +203,11 @@ export default function AdminPermissionsPage() {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+      <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
-              <tr className="border-b border-gray-100">
+              <tr className="border-b border-[var(--border-faint)]">
                 {tab === "active"
                   ? [
                       "Granted To",
@@ -221,7 +218,7 @@ export default function AdminPermissionsPage() {
                     ].map((h, i) => (
                       <th
                         key={i}
-                        className={`py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide ${i === 0 ? "pl-5 pr-3" : "px-3"}`}
+                        className={`py-3 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide ${i === 0 ? "pl-5 pr-3" : "px-3"}`}
                       >
                         {h}
                       </th>
@@ -235,7 +232,7 @@ export default function AdminPermissionsPage() {
                     ].map((h, i) => (
                       <th
                         key={i}
-                        className={`py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide ${i === 0 ? "pl-5 pr-3" : "px-3"}`}
+                        className={`py-3 text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide ${i === 0 ? "pl-5 pr-3" : "px-3"}`}
                       >
                         {h}
                       </th>
@@ -249,8 +246,8 @@ export default function AdminPermissionsPage() {
                 filteredPerms.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="py-16 text-center">
-                      <ShieldCheck className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-                      <p className="text-sm font-semibold text-gray-400">
+                      <ShieldCheck className="w-10 h-10 text-[var(--text-disabled)] mx-auto mb-3" />
+                      <p className="text-sm font-semibold text-[var(--text-muted)]">
                         No permissions found
                       </p>
                     </td>
@@ -264,21 +261,21 @@ export default function AdminPermissionsPage() {
                     return (
                       <tr
                         key={p.id}
-                        className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors"
+                        className="border-b border-[var(--border-faint)] hover:bg-[var(--surface-sunken)] transition-colors"
                       >
                         <td className="py-3.5 pl-5 pr-3">
                           <div className="flex items-center gap-2">
                             {expired ? (
-                              <ShieldOff className="w-4 h-4 text-gray-300" />
+                              <ShieldOff className="w-4 h-4 text-[var(--text-disabled)]" />
                             ) : (
-                              <Shield className="w-4 h-4 text-green-600" />
+                              <Shield className="w-4 h-4 text-[var(--green-700)]" />
                             )}
-                            <span className="text-xs font-semibold text-gray-500">
+                            <span className="text-xs font-semibold text-[var(--text-secondary)]">
                               {USER_TYPE_LABEL[p.grantedToUserType] ??
                                 p.grantedToUserType}
                             </span>
                           </div>
-                          <p className="text-xs text-gray-400 font-mono mt-0.5 pl-6">
+                          <p className="text-xs text-[var(--text-muted)] font-mono mt-0.5 pl-6">
                             {p.grantedToUserId?.slice(0, 12)}…
                           </p>
                         </td>
@@ -291,14 +288,14 @@ export default function AdminPermissionsPage() {
                           </span>
                         </td>
                         <td className="py-3.5 px-3">
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-[var(--text-secondary)]">
                             {Array.isArray(p.allowedRecordTypes)
                               ? p.allowedRecordTypes.join(", ")
                               : "all"}
                           </p>
                         </td>
                         <td className="py-3.5 px-3">
-                          <p className="text-xs text-gray-500">
+                          <p className="text-xs text-[var(--text-secondary)]">
                             {p.expiresAt
                               ? format(
                                   new Date(p.expiresAt),
@@ -307,7 +304,7 @@ export default function AdminPermissionsPage() {
                               : "—"}
                           </p>
                           {!expired && p.expiresAt && (
-                            <p className="text-xs text-gray-400">
+                            <p className="text-xs text-[var(--text-muted)]">
                               {formatDistanceToNow(new Date(p.expiresAt), {
                                 addSuffix: true,
                               })}
@@ -316,7 +313,7 @@ export default function AdminPermissionsPage() {
                         </td>
                         <td className="py-3.5 px-3">
                           <span
-                            className={`text-xs font-semibold px-2.5 py-1 rounded-full ${expired ? "bg-gray-100 text-gray-500" : "bg-green-50 text-green-700"}`}
+                            className={`text-xs font-semibold px-2.5 py-1 rounded-full ${expired ? "bg-[var(--surface-sunken)] text-[var(--text-secondary)]" : "bg-[var(--brand-tint)] text-[var(--green-700)]"}`}
                           >
                             {expired ? "Expired" : "Active"}
                           </span>
@@ -328,8 +325,8 @@ export default function AdminPermissionsPage() {
               ) : filteredReqs.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-16 text-center">
-                    <ShieldCheck className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-                    <p className="text-sm font-semibold text-gray-400">
+                    <ShieldCheck className="w-10 h-10 text-[var(--text-disabled)] mx-auto mb-3" />
+                    <p className="text-sm font-semibold text-[var(--text-muted)]">
                       No access requests found
                     </p>
                   </td>
@@ -338,33 +335,33 @@ export default function AdminPermissionsPage() {
                 filteredReqs.map((r) => {
                   const statusStyle =
                     r.status === "approved"
-                      ? "bg-green-50 text-green-700"
+                      ? "bg-[var(--brand-tint)] text-[var(--green-700)]"
                       : r.status === "rejected"
-                        ? "bg-red-50 text-red-600"
+                        ? "bg-[var(--coral-050)] text-[var(--critical-ink)]"
                         : r.status === "expired"
-                          ? "bg-gray-100 text-gray-500"
-                          : "bg-amber-50 text-amber-700";
+                          ? "bg-[var(--surface-sunken)] text-[var(--text-secondary)]"
+                          : "bg-[var(--amber-050)] text-[var(--urgent-ink)]";
                   return (
                     <tr
                       key={r.id}
-                      className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors"
+                      className="border-b border-[var(--border-faint)] hover:bg-[var(--surface-sunken)] transition-colors"
                     >
                       <td className="py-3.5 pl-5 pr-3">
-                        <p className="text-xs font-semibold text-gray-700">
+                        <p className="text-xs font-semibold text-[var(--text-secondary)]">
                           {USER_TYPE_LABEL[r.requestedByUserType] ??
                             r.requestedByUserType}
                         </p>
-                        <p className="text-xs text-gray-400 font-mono">
+                        <p className="text-xs text-[var(--text-muted)] font-mono">
                           {r.requestedByUserId?.slice(0, 12)}…
                         </p>
                       </td>
                       <td className="py-3.5 px-3">
-                        <p className="text-xs text-gray-600 max-w-[180px] truncate">
+                        <p className="text-xs text-[var(--text-secondary)] max-w-[180px] truncate">
                           {r.reason}
                         </p>
                       </td>
                       <td className="py-3.5 px-3">
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-[var(--text-secondary)]">
                           {Array.isArray(r.requestedPermissions)
                             ? r.requestedPermissions.join(", ")
                             : "—"}
@@ -378,7 +375,7 @@ export default function AdminPermissionsPage() {
                         </span>
                       </td>
                       <td className="py-3.5 px-3">
-                        <p className="text-xs text-gray-400">
+                        <p className="text-xs text-[var(--text-muted)]">
                           {r.createdAt
                             ? formatDistanceToNow(new Date(r.createdAt), {
                                 addSuffix: true,

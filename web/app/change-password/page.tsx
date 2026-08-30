@@ -70,7 +70,7 @@ export default function ChangePasswordPage() {
     return s;
   })();
   const strengthLabel = ["", "Weak", "Fair", "Good", "Strong"][strength];
-  const strengthColor = ["", "#ef4444", "#f59e0b", "#3b82f6", "#4ade80"][
+  const strengthColor = ["", "var(--critical)", "var(--urgent)", "var(--info)", "var(--green-300)"][
     strength
   ];
 
@@ -79,33 +79,32 @@ export default function ChangePasswordPage() {
       style={{
         minHeight: "100vh",
         display: "flex",
-        fontFamily: "'DM Sans', sans-serif",
-        background: "#f0f2f5",
+        fontFamily: "var(--font-sans)",
+        background: "var(--surface-bg)",
       }}
     >
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap');
         @keyframes fadeUp   { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
         @keyframes shimmer  { 0%,100%{opacity:0.6} 50%{opacity:1} }
-        @keyframes badgePulse { 0%,100%{box-shadow:0 0 0 0 rgba(74,222,128,0.4)} 50%{box-shadow:0 0 0 5px rgba(74,222,128,0)} }
+        @keyframes badgePulse { 0%,100%{box-shadow:0 0 0 0 color-mix(in srgb, var(--green-300) 40%, transparent)} 50%{box-shadow:0 0 0 5px transparent} }
         @keyframes bounce3  { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-5px)} }
         .input-field {
-          width:100%; padding:11px 14px; border-radius:12px;
-          border:1.5px solid #e5e7eb; background:#f9fafb;
-          font-size:14px; color:#111; outline:none; transition:all 0.18s;
-          font-family:'DM Sans',sans-serif;
+          width:100%; padding:11px 14px; border-radius:var(--r-sm);
+          border:1.5px solid var(--hc-border); background:var(--surface-inset);
+          font-size:14px; color:var(--text-primary); outline:none; transition:all 0.18s;
+          font-family:var(--font-sans);
         }
-        .input-field:focus { border-color:#166534; background:#fff; box-shadow:0 0 0 3px rgba(22,101,52,0.08); }
-        .input-field::placeholder { color:#c4c9d4; }
+        .input-field:focus { border-color:var(--brand); background:var(--surface-card); box-shadow:0 0 0 3px var(--focus-ring); }
+        .input-field::placeholder { color:var(--text-disabled); }
         .submit-btn {
-          width:100%; padding:13px; border-radius:13px; border:none;
-          background:linear-gradient(135deg,#052e16,#166534,#15803d);
-          color:#fff; font-size:14px; font-weight:700; cursor:pointer;
+          width:100%; padding:13px; border-radius:var(--r-md); border:none;
+          background:var(--brand);
+          color:var(--on-brand); font-size:14px; font-weight:700; cursor:pointer;
           letter-spacing:0.02em; transition:all 0.2s;
-          box-shadow:0 4px 14px rgba(22,101,52,0.3);
+          box-shadow:var(--elev-brand);
           display:flex; align-items:center; justify-content:center; gap:8px;
         }
-        .submit-btn:hover:not(:disabled) { transform:translateY(-1px); box-shadow:0 6px 20px rgba(22,101,52,0.4); }
+        .submit-btn:hover:not(:disabled) { transform:translateY(-1px); box-shadow:var(--elev-3); }
         .submit-btn:active:not(:disabled) { transform:translateY(0) scale(0.99); }
         .submit-btn:disabled { opacity:0.6; cursor:not-allowed; }
       `}</style>
@@ -119,7 +118,7 @@ export default function ChangePasswordPage() {
           position: "relative",
           overflow: "hidden",
           background:
-            "linear-gradient(160deg,#052e16 0%,#064e1f 40%,#0a5c26 70%,#0d6e2e 100%)",
+            "var(--sidebar-bg)",
         }}
         className="lg:block"
       >
@@ -143,7 +142,7 @@ export default function ChangePasswordPage() {
             width: 320,
             height: 320,
             borderRadius: "50%",
-            border: "1px solid rgba(255,255,255,0.06)",
+            border: "1px solid var(--sidebar-line)",
           }}
         />
         <div
@@ -154,7 +153,7 @@ export default function ChangePasswordPage() {
             width: 180,
             height: 180,
             borderRadius: "50%",
-            border: "1px solid rgba(255,255,255,0.08)",
+            border: "1px solid var(--sidebar-line)",
           }}
         />
         <div
@@ -165,7 +164,7 @@ export default function ChangePasswordPage() {
             width: 280,
             height: 280,
             borderRadius: "50%",
-            border: "1px solid rgba(255,255,255,0.05)",
+            border: "1px solid var(--sidebar-raise)",
           }}
         />
 
@@ -192,7 +191,7 @@ export default function ChangePasswordPage() {
               style={{
                 width: 38,
                 height: 38,
-                borderRadius: 11,
+                borderRadius: "var(--r-sm)",
                 overflow: "hidden",
               }}
             >
@@ -201,17 +200,17 @@ export default function ChangePasswordPage() {
             <div>
               <p
                 style={{
-                  color: "#fff",
+                  color: "var(--surface-card)",
                   fontWeight: 700,
                   fontSize: 15,
-                  fontFamily: "'Playfair Display',serif",
+                  fontFamily: "var(--font-display)",
                 }}
               >
                 MedLink
               </p>
               <p
                 style={{
-                  color: "rgba(255,255,255,0.35)",
+                  color: "var(--on-dark-text-dim)",
                   fontSize: 10.5,
                   letterSpacing: "0.08em",
                   textTransform: "uppercase",
@@ -228,9 +227,9 @@ export default function ChangePasswordPage() {
               style={{
                 width: 48,
                 height: 48,
-                borderRadius: 14,
-                background: "rgba(255,255,255,0.1)",
-                border: "1px solid rgba(255,255,255,0.12)",
+                borderRadius: "var(--r-md)",
+                background: "var(--on-dark-raise)",
+                border: "1px solid var(--on-dark-raise)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -253,10 +252,10 @@ export default function ChangePasswordPage() {
             </div>
             <h2
               style={{
-                fontFamily: "'Playfair Display',serif",
+                fontFamily: "var(--font-display)",
                 fontSize: 32,
                 fontWeight: 700,
-                color: "#fff",
+                color: "var(--surface-card)",
                 lineHeight: 1.2,
                 marginBottom: 16,
               }}
@@ -267,7 +266,7 @@ export default function ChangePasswordPage() {
             </h2>
             <p
               style={{
-                color: "rgba(255,255,255,0.45)",
+                color: "var(--on-dark-text-dim)",
                 fontSize: 14,
                 lineHeight: 1.7,
               }}
@@ -304,8 +303,8 @@ export default function ChangePasswordPage() {
                       width: 20,
                       height: 20,
                       borderRadius: "50%",
-                      background: "rgba(74,222,128,0.15)",
-                      border: "1px solid rgba(74,222,128,0.3)",
+                      background: "color-mix(in srgb, var(--green-300) 15%, transparent)",
+                      border: "1px solid color-mix(in srgb, var(--green-300) 30%, transparent)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
@@ -315,14 +314,14 @@ export default function ChangePasswordPage() {
                     <svg width="10" height="10" viewBox="0 0 12 12" fill="none">
                       <path
                         d="M2 6l3 3 5-5"
-                        stroke="#4ade80"
+                        stroke="var(--green-300)"
                         strokeWidth="1.8"
                         strokeLinecap="round"
                         strokeLinejoin="round"
                       />
                     </svg>
                   </div>
-                  <p style={{ fontSize: 13, color: "rgba(255,255,255,0.55)" }}>
+                  <p style={{ fontSize: 13, color: "var(--on-dark-text)" }}>
                     {tip}
                   </p>
                 </div>
@@ -340,12 +339,12 @@ export default function ChangePasswordPage() {
                 fontSize: 10.5,
                 fontWeight: 800,
                 padding: "5px 12px",
-                borderRadius: 999,
+                borderRadius: "var(--r-pill)",
                 background: isSuperAdmin
-                  ? "rgba(239,68,68,0.15)"
-                  : "rgba(59,130,246,0.15)",
-                color: isSuperAdmin ? "#fca5a5" : "#93c5fd",
-                border: `1px solid ${isSuperAdmin ? "rgba(239,68,68,0.2)" : "rgba(59,130,246,0.2)"}`,
+                  ? "color-mix(in srgb, var(--critical) 16%, transparent)"
+                  : "color-mix(in srgb, var(--info) 16%, transparent)",
+                color: isSuperAdmin ? "var(--coral-100)" : "var(--info-tint)",
+                border: `1px solid ${isSuperAdmin ? "color-mix(in srgb, var(--critical) 22%, transparent)" : "color-mix(in srgb, var(--info) 22%, transparent)"}`,
                 letterSpacing: "0.1em",
               }}
             >
@@ -354,7 +353,7 @@ export default function ChangePasswordPage() {
                   width: 5,
                   height: 5,
                   borderRadius: "50%",
-                  background: isSuperAdmin ? "#ef4444" : "#3b82f6",
+                  background: isSuperAdmin ? "var(--critical)" : "var(--info)",
                   animation: "badgePulse 2s ease infinite",
                 }}
               />
@@ -362,7 +361,7 @@ export default function ChangePasswordPage() {
             </span>
             <p
               style={{
-                color: "rgba(255,255,255,0.25)",
+                color: "var(--on-dark-text-dim)",
                 fontSize: 12,
                 marginTop: 8,
               }}
@@ -404,8 +403,8 @@ export default function ChangePasswordPage() {
               style={{
                 width: 34,
                 height: 34,
-                borderRadius: 9,
-                background: "linear-gradient(135deg,#166534,#15803d)",
+                borderRadius: "var(--r-xs)",
+                background: "var(--brand)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
@@ -436,8 +435,8 @@ export default function ChangePasswordPage() {
               style={{
                 fontWeight: 700,
                 fontSize: 15,
-                color: "#111",
-                fontFamily: "'Playfair Display',serif",
+                color: "var(--text-primary)",
+                fontFamily: "var(--font-display)",
               }}
             >
               MedLink
@@ -456,29 +455,29 @@ export default function ChangePasswordPage() {
                 style={{
                   width: 72,
                   height: 72,
-                  borderRadius: 20,
-                  background: "linear-gradient(135deg,#052e16,#166534)",
+                  borderRadius: "var(--r-xl)",
+                  background: "var(--brand-deep)",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
                   margin: "0 auto 24px",
-                  boxShadow: "0 8px 24px rgba(22,101,52,0.3)",
+                  boxShadow: "var(--elev-brand)",
                 }}
               >
-                <CheckCircle2 size={32} color="#fff" />
+                <CheckCircle2 size={32} color="var(--surface-card)" />
               </div>
               <h1
                 style={{
-                  fontFamily: "'Playfair Display',serif",
+                  fontFamily: "var(--font-display)",
                   fontSize: 26,
                   fontWeight: 700,
-                  color: "#111",
+                  color: "var(--text-primary)",
                   marginBottom: 8,
                 }}
               >
                 Password Updated
               </h1>
-              <p style={{ fontSize: 14, color: "#9ca3af", marginBottom: 32 }}>
+              <p style={{ fontSize: 14, color: "var(--text-muted)", marginBottom: 32 }}>
                 Redirecting you to login…
               </p>
               <div
@@ -491,7 +490,7 @@ export default function ChangePasswordPage() {
                       width: 8,
                       height: 8,
                       borderRadius: "50%",
-                      background: "#166534",
+                      background: "var(--success-ink)",
                       animation: `bounce3 1s ease ${i * 0.15}s infinite`,
                     }}
                   />
@@ -504,10 +503,10 @@ export default function ChangePasswordPage() {
               <div style={{ marginBottom: 28 }}>
                 <h1
                   style={{
-                    fontFamily: "'Playfair Display',serif",
+                    fontFamily: "var(--font-display)",
                     fontSize: 28,
                     fontWeight: 700,
-                    color: "#111827",
+                    color: "var(--text-primary)",
                     marginBottom: 6,
                     letterSpacing: "-0.01em",
                   }}
@@ -516,7 +515,7 @@ export default function ChangePasswordPage() {
                     ? "Set your password"
                     : "Change password"}
                 </h1>
-                <p style={{ fontSize: 14, color: "#9ca3af" }}>
+                <p style={{ fontSize: 14, color: "var(--text-muted)" }}>
                   {user?.mustChangePassword
                     ? "Your account was created with a temporary password."
                     : "Update your MedLink account password."}
@@ -530,18 +529,18 @@ export default function ChangePasswordPage() {
                     display: "flex",
                     gap: 10,
                     padding: "12px 14px",
-                    borderRadius: 12,
-                    background: "#fffbeb",
-                    border: "1px solid #fde68a",
+                    borderRadius: "var(--r-sm)",
+                    background: "var(--amber-050)",
+                    border: "1px solid var(--urgent-tint)",
                     marginBottom: 20,
                   }}
                 >
                   <AlertCircle
                     size={15}
-                    style={{ color: "#d97706", flexShrink: 0, marginTop: 1 }}
+                    style={{ color: "var(--urgent-ink)", flexShrink: 0, marginTop: 1 }}
                   />
                   <p
-                    style={{ fontSize: 13, color: "#92400e", lineHeight: 1.5 }}
+                    style={{ fontSize: 13, color: "var(--urgent-ink)", lineHeight: 1.5 }}
                   >
                     set a new one to continue.
                   </p>
@@ -559,7 +558,7 @@ export default function ChangePasswordPage() {
                       display: "block",
                       fontSize: 11.5,
                       fontWeight: 700,
-                      color: "#374151",
+                      color: "var(--text-secondary)",
                       textTransform: "uppercase",
                       letterSpacing: "0.07em",
                       marginBottom: 7,
@@ -588,7 +587,7 @@ export default function ChangePasswordPage() {
                         background: "none",
                         border: "none",
                         cursor: "pointer",
-                        color: "#9ca3af",
+                        color: "var(--text-muted)",
                         display: "flex",
                       }}
                     >
@@ -604,7 +603,7 @@ export default function ChangePasswordPage() {
                       display: "block",
                       fontSize: 11.5,
                       fontWeight: 700,
-                      color: "#374151",
+                      color: "var(--text-secondary)",
                       textTransform: "uppercase",
                       letterSpacing: "0.07em",
                       marginBottom: 7,
@@ -633,7 +632,7 @@ export default function ChangePasswordPage() {
                         background: "none",
                         border: "none",
                         cursor: "pointer",
-                        color: "#9ca3af",
+                        color: "var(--text-muted)",
                         display: "flex",
                       }}
                     >
@@ -651,9 +650,9 @@ export default function ChangePasswordPage() {
                             style={{
                               flex: 1,
                               height: 4,
-                              borderRadius: 999,
+                              borderRadius: "var(--r-pill)",
                               background:
-                                i <= strength ? strengthColor : "#e5e7eb",
+                                i <= strength ? strengthColor : "var(--hc-border)",
                               transition: "background 0.2s",
                             }}
                           />
@@ -679,7 +678,7 @@ export default function ChangePasswordPage() {
                       display: "block",
                       fontSize: 11.5,
                       fontWeight: 700,
-                      color: "#374151",
+                      color: "var(--text-secondary)",
                       textTransform: "uppercase",
                       letterSpacing: "0.07em",
                       marginBottom: 7,
@@ -697,12 +696,12 @@ export default function ChangePasswordPage() {
                     style={{
                       borderColor:
                         confirmPw && confirmPw !== newPw
-                          ? "#ef4444"
+                          ? "var(--critical)"
                           : undefined,
                     }}
                   />
                   {confirmPw && confirmPw !== newPw && (
-                    <p style={{ fontSize: 12, color: "#ef4444", marginTop: 4 }}>
+                    <p style={{ fontSize: 12, color: "var(--critical)", marginTop: 4 }}>
                       Passwords do not match
                     </p>
                   )}
@@ -716,16 +715,16 @@ export default function ChangePasswordPage() {
                       alignItems: "center",
                       gap: 10,
                       padding: "11px 14px",
-                      borderRadius: 12,
-                      background: "#fef2f2",
-                      border: "1px solid #fecaca",
+                      borderRadius: "var(--r-sm)",
+                      background: "var(--coral-050)",
+                      border: "1px solid var(--coral-100)",
                     }}
                   >
                     <AlertCircle
                       size={15}
-                      style={{ color: "#dc2626", flexShrink: 0 }}
+                      style={{ color: "var(--critical-ink)", flexShrink: 0 }}
                     />
-                    <p style={{ fontSize: 13, color: "#dc2626" }}>{error}</p>
+                    <p style={{ fontSize: 13, color: "var(--critical-ink)" }}>{error}</p>
                   </div>
                 )}
 
@@ -752,22 +751,22 @@ export default function ChangePasswordPage() {
                     style={{
                       width: "100%",
                       padding: "10px",
-                      borderRadius: 12,
-                      border: "1.5px solid #e5e7eb",
-                      background: "#fff",
+                      borderRadius: "var(--r-sm)",
+                      border: "1.5px solid var(--hc-border)",
+                      background: "var(--surface-card)",
                       fontSize: 13.5,
                       fontWeight: 600,
-                      color: "#6b7280",
+                      color: "var(--text-secondary)",
                       cursor: "pointer",
                       transition: "all 0.15s",
                     }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.borderColor = "#d1d5db";
-                      e.currentTarget.style.background = "#f9fafb";
+                      e.currentTarget.style.borderColor = "var(--text-disabled)";
+                      e.currentTarget.style.background = "var(--surface-inset)";
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.borderColor = "#e5e7eb";
-                      e.currentTarget.style.background = "#fff";
+                      e.currentTarget.style.borderColor = "var(--hc-border)";
+                      e.currentTarget.style.background = "var(--surface-card)";
                     }}
                   >
                     Cancel
@@ -778,7 +777,7 @@ export default function ChangePasswordPage() {
               <p
                 style={{
                   fontSize: 12,
-                  color: "#c4c9d4",
+                  color: "var(--text-disabled)",
                   textAlign: "center",
                   marginTop: 28,
                 }}

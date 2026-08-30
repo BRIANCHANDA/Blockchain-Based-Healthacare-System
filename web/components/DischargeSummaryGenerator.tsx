@@ -8,8 +8,8 @@ import {
   RefreshCw,
   CheckCircle2,
   AlertCircle,
-  ChevronDown,
-  ChevronUp,
+  
+  
   Stethoscope,
   Pill,
   FlaskConical,
@@ -34,47 +34,6 @@ interface DischargeSummaryProps {
     prescriptions: any[];
   };
   onSummaryGenerated?: (summary: string) => void;
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function Section({
-  title,
-  icon: Icon,
-  color,
-  children,
-  defaultOpen = true,
-}: any) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div className="rounded-xl border border-gray-100 overflow-hidden">
-      <button
-        onClick={() => setOpen((o: any) => !o)}
-        className="w-full flex items-center justify-between px-4 py-3 text-left transition-colors hover:bg-gray-50"
-        style={{ background: open ? `${color}08` : "#fff" }}
-      >
-        <div className="flex items-center gap-2.5">
-          <div
-            className="w-6 h-6 rounded-lg flex items-center justify-center"
-            style={{ background: `${color}15` }}
-          >
-            <Icon className="w-3.5 h-3.5" style={{ color }} />
-          </div>
-          <p
-            className="text-xs font-bold uppercase tracking-widest"
-            style={{ color }}
-          >
-            {title}
-          </p>
-        </div>
-        {open ? (
-          <ChevronUp className="w-3.5 h-3.5 text-gray-400" />
-        ) : (
-          <ChevronDown className="w-3.5 h-3.5 text-gray-400" />
-        )}
-      </button>
-      {open && <div className="px-4 pb-3 pt-1">{children}</div>}
-    </div>
-  );
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -277,45 +236,38 @@ Keep it clinical, concise, and professional. Use plain English suitable for a Za
     !!visit?.admittingDiagnosis;
 
   return (
-    <div className="space-y-4" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+    <div className="space-y-4" style={{ fontFamily: "var(--font-sans)" }}>
       {/* ── Header card ─────────────────────────────────────────────────── */}
       <div
-        className="relative rounded-2xl overflow-hidden px-5 py-4"
-        style={{
-          background:
-            "linear-gradient(135deg,#052e16 0%,#166534 60%,#15803d 100%)",
-        }}
+        className="relative rounded-[var(--r-lg)] overflow-hidden px-5 py-4"
+        style={{ background: "var(--sidebar-bg)" }}
       >
-        <div
-          className="absolute -right-6 -top-6 w-32 h-32 rounded-full opacity-10"
-          style={{ background: "radial-gradient(circle,#bbf7d0,transparent)" }}
-        />
         <div className="relative flex items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <Sparkles className="w-4 h-4 text-green-300" />
-              <p className="text-xs font-bold uppercase tracking-widest text-green-300/70">
+              <Sparkles className="w-4 h-4 text-[var(--green-300)]" />
+              <p className="text-xs font-bold uppercase tracking-[var(--ls-caps)] text-[var(--green-300)] opacity-70">
                 AI Assistant
               </p>
             </div>
             <p
-              className="text-white font-bold text-base"
-              style={{ fontFamily: "'Playfair Display',serif" }}
+              className="text-[var(--white)] font-bold text-base"
+              style={{ fontFamily: "var(--font-display)" }}
             >
               Discharge Summary Generator
             </p>
-            <p className="text-green-300/60 text-xs mt-0.5">
+            <p className="text-[var(--green-300)]/60 text-xs mt-0.5">
               Drafts a clinical summary from this visit's data for your review
             </p>
           </div>
           <button
             onClick={generate}
             disabled={generating || !hasData}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all disabled:opacity-50 flex-shrink-0"
+            className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--r-sm)] text-sm font-bold transition-all disabled:opacity-50 flex-shrink-0"
             style={{
-              background: "rgba(255,255,255,0.15)",
-              color: "#fff",
-              border: "1px solid rgba(255,255,255,0.2)",
+              background: "var(--on-dark-raise)",
+              color: "var(--white)",
+              border: "1px solid var(--on-dark-line)",
             }}
           >
             {generating ? (
@@ -334,9 +286,9 @@ Keep it clinical, concise, and professional. Use plain English suitable for a Za
 
       {/* ── No data warning ──────────────────────────────────────────────── */}
       {!hasData && (
-        <div className="flex items-center gap-3 p-3.5 rounded-xl bg-amber-50 border border-amber-200">
-          <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0" />
-          <p className="text-xs font-semibold text-amber-800">
+        <div className="flex items-center gap-3 p-3.5 rounded-[var(--r-sm)] bg-[var(--amber-050)] border border-[var(--urgent-tint)]">
+          <AlertCircle className="w-4 h-4 text-[var(--urgent)] flex-shrink-0" />
+          <p className="text-xs font-semibold text-[var(--urgent-ink)]">
             No clinical data found for this visit. Add at least a chief
             complaint, consultation or diagnosis before generating.
           </p>
@@ -346,7 +298,7 @@ Keep it clinical, concise, and professional. Use plain English suitable for a Za
       {/* ── Data context preview ─────────────────────────────────────────── */}
       {hasData && !summary && !generating && (
         <div className="space-y-2">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400">
+          <p className="text-[10px] font-bold uppercase tracking-[var(--ls-caps)] text-[var(--text-muted)]">
             Data available for summary
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -355,58 +307,63 @@ Keep it clinical, concise, and professional. Use plain English suitable for a Za
                 label: "Vitals",
                 count: vitalSigns?.length ?? 0,
                 icon: Activity,
-                color: "#ef4444",
+                color: "var(--critical-ink)",
+                tint: "var(--critical-tint)",
               },
               {
                 label: "Consultations",
                 count: consultations?.length ?? 0,
                 icon: Stethoscope,
-                color: "#2563eb",
+                color: "var(--info-ink)",
+                tint: "var(--info-tint)",
               },
               {
                 label: "Diagnoses",
                 count: diagnoses?.length ?? 0,
                 icon: ClipboardList,
-                color: "#166534",
+                color: "var(--success-ink)",
+                tint: "var(--success-tint)",
               },
               {
                 label: "Lab Orders",
                 count: labOrders?.length ?? 0,
                 icon: FlaskConical,
-                color: "#d97706",
+                color: "var(--urgent-ink)",
+                tint: "var(--urgent-tint)",
               },
               {
                 label: "Prescriptions",
                 count: prescriptions?.length ?? 0,
                 icon: Pill,
-                color: "#0e7490",
+                color: "var(--accent-ink)",
+                tint: "var(--accent-tint)",
               },
-            ].map(({ label, count, icon: Icon, color }) => (
+            ].map(({ label, count, icon: Icon, color, tint }) => (
               <div
                 key={label}
-                className="flex items-center gap-2.5 p-3 rounded-xl border"
+                className="flex items-center gap-2.5 p-3 rounded-[var(--r-sm)] border"
                 style={{
-                  background: count > 0 ? `${color}08` : "#f9fafb",
-                  borderColor: count > 0 ? `${color}20` : "#f3f4f6",
+                  background: count > 0 ? tint : "var(--surface-inset)",
+                  borderColor: count > 0 ? tint : "var(--border-faint)",
                 }}
               >
                 <div
-                  className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
-                  style={{ background: `${color}15` }}
+                  className="w-7 h-7 rounded-[var(--r-xs)] flex items-center justify-center flex-shrink-0"
+                  style={{ background: tint }}
                 >
                   <Icon
                     className="w-3.5 h-3.5"
-                    style={{ color: count > 0 ? color : "#d1d5db" }}
+                    style={{ color: count > 0 ? color : "var(--text-disabled)" }}
                   />
                 </div>
                 <div>
                   <p
                     className="text-lg font-black leading-none tabular-nums"
-                    style={{ color: count > 0 ? color : "#d1d5db" }}
+                    style={{ color: count > 0 ? color : "var(--text-disabled)" }}
                   >
                     {count}
                   </p>
-                  <p className="text-[10px] text-gray-400 font-medium mt-0.5">
+                  <p className="text-[10px] text-[var(--text-muted)] font-medium mt-0.5">
                     {label}
                   </p>
                 </div>
@@ -418,23 +375,23 @@ Keep it clinical, concise, and professional. Use plain English suitable for a Za
 
       {/* ── Generating state ─────────────────────────────────────────────── */}
       {generating && (
-        <div className="flex flex-col items-center gap-3 py-10 rounded-2xl border border-dashed border-green-200 bg-green-50/40">
+        <div className="flex flex-col items-center gap-3 py-10 rounded-[var(--r-lg)] border border-dashed border-[var(--green-200)] bg-[var(--brand-tint)]/40">
           <div className="relative">
-            <div className="w-10 h-10 rounded-full border-2 border-green-200 border-t-green-600 animate-spin" />
-            <Sparkles className="w-4 h-4 text-green-600 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+            <div className="w-10 h-10 rounded-full border-2 border-[var(--green-200)] border-t-green-600 animate-spin" />
+            <Sparkles className="w-4 h-4 text-[var(--brand)] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
           </div>
-          <p className="text-sm font-semibold text-green-700">
+          <p className="text-sm font-semibold text-[var(--success-ink)]">
             Analysing visit data…
           </p>
-          <p className="text-xs text-green-600/60">Drafting clinical summary</p>
+          <p className="text-xs text-[var(--brand)]/60">Drafting clinical summary</p>
         </div>
       )}
 
       {/* ── Error ────────────────────────────────────────────────────────── */}
       {error && (
-        <div className="flex items-center gap-3 p-3.5 rounded-xl bg-red-50 border border-red-200">
-          <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-          <p className="text-xs font-semibold text-red-700">{error}</p>
+        <div className="flex items-center gap-3 p-3.5 rounded-[var(--r-sm)] bg-[var(--coral-050)] border border-[var(--coral-100)]">
+          <AlertCircle className="w-4 h-4 text-[var(--critical)] flex-shrink-0" />
+          <p className="text-xs font-semibold text-[var(--critical-ink)]">{error}</p>
         </div>
       )}
 
@@ -443,18 +400,18 @@ Keep it clinical, concise, and professional. Use plain English suitable for a Za
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-green-500" />
-              <p className="text-xs font-bold text-gray-700">
+              <CheckCircle2 className="w-4 h-4 text-[var(--brand)]" />
+              <p className="text-xs font-bold text-[var(--text-secondary)]">
                 Summary generated — review and edit before saving
               </p>
             </div>
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-gray-200 bg-white text-gray-600 hover:bg-gray-50 transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[var(--r-xs)] text-xs font-semibold border border-[var(--hc-border)] bg-[var(--surface-card)] text-[var(--text-secondary)] hover:bg-[var(--surface-inset)] transition-colors"
             >
               {copied ? (
                 <>
-                  <Check className="w-3 h-3 text-green-500" /> Copied
+                  <Check className="w-3 h-3 text-[var(--brand)]" /> Copied
                 </>
               ) : (
                 <>
@@ -467,22 +424,22 @@ Keep it clinical, concise, and professional. Use plain English suitable for a Za
           {/* Editable textarea */}
           <div className="relative">
             <div className="absolute top-3 right-3 z-10">
-              <Edit3 className="w-3.5 h-3.5 text-gray-300" />
+              <Edit3 className="w-3.5 h-3.5 text-[var(--text-disabled)]" />
             </div>
             <textarea
               value={edited}
               onChange={(e) => setEdited(e.target.value)}
               rows={16}
-              className="w-full px-4 py-3.5 pr-8 rounded-2xl border border-gray-200 text-sm text-gray-800 bg-gray-50 focus:outline-none focus:border-green-400 focus:bg-white transition-colors resize-none leading-relaxed"
-              style={{ fontFamily: "'DM Sans', sans-serif" }}
+              className="w-full px-4 py-3.5 pr-8 rounded-[var(--r-lg)] border border-[var(--hc-border)] text-sm text-[var(--text-primary)] bg-[var(--surface-inset)] focus:outline-none focus:border-[var(--brand)] focus:bg-[var(--surface-card)] transition-colors resize-none leading-relaxed"
+              style={{ fontFamily: "var(--font-sans)" }}
               placeholder="Generated summary will appear here…"
             />
           </div>
 
           {/* AI disclaimer */}
-          <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-100">
-            <AlertCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5" />
-            <p className="text-[11px] text-amber-700 leading-relaxed">
+          <div className="flex items-start gap-2 p-3 rounded-[var(--r-sm)] bg-[var(--amber-050)] border border-[var(--urgent-tint)]">
+            <AlertCircle className="w-3.5 h-3.5 text-[var(--urgent)] flex-shrink-0 mt-0.5" />
+            <p className="text-[11px] text-[var(--urgent-ink)] leading-relaxed">
               AI-generated content. Review carefully before saving. You are
               responsible for the clinical accuracy of this summary.
             </p>
@@ -490,9 +447,9 @@ Keep it clinical, concise, and professional. Use plain English suitable for a Za
 
           {/* Save button */}
           {saved ? (
-            <div className="flex items-center justify-center gap-2 p-3.5 rounded-xl bg-green-50 border border-green-200">
-              <CheckCircle2 className="w-4 h-4 text-green-600" />
-              <p className="text-sm font-bold text-green-700">
+            <div className="flex items-center justify-center gap-2 p-3.5 rounded-[var(--r-sm)] bg-[var(--brand-tint)] border border-[var(--green-200)]">
+              <CheckCircle2 className="w-4 h-4 text-[var(--brand)]" />
+              <p className="text-sm font-bold text-[var(--success-ink)]">
                 Discharge summary saved and visit closed
               </p>
             </div>
@@ -500,8 +457,8 @@ Keep it clinical, concise, and professional. Use plain English suitable for a Za
             <button
               onClick={handleSave}
               disabled={saving || !edited.trim()}
-              className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-50"
-              style={{ background: "linear-gradient(135deg,#052e16,#166534)" }}
+              className="w-full flex items-center justify-center gap-2 py-3 rounded-[var(--r-sm)] text-sm font-bold text-[var(--white)] transition-all disabled:opacity-50"
+              style={{ background: "var(--brand)", color: "var(--on-brand)" }}
             >
               {saving ? (
                 <>

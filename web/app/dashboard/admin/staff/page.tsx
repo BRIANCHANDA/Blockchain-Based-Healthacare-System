@@ -37,36 +37,36 @@ const ROLE_META: Record<
 > = {
   practitioner: {
     label: "Doctor",
-    color: "#2563eb",
-    bg: "#eff6ff",
+    color: "var(--blue-600)",
+    bg: "var(--info-tint)",
     icon: Stethoscope,
   },
-  nurse: { label: "Nurse", color: "#0e7490", bg: "#ecfeff", icon: Users },
+  nurse: { label: "Nurse", color: "var(--info-ink)", bg: "var(--info-tint)", icon: Users },
   lab_technician: {
     label: "Lab Tech",
-    color: "#d97706",
-    bg: "#fffbeb",
+    color: "var(--urgent-ink)",
+    bg: "var(--amber-050)",
     icon: FlaskConical,
   },
   radiologist: {
     label: "Radiologist",
-    color: "#7c3aed",
-    bg: "#faf5ff",
+    color: "var(--accent-ink)",
+    bg: "var(--violet-050)",
     icon: Scan,
   },
   pharmacist: {
     label: "Pharmacist",
-    color: "#166534",
-    bg: "#f0fdf4",
+    color: "var(--green-800)",
+    bg: "var(--brand-tint)",
     icon: Pill,
   },
   receptionist: {
     label: "Receptionist",
-    color: "#0369a1",
-    bg: "#f0f9ff",
+    color: "var(--info-ink)",
+    bg: "var(--info-tint)",
     icon: UserCog,
   },
-  admin: { label: "Admin", color: "#dc2626", bg: "#fef2f2", icon: Shield },
+  admin: { label: "Admin", color: "var(--critical-ink)", bg: "var(--coral-050)", icon: Shield },
 };
 
 // ── Inner component (uses useSearchParams — must be inside Suspense) ───────────
@@ -86,9 +86,19 @@ function StaffPageInner() {
   const [verifiedFilter, setVerifiedFilter] = useState(
     initFilter === "unverified" ? "unverified" : "",
   );
+  const [institutionFilter, setInstitutionFilter] = useState("");
+  const [institutions, setInstitutions] = useState<{ id: string; institutionName: string }[]>([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const PER_PAGE = 15;
+
+  // SuperAdmin: load all institutions for the filter dropdown
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    api.get("/api/institutions").then((res) => {
+      setInstitutions(res.data.data?.institutions ?? []);
+    }).catch(() => {});
+  }, [isSuperAdmin]);
 
   const load = useCallback(
     async (silent = false) => {
@@ -103,9 +113,13 @@ function StaffPageInner() {
           ...(verifiedFilter
             ? { verified: verifiedFilter === "verified" ? "true" : "false" }
             : {}),
-          // Hospital admins only see their institution's staff
+          // Hospital admins are locked to their own institution
           ...(!isSuperAdmin && myInstitutionId
             ? { institutionId: myInstitutionId }
+            : {}),
+          // SuperAdmin can filter by a selected institution
+          ...(isSuperAdmin && institutionFilter
+            ? { institutionId: institutionFilter }
             : {}),
         });
         const res = await api.get(`/api/practitioners?${params}`);
@@ -117,7 +131,7 @@ function StaffPageInner() {
         setRefreshing(false);
       }
     },
-    [page, search, roleFilter, verifiedFilter],
+    [page, search, roleFilter, verifiedFilter, institutionFilter],
   );
 
   useEffect(() => {
@@ -125,7 +139,7 @@ function StaffPageInner() {
   }, [load]);
   useEffect(() => {
     setPage(1);
-  }, [search, roleFilter, verifiedFilter]);
+  }, [search, roleFilter, verifiedFilter, institutionFilter]);
 
   const handleVerify = async (staffId: string) => {
     try {
@@ -153,18 +167,10 @@ function StaffPageInner() {
         }}
       >
         <div>
-          <h1
-            style={{
-              fontSize: 22,
-              fontWeight: 700,
-              color: "#111827",
-              fontFamily: "'Playfair Display', serif",
-              marginBottom: 4,
-            }}
-          >
+          <h1 style={{ margin: 0, font: "700 27px/1.1 var(--font-sans)", letterSpacing: "var(--ls-tight)", color: "var(--text-primary)" }}>
             Staff Management
           </h1>
-          <p style={{ fontSize: 13.5, color: "#9ca3af" }}>
+          <p style={{ fontSize: 13.5, color: "var(--text-muted)" }}>
             Manage and verify all clinical staff across the system
           </p>
         </div>
@@ -176,13 +182,13 @@ function StaffPageInner() {
               width: 36,
               height: 36,
               borderRadius: 9,
-              border: "1px solid #e5e7eb",
-              background: "#fff",
+              border: "1px solid var(--hc-border)",
+              background: "var(--white)",
               cursor: "pointer",
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              color: "#6b7280",
+              color: "var(--text-secondary)",
             }}
           >
             <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
@@ -195,8 +201,8 @@ function StaffPageInner() {
               gap: 8,
               padding: "9px 18px",
               borderRadius: 10,
-              background: "linear-gradient(135deg,#166534,#15803d)",
-              color: "#fff",
+              background: "var(--brand)",
+              color: "var(--white)",
               fontSize: 13.5,
               fontWeight: 600,
               border: "none",
@@ -217,16 +223,16 @@ function StaffPageInner() {
             gap: 12,
             padding: "12px 16px",
             borderRadius: 12,
-            background: "#fef2f2",
-            border: "1px solid #fecaca",
+            background: "var(--coral-050)",
+            border: "1px solid var(--coral-100)",
             marginBottom: 20,
           }}
         >
           <AlertTriangle
             size={16}
-            style={{ color: "#dc2626", flexShrink: 0 }}
+            style={{ color: "var(--critical-ink)", flexShrink: 0 }}
           />
-          <p style={{ fontSize: 13.5, color: "#b91c1c", fontWeight: 500 }}>
+          <p style={{ fontSize: 13.5, color: "var(--coral-600)", fontWeight: 500 }}>
             <strong>
               {unverifiedCount} staff member{unverifiedCount !== 1 ? "s" : ""}
             </strong>{" "}
@@ -238,7 +244,7 @@ function StaffPageInner() {
               marginLeft: "auto",
               fontSize: 12.5,
               fontWeight: 600,
-              color: "#dc2626",
+              color: "var(--critical-ink)",
               background: "none",
               border: "none",
               cursor: "pointer",
@@ -263,7 +269,7 @@ function StaffPageInner() {
               left: 12,
               top: "50%",
               transform: "translateY(-50%)",
-              color: "#9ca3af",
+              color: "var(--text-muted)",
             }}
           />
           <input
@@ -274,15 +280,15 @@ function StaffPageInner() {
               width: "100%",
               padding: "9px 36px",
               borderRadius: 10,
-              border: "1px solid #e5e7eb",
-              background: "#fff",
+              border: "1px solid var(--hc-border)",
+              background: "var(--white)",
               fontSize: 13.5,
-              color: "#111",
+              color: "var(--text-primary)",
               outline: "none",
               boxSizing: "border-box",
             }}
-            onFocus={(e) => (e.currentTarget.style.borderColor = "#166534")}
-            onBlur={(e) => (e.currentTarget.style.borderColor = "#e5e7eb")}
+            onFocus={(e) => (e.currentTarget.style.borderColor = "var(--green-800)")}
+            onBlur={(e) => (e.currentTarget.style.borderColor = "var(--hc-border)")}
           />
           {search && (
             <button
@@ -295,7 +301,7 @@ function StaffPageInner() {
                 background: "none",
                 border: "none",
                 cursor: "pointer",
-                color: "#9ca3af",
+                color: "var(--text-muted)",
               }}
             >
               <X size={13} />
@@ -310,10 +316,10 @@ function StaffPageInner() {
           style={{
             padding: "9px 14px",
             borderRadius: 10,
-            border: "1px solid #e5e7eb",
-            background: "#fff",
+            border: "1px solid var(--hc-border)",
+            background: "var(--white)",
             fontSize: 13.5,
-            color: "#374151",
+            color: "var(--text-secondary)",
             outline: "none",
             cursor: "pointer",
           }}
@@ -325,6 +331,32 @@ function StaffPageInner() {
           ))}
         </select>
 
+        {/* Hospital filter — SuperAdmin only */}
+        {isSuperAdmin && (
+          <select
+            value={institutionFilter}
+            onChange={(e) => setInstitutionFilter(e.target.value)}
+            style={{
+              padding: "9px 14px",
+              borderRadius: 10,
+              border: "1px solid var(--hc-border)",
+              background: "var(--white)",
+              fontSize: 13.5,
+              color: "var(--text-secondary)",
+              outline: "none",
+              cursor: "pointer",
+              minWidth: 160,
+            }}
+          >
+            <option value="">All Hospitals</option>
+            {institutions.map((inst) => (
+              <option key={inst.id} value={inst.id}>
+                {inst.institutionName}
+              </option>
+            ))}
+          </select>
+        )}
+
         {/* Verified filter pills */}
         <div
           style={{
@@ -332,7 +364,7 @@ function StaffPageInner() {
             gap: 6,
             padding: 4,
             borderRadius: 10,
-            background: "#f1f5f9",
+            background: "var(--surface-sunken)",
           }}
         >
           {[
@@ -348,13 +380,13 @@ function StaffPageInner() {
                 borderRadius: 8,
                 fontSize: 12.5,
                 fontWeight: 600,
-                background: verifiedFilter === f.k ? "#fff" : "none",
-                color: verifiedFilter === f.k ? "#166534" : "#6b7280",
+                background: verifiedFilter === f.k ? "var(--white)" : "none",
+                color: verifiedFilter === f.k ? "var(--green-800)" : "var(--text-secondary)",
                 border: "none",
                 cursor: "pointer",
                 boxShadow:
                   verifiedFilter === f.k
-                    ? "0 1px 3px rgba(0,0,0,0.08)"
+                    ? "var(--elev-1)"
                     : "none",
                 transition: "all 0.12s",
               }}
@@ -368,9 +400,9 @@ function StaffPageInner() {
       {/* Table */}
       <div
         style={{
-          background: "#fff",
+          background: "var(--white)",
           borderRadius: 16,
-          border: "1px solid #eaecf0",
+          border: "1px solid var(--hc-border)",
           overflow: "hidden",
         }}
       >
@@ -381,7 +413,7 @@ function StaffPageInner() {
             gridTemplateColumns: "2fr 1.2fr 1.2fr 1fr 0.8fr 36px",
             gap: 12,
             padding: "10px 20px",
-            borderBottom: "1px solid #f3f4f6",
+            borderBottom: "1px solid var(--surface-sunken)",
           }}
         >
           {["Staff Member", "Role", "License", "Institution", "Status", ""].map(
@@ -391,7 +423,7 @@ function StaffPageInner() {
                 style={{
                   fontSize: 11,
                   fontWeight: 700,
-                  color: "#9ca3af",
+                  color: "var(--text-muted)",
                   textTransform: "uppercase",
                   letterSpacing: "0.06em",
                 }}
@@ -408,26 +440,26 @@ function StaffPageInner() {
               style={{
                 width: 24,
                 height: 24,
-                border: "2.5px solid #166534",
+                border: "2.5px solid var(--green-800)",
                 borderTopColor: "transparent",
                 borderRadius: "50%",
                 animation: "spin 0.7s linear infinite",
                 margin: "0 auto 10px",
               }}
             />
-            <p style={{ color: "#9ca3af", fontSize: 13 }}>Loading staff…</p>
+            <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Loading staff…</p>
             <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
           </div>
         ) : staff.length === 0 ? (
           <div style={{ padding: "60px 20px", textAlign: "center" }}>
             <UserCog
               size={36}
-              style={{ color: "#d1d5db", margin: "0 auto 12px" }}
+              style={{ color: "var(--text-disabled)", margin: "0 auto 12px" }}
             />
-            <p style={{ fontWeight: 600, color: "#6b7280", fontSize: 14 }}>
+            <p style={{ fontWeight: 600, color: "var(--text-secondary)", fontSize: 14 }}>
               No staff found
             </p>
-            <p style={{ color: "#9ca3af", fontSize: 13, marginTop: 4 }}>
+            <p style={{ color: "var(--text-muted)", fontSize: 13, marginTop: 4 }}>
               Try adjusting your filters
             </p>
           </div>
@@ -445,12 +477,12 @@ function StaffPageInner() {
                   padding: "14px 20px",
                   alignItems: "center",
                   borderBottom:
-                    i < staff.length - 1 ? "1px solid #f9fafb" : "none",
+                    i < staff.length - 1 ? "1px solid var(--surface-sunken)" : "none",
                   transition: "background 0.1s",
                   cursor: "default",
                 }}
                 onMouseEnter={(e) =>
-                  (e.currentTarget.style.background = "#fafbfc")
+                  (e.currentTarget.style.background = "var(--surface-app)")
                 }
                 onMouseLeave={(e) =>
                   (e.currentTarget.style.background = "none")
@@ -471,13 +503,13 @@ function StaffPageInner() {
                       height: 36,
                       borderRadius: 10,
                       flexShrink: 0,
-                      background: "linear-gradient(135deg,#1e293b,#334155)",
+                      background: "var(--sidebar-bg)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "center",
                       fontSize: 12,
                       fontWeight: 700,
-                      color: "#fff",
+                      color: "var(--white)",
                     }}
                   >
                     {s.firstName?.[0]}
@@ -488,7 +520,7 @@ function StaffPageInner() {
                       style={{
                         fontSize: 13.5,
                         fontWeight: 600,
-                        color: "#111",
+                        color: "var(--text-primary)",
                         whiteSpace: "nowrap",
                         overflow: "hidden",
                         textOverflow: "ellipsis",
@@ -500,7 +532,7 @@ function StaffPageInner() {
                       <p
                         style={{
                           fontSize: 11.5,
-                          color: "#9ca3af",
+                          color: "var(--text-muted)",
                           whiteSpace: "nowrap",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
@@ -534,7 +566,7 @@ function StaffPageInner() {
                     <span
                       style={{
                         fontSize: 12,
-                        color: "#9ca3af",
+                        color: "var(--text-muted)",
                         textTransform: "capitalize",
                       }}
                     >
@@ -547,8 +579,8 @@ function StaffPageInner() {
                 <p
                   style={{
                     fontSize: 12.5,
-                    color: "#6b7280",
-                    fontFamily: "monospace",
+                    color: "var(--text-secondary)",
+                    fontFamily: "var(--font-mono)",
                   }}
                 >
                   {s.licenseNumber}
@@ -558,7 +590,7 @@ function StaffPageInner() {
                 <p
                   style={{
                     fontSize: 12.5,
-                    color: "#9ca3af",
+                    color: "var(--text-muted)",
                     whiteSpace: "nowrap",
                     overflow: "hidden",
                     textOverflow: "ellipsis",
@@ -579,8 +611,8 @@ function StaffPageInner() {
                         fontWeight: 700,
                         padding: "3px 9px",
                         borderRadius: 999,
-                        background: "#f0fdf4",
-                        color: "#15803d",
+                        background: "var(--brand-tint)",
+                        color: "var(--green-700)",
                       }}
                     >
                       <CheckCircle2 size={11} /> Verified
@@ -593,21 +625,21 @@ function StaffPageInner() {
                         fontWeight: 700,
                         padding: "3px 9px",
                         borderRadius: 999,
-                        background: "#fef2f2",
-                        color: "#dc2626",
-                        border: "1px solid #fecaca",
+                        background: "var(--coral-050)",
+                        color: "var(--critical-ink)",
+                        border: "1px solid var(--coral-100)",
                         cursor: "pointer",
                         display: "inline-flex",
                         alignItems: "center",
                         gap: 5,
                       }}
                       onMouseEnter={(e) => {
-                        e.currentTarget.style.background = "#dc2626";
-                        e.currentTarget.style.color = "#fff";
+                        e.currentTarget.style.background = "var(--critical-ink)";
+                        e.currentTarget.style.color = "var(--white)";
                       }}
                       onMouseLeave={(e) => {
-                        e.currentTarget.style.background = "#fef2f2";
-                        e.currentTarget.style.color = "#dc2626";
+                        e.currentTarget.style.background = "var(--coral-050)";
+                        e.currentTarget.style.color = "var(--critical-ink)";
                       }}
                     >
                       <AlertTriangle size={11} /> Verify
@@ -622,22 +654,22 @@ function StaffPageInner() {
                     width: 28,
                     height: 28,
                     borderRadius: 7,
-                    border: "1px solid #e5e7eb",
-                    background: "#fff",
+                    border: "1px solid var(--hc-border)",
+                    background: "var(--white)",
                     cursor: "pointer",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
-                    color: "#9ca3af",
+                    color: "var(--text-muted)",
                     transition: "all 0.12s",
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.borderColor = "#166534";
-                    e.currentTarget.style.color = "#166534";
+                    e.currentTarget.style.borderColor = "var(--green-800)";
+                    e.currentTarget.style.color = "var(--green-800)";
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.borderColor = "#e5e7eb";
-                    e.currentTarget.style.color = "#9ca3af";
+                    e.currentTarget.style.borderColor = "var(--hc-border)";
+                    e.currentTarget.style.color = "var(--text-muted)";
                   }}
                 >
                   <ChevronRight size={13} />
@@ -660,7 +692,7 @@ function StaffPageInner() {
             gap: 10,
           }}
         >
-          <p style={{ fontSize: 13, color: "#9ca3af" }}>
+          <p style={{ fontSize: 13, color: "var(--text-muted)" }}>
             Showing {(page - 1) * PER_PAGE + 1}–
             {Math.min(page * PER_PAGE, total)} of {total} staff
           </p>
@@ -671,11 +703,11 @@ function StaffPageInner() {
               style={{
                 padding: "6px 14px",
                 borderRadius: 8,
-                border: "1px solid #e5e7eb",
-                background: "#fff",
+                border: "1px solid var(--hc-border)",
+                background: "var(--white)",
                 fontSize: 13,
                 cursor: "pointer",
-                color: page === 1 ? "#d1d5db" : "#374151",
+                color: page === 1 ? "var(--text-disabled)" : "var(--text-secondary)",
               }}
             >
               Previous
@@ -695,9 +727,9 @@ function StaffPageInner() {
                     fontSize: 13,
                     fontWeight: 600,
                     cursor: "pointer",
-                    background: page === p ? "#166534" : "#fff",
-                    color: page === p ? "#fff" : "#374151",
-                    borderColor: page === p ? "#166534" : "#e5e7eb",
+                    background: page === p ? "var(--green-800)" : "var(--white)",
+                    color: page === p ? "var(--white)" : "var(--text-secondary)",
+                    borderColor: page === p ? "var(--green-800)" : "var(--hc-border)",
                   }}
                 >
                   {p}
@@ -710,11 +742,11 @@ function StaffPageInner() {
               style={{
                 padding: "6px 14px",
                 borderRadius: 8,
-                border: "1px solid #e5e7eb",
-                background: "#fff",
+                border: "1px solid var(--hc-border)",
+                background: "var(--white)",
                 fontSize: 13,
                 cursor: "pointer",
-                color: page === totalPages ? "#d1d5db" : "#374151",
+                color: page === totalPages ? "var(--text-disabled)" : "var(--text-secondary)",
               }}
             >
               Next
@@ -731,7 +763,7 @@ export default function StaffPage() {
   return (
     <Suspense
       fallback={
-        <div style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>
+        <div style={{ padding: 40, textAlign: "center", color: "var(--text-muted)" }}>
           Loading…
         </div>
       }

@@ -82,55 +82,55 @@ const PRIORITY_CONFIG: Record<
   { color: string; bg: string; label: string }
 > = {
   critical: {
-    color: "#dc2626",
-    bg: "#fef2f2",
+    color: "var(--critical-ink)",
+    bg: "var(--coral-050)",
     label: "Critical",
   },
   emergency: {
-    color: "#ea580c",
-    bg: "#fff7ed",
+    color: "var(--critical-ink)",
+    bg: "var(--coral-050)",
     label: "Emergency",
   },
   urgent: {
-    color: "#d97706",
-    bg: "#fffbeb",
+    color: "var(--urgent-ink)",
+    bg: "var(--amber-050)",
     label: "Urgent",
   },
   routine: {
-    color: "#16a34a",
-    bg: "#f0fdf4",
+    color: "var(--success-ink)",
+    bg: "var(--brand-tint)",
     label: "Routine",
   },
 };
 
 const ACTION_CONFIG: Record<string, { color: string; bg: string }> = {
   view: {
-    color: "#64748b",
-    bg: "#f8fafc",
+    color: "var(--text-secondary)",
+    bg: "var(--surface-sunken)",
   },
   create: {
-    color: "#16a34a",
-    bg: "#f0fdf4",
+    color: "var(--success-ink)",
+    bg: "var(--brand-tint)",
   },
   update: {
-    color: "#2563eb",
-    bg: "#eff6ff",
+    color: "var(--blue-600)",
+    bg: "var(--info-tint)",
   },
   delete: {
-    color: "#dc2626",
-    bg: "#fef2f2",
+    color: "var(--critical-ink)",
+    bg: "var(--coral-050)",
   },
   permission_grant: {
-    color: "#d97706",
-    bg: "#fffbeb",
+    color: "var(--urgent-ink)",
+    bg: "var(--amber-050)",
   },
   permission_revoke: {
-    color: "#7c3aed",
-    bg: "#f5f3ff",
+    color: "var(--accent-ink)",
+    bg: "var(--violet-050)",
   },
   emergency_override: {
-    color: "#dc2626",
-    bg: "#fef2f2",
+    color: "var(--critical-ink)",
+    bg: "var(--coral-050)",
   },
 };
 
@@ -163,45 +163,45 @@ function KpiCard({
       disabled={!href}
       onClick={() => href && router.push(href)}
       className={`
-        group relative w-full text-left bg-white border border-slate-200
-        rounded-2xl p-5 transition-all duration-200
+        group relative w-full text-left bg-[var(--surface-card)] border border-[var(--hc-border)]
+        rounded-[var(--r-lg)] p-5 transition-all duration-200
         ${
           href
-            ? "hover:border-emerald-200 hover:shadow-md hover:-translate-y-0.5 cursor-pointer"
+            ? "hover:border-[var(--green-200)] hover:shadow-[var(--elev-2)] hover:-translate-y-0.5 cursor-pointer"
             : "cursor-default"
         }
       `}
     >
       <div className="flex items-start justify-between">
         <div
-          className={`w-10 h-10 rounded-xl flex items-center justify-center ${iconClass}`}
+          className={`w-10 h-10 rounded-[var(--r-sm)] flex items-center justify-center ${iconClass}`}
         >
           <Icon className="w-[18px] h-[18px]" />
         </div>
 
         {href && (
-          <ArrowUpRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 transition-colors" />
+          <ArrowUpRight className="w-4 h-4 text-[var(--text-disabled)] group-hover:text-[var(--green-700)] transition-colors" />
         )}
       </div>
 
       <div className="mt-5">
-        <p className="text-[13px] font-medium text-slate-500">{label}</p>
+        <p className="text-[13px] font-medium text-[var(--text-secondary)]">{label}</p>
 
-        <p className="mt-1 text-[28px] leading-none font-bold tracking-tight text-slate-900">
+        <p className="mt-1 text-[28px] leading-none font-bold tracking-tight text-[var(--text-primary)]">
           {value === undefined ? (
-            <span className="inline-block w-16 h-7 rounded-md bg-slate-100 animate-pulse" />
+            <span className="inline-block w-16 h-7 rounded-[var(--r-xs)] bg-[var(--surface-sunken)] animate-pulse" />
           ) : (
             value.toLocaleString()
           )}
         </p>
 
         <div className="flex items-center gap-2 mt-2">
-          <p className="text-[12.5px] text-slate-400">{description}</p>
+          <p className="text-[12.5px] text-[var(--text-muted)]">{description}</p>
 
           {trend && (
             <>
-              <span className="w-1 h-1 rounded-full bg-slate-300" />
-              <span className="text-[12.5px] font-semibold text-emerald-600">
+              <span className="w-1 h-1 rounded-full bg-[var(--ink-300)]" />
+              <span className="text-[12.5px] font-semibold text-[var(--green-700)]">
                 {trend}
               </span>
             </>
@@ -221,7 +221,7 @@ function Panel({
 }) {
   return (
     <div
-      className={`bg-white border border-slate-200 rounded-2xl overflow-hidden ${className}`}
+      className={`bg-[var(--surface-card)] border border-[var(--hc-border)] rounded-[var(--r-lg)] overflow-hidden ${className}`}
     >
       {children}
     </div>
@@ -240,21 +240,21 @@ function PanelHeader({
   onAction?: () => void;
 }) {
   return (
-    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+    <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-faint)]">
       <div className="flex items-center gap-2.5">
         {Icon && (
-          <div className="w-8 h-8 rounded-lg bg-slate-50 flex items-center justify-center">
-            <Icon className="w-4 h-4 text-slate-500" />
+          <div className="w-8 h-8 rounded-[var(--r-xs)] bg-[var(--surface-sunken)] flex items-center justify-center">
+            <Icon className="w-4 h-4 text-[var(--text-secondary)]" />
           </div>
         )}
 
-        <h3 className="text-[15px] font-bold text-slate-900">{title}</h3>
+        <h3 className="text-[15px] font-bold text-[var(--text-primary)]">{title}</h3>
       </div>
 
       {action && onAction && (
         <button
           onClick={onAction}
-          className="flex items-center gap-1 text-[13px] font-semibold text-emerald-700 hover:text-emerald-800"
+          className="flex items-center gap-1 text-[13px] font-semibold text-[var(--green-700)] hover:text-[var(--green-800)]"
         >
           {action}
           <ChevronRight className="w-3.5 h-3.5" />
@@ -266,15 +266,15 @@ function PanelHeader({
 
 function SkeletonRow() {
   return (
-    <div className="flex items-center gap-3 px-5 py-3.5 border-b border-slate-50">
-      <div className="w-9 h-9 rounded-xl bg-slate-100 animate-pulse" />
+    <div className="flex items-center gap-3 px-5 py-3.5 border-b border-[var(--border-faint)]">
+      <div className="w-9 h-9 rounded-[var(--r-sm)] bg-[var(--surface-sunken)] animate-pulse" />
 
       <div className="flex-1">
-        <div className="w-2/5 h-3 rounded bg-slate-100 animate-pulse mb-2" />
-        <div className="w-3/5 h-2.5 rounded bg-slate-100 animate-pulse" />
+        <div className="w-2/5 h-3 rounded bg-[var(--surface-sunken)] animate-pulse mb-2" />
+        <div className="w-3/5 h-2.5 rounded bg-[var(--surface-sunken)] animate-pulse" />
       </div>
 
-      <div className="w-14 h-5 rounded-full bg-slate-100 animate-pulse" />
+      <div className="w-14 h-5 rounded-full bg-[var(--surface-sunken)] animate-pulse" />
     </div>
   );
 }
@@ -288,11 +288,11 @@ function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 px-5 text-center">
-      <div className="w-10 h-10 rounded-xl bg-slate-50 flex items-center justify-center mb-3">
-        <Icon className="w-5 h-5 text-slate-300" />
+      <div className="w-10 h-10 rounded-[var(--r-sm)] bg-[var(--surface-sunken)] flex items-center justify-center mb-3">
+        <Icon className="w-5 h-5 text-[var(--text-disabled)]" />
       </div>
 
-      <p className="text-[13px] text-slate-400">{message}</p>
+      <p className="text-[13px] text-[var(--text-muted)]">{message}</p>
     </div>
   );
 }
@@ -321,8 +321,8 @@ function AttentionPanel({
       label: "Permission requests",
       description: "Awaiting approval",
       value: stats?.pendingPermissions ?? 0,
-      color: "text-amber-600",
-      bg: "bg-amber-50",
+      color: "text-[var(--urgent-ink)]",
+      bg: "bg-[var(--amber-050)]",
       href: "/dashboard/admin/permissions",
     });
   }
@@ -333,8 +333,8 @@ function AttentionPanel({
       label: "Unverified staff",
       description: "Require verification",
       value: stats?.unverifiedStaff ?? 0,
-      color: "text-red-600",
-      bg: "bg-red-50",
+      color: "text-[var(--critical-ink)]",
+      bg: "bg-[var(--coral-050)]",
       href: "/dashboard/admin/staff?filter=unverified",
     });
   }
@@ -345,8 +345,8 @@ function AttentionPanel({
       label: "Laboratory orders",
       description: "Pending processing",
       value: stats?.pendingLabOrders ?? 0,
-      color: "text-amber-600",
-      bg: "bg-amber-50",
+      color: "text-[var(--urgent-ink)]",
+      bg: "bg-[var(--amber-050)]",
     });
   }
 
@@ -356,8 +356,8 @@ function AttentionPanel({
       label: "Imaging requests",
       description: "Pending processing",
       value: stats?.pendingImaging ?? 0,
-      color: "text-blue-600",
-      bg: "bg-blue-50",
+      color: "text-[var(--info-ink)]",
+      bg: "bg-[var(--info-tint)]",
     });
   }
 
@@ -372,16 +372,16 @@ function AttentionPanel({
 
       {items.length === 0 ? (
         <div className="px-5 py-8">
-          <div className="flex items-center gap-3 rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3">
-            <div className="w-8 h-8 rounded-lg bg-emerald-100 flex items-center justify-center">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+          <div className="flex items-center gap-3 rounded-[var(--r-sm)] bg-[var(--brand-tint)] border border-[var(--green-100)] px-4 py-3">
+            <div className="w-8 h-8 rounded-[var(--r-xs)] bg-[var(--green-100)] flex items-center justify-center">
+              <CheckCircle2 className="w-4 h-4 text-[var(--green-700)]" />
             </div>
 
             <div>
-              <p className="text-[13px] font-semibold text-emerald-800">
+              <p className="text-[13px] font-semibold text-[var(--green-800)]">
                 Everything looks good
               </p>
-              <p className="text-[12.5px] text-emerald-600 mt-0.5">
+              <p className="text-[12.5px] text-[var(--green-700)] mt-0.5">
                 No outstanding administrative actions.
               </p>
             </div>
@@ -400,22 +400,22 @@ function AttentionPanel({
                 className={`
                   w-full flex items-center gap-3 px-5 py-3.5 text-left
                   transition-colors
-                  ${index < items.length - 1 ? "border-b border-slate-50" : ""}
-                  ${item.href ? "hover:bg-slate-50 cursor-pointer" : ""}
+                  ${index < items.length - 1 ? "border-b border-[var(--border-faint)]" : ""}
+                  ${item.href ? "hover:bg-[var(--surface-sunken)] cursor-pointer" : ""}
                 `}
               >
                 <div
-                  className={`w-9 h-9 rounded-xl flex items-center justify-center ${item.bg}`}
+                  className={`w-9 h-9 rounded-[var(--r-sm)] flex items-center justify-center ${item.bg}`}
                 >
                   <Icon className={`w-4 h-4 ${item.color}`} />
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <p className="text-[13px] font-semibold text-slate-800">
+                  <p className="text-[13px] font-semibold text-[var(--text-primary)]">
                     {item.label}
                   </p>
 
-                  <p className="text-[12.5px] text-slate-400 mt-0.5">
+                  <p className="text-[12.5px] text-[var(--text-muted)] mt-0.5">
                     {item.description}
                   </p>
                 </div>
@@ -426,7 +426,7 @@ function AttentionPanel({
                   </span>
 
                   {item.href && (
-                    <ChevronRight className="w-3.5 h-3.5 text-slate-300" />
+                    <ChevronRight className="w-3.5 h-3.5 text-[var(--text-disabled)]" />
                   )}
                 </div>
               </button>
@@ -476,20 +476,20 @@ function RecentStaff({
               onClick={() => router.push(`/dashboard/admin/staff/${person.id}`)}
               className={`
                 w-full flex items-center gap-3 px-5 py-3.5 text-left
-                hover:bg-slate-50 transition-colors
-                ${index < staff.length - 1 ? "border-b border-slate-50" : ""}
+                hover:bg-[var(--surface-sunken)] transition-colors
+                ${index < staff.length - 1 ? "border-b border-[var(--border-faint)]" : ""}
               `}
             >
-              <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center text-[12.5px] font-bold text-slate-600 flex-shrink-0">
+              <div className="w-9 h-9 rounded-[var(--r-sm)] bg-[var(--surface-sunken)] flex items-center justify-center text-[12.5px] font-bold text-[var(--text-secondary)] flex-shrink-0">
                 {initials || "?"}
               </div>
 
               <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-semibold text-slate-800 truncate">
+                <p className="text-[13px] font-semibold text-[var(--text-primary)] truncate">
                   {person.firstName} {person.lastName}
                 </p>
 
-                <p className="text-[12px] text-slate-400 truncate mt-0.5">
+                <p className="text-[12px] text-[var(--text-muted)] truncate mt-0.5">
                   {ROLE_LABEL[person.role ?? ""] ?? person.role ?? "Staff"}
                   {person.licenseNumber ? ` · ${person.licenseNumber}` : ""}
                 </p>
@@ -501,15 +501,15 @@ function RecentStaff({
                     px-2 py-0.5 rounded-full text-[11px] font-bold
                     ${
                       person.isVerified
-                        ? "bg-emerald-50 text-emerald-700"
-                        : "bg-red-50 text-red-600"
+                        ? "bg-[var(--brand-tint)] text-[var(--green-700)]"
+                        : "bg-[var(--coral-050)] text-[var(--critical-ink)]"
                     }
                   `}
                 >
                   {person.isVerified ? "Verified" : "Pending"}
                 </span>
 
-                <ChevronRight className="w-3 h-3 text-slate-300" />
+                <ChevronRight className="w-3 h-3 text-[var(--text-disabled)]" />
               </div>
             </button>
           );
@@ -559,11 +559,11 @@ function RecentVisits({
               key={visit.id}
               className={`
                 w-full flex items-center gap-3 px-5 py-4 text-left
-                ${index < visits.length - 1 ? "border-b border-slate-50" : ""}
+                ${index < visits.length - 1 ? "border-b border-[var(--border-faint)]" : ""}
               `}
             >
               <div
-                className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                className="w-9 h-9 rounded-[var(--r-sm)] flex items-center justify-center flex-shrink-0"
                 style={{
                   background: priority.bg,
                 }}
@@ -575,11 +575,11 @@ function RecentVisits({
               </div>
 
               <div className="flex-1 min-w-0">
-                <p className="text-[13px] font-bold text-slate-800 font-mono">
+                <p className="text-[13px] font-bold text-[var(--text-primary)] font-mono">
                   {visit.visitNumber ?? "—"}
                 </p>
 
-                <p className="text-[12px] text-slate-400 truncate mt-0.5">
+                <p className="text-[12px] text-[var(--text-muted)] truncate mt-0.5">
                   {visit.chiefComplaint || "No complaint recorded"}
                 </p>
               </div>
@@ -595,7 +595,7 @@ function RecentVisits({
                   {priority.label}
                 </span>
 
-                <span className="flex items-center gap-1 text-[11.5px] text-slate-400">
+                <span className="flex items-center gap-1 text-[11.5px] text-[var(--text-muted)]">
                   <Clock3 className="w-3 h-3" />
 
                   {visit.admissionDate
@@ -647,11 +647,11 @@ function AuditActivity({
               key={log.id}
               className={`
                 flex items-start gap-3 px-5 py-3.5
-                ${index < logs.length - 1 ? "border-b border-slate-50" : ""}
+                ${index < logs.length - 1 ? "border-b border-[var(--border-faint)]" : ""}
               `}
             >
               <div
-                className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                className="w-8 h-8 rounded-[var(--r-xs)] flex items-center justify-center flex-shrink-0"
                 style={{
                   background: action.bg,
                 }}
@@ -663,19 +663,19 @@ function AuditActivity({
               </div>
 
               <div className="flex-1 min-w-0">
-                <p className="text-[13px] text-slate-700 leading-snug">
+                <p className="text-[13px] text-[var(--text-secondary)] leading-snug">
                   <span
                     className="font-semibold capitalize"
                     style={{ color: action.color }}
                   >
                     {log.actionType?.replace(/_/g, " ") ?? "Activity"}
                   </span>{" "}
-                  <span className="text-slate-400">
+                  <span className="text-[var(--text-muted)]">
                     {log.resourceType ?? "resource"}
                   </span>
                 </p>
 
-                <p className="text-[12px] text-slate-400 mt-1">
+                <p className="text-[12px] text-[var(--text-muted)] mt-1">
                   {log.timestamp
                     ? formatDistanceToNow(new Date(log.timestamp), {
                         addSuffix: true,
@@ -685,7 +685,7 @@ function AuditActivity({
               </div>
 
               {log.isEmergencyOverride && (
-                <span className="px-1.5 py-0.5 rounded bg-red-50 text-red-600 text-[10px] font-bold">
+                <span className="px-1.5 py-0.5 rounded bg-[var(--coral-050)] text-[var(--critical-ink)] text-[10px] font-bold">
                   OVERRIDE
                 </span>
               )}
@@ -778,9 +778,9 @@ export default function AdminDashboard() {
         <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-5">
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--brand)]" />
 
-              <p className="text-[12.5px] font-semibold uppercase tracking-[0.12em] text-emerald-700">
+              <p className="text-[12.5px] font-semibold uppercase tracking-[0.12em] text-[var(--green-700)]">
                 {isSuperAdmin
                   ? "System Administration"
                   : "Hospital Administration"}
@@ -793,7 +793,7 @@ export default function AdminDashboard() {
               nothing the numbers below don't, and the date is already shown
               twice in the layout header.
             */}
-            <h1 className="text-[27px] sm:text-[30px] font-bold tracking-tight text-slate-900">
+            <h1 style={{ margin: 0, font: "700 27px/1.1 var(--font-sans)", letterSpacing: "var(--ls-tight)", color: "var(--text-primary)" }}>
               {isSuperAdmin
                 ? "All Institutions"
                 : institutionName || "My Institution"}
@@ -803,7 +803,7 @@ export default function AdminDashboard() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => router.push("/dashboard/admin/staff/new")}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[13px] font-semibold shadow-sm transition-colors"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-[var(--r-sm)] bg-[var(--brand)] hover:bg-[var(--brand-deep)] text-[var(--white)] text-[13px] font-semibold shadow-[var(--elev-1)] transition-colors"
             >
               <UserCog className="w-3.5 h-3.5" />
               Add Staff
@@ -812,7 +812,7 @@ export default function AdminDashboard() {
             {isSuperAdmin && (
               <button
                 onClick={() => router.push("/dashboard/admin/institutions")}
-                className="hidden sm:inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:border-emerald-200 text-slate-700 text-[13px] font-semibold transition-colors"
+                className="hidden sm:inline-flex items-center gap-2 px-4 py-2.5 rounded-[var(--r-sm)] bg-[var(--surface-card)] border border-[var(--hc-border)] hover:border-[var(--green-200)] text-[var(--text-secondary)] text-[13px] font-semibold transition-colors"
               >
                 <Building2 className="w-3.5 h-3.5" />
                 Institutions
@@ -832,7 +832,7 @@ export default function AdminDashboard() {
           value={stats?.totalPatients}
           description="Registered patients"
           icon={Users}
-          iconClass="bg-blue-50 text-blue-600"
+          iconClass="bg-[var(--info-tint)] text-[var(--info-ink)]"
           href="/dashboard/admin/patients"
         />
 
@@ -841,7 +841,7 @@ export default function AdminDashboard() {
           value={stats?.totalStaff}
           description="Across all roles"
           icon={UserCog}
-          iconClass="bg-violet-50 text-violet-600"
+          iconClass="bg-[var(--violet-050)] text-[var(--accent-ink)]"
           href="/dashboard/admin/staff"
         />
 
@@ -850,7 +850,7 @@ export default function AdminDashboard() {
           value={stats?.activeVisits}
           description="Currently in progress"
           icon={ClipboardList}
-          iconClass="bg-emerald-50 text-emerald-600"
+          iconClass="bg-[var(--brand-tint)] text-[var(--green-700)]"
           href="/dashboard/admin/visits"
         />
 
@@ -859,7 +859,7 @@ export default function AdminDashboard() {
           value={stats?.completedToday}
           description="Visits completed today"
           icon={CheckCircle2}
-          iconClass="bg-cyan-50 text-cyan-600"
+          iconClass="bg-[var(--info-tint)] text-[var(--info-ink)]"
         />
       </section>
 
@@ -890,48 +890,48 @@ export default function AdminDashboard() {
         {isSuperAdmin && (
           <button
             onClick={() => router.push("/dashboard/admin/institutions")}
-            className="group bg-white border border-slate-200 rounded-2xl p-4 text-left hover:border-sky-200 hover:shadow-sm transition-all"
+            className="group bg-[var(--surface-card)] border border-[var(--hc-border)] rounded-[var(--r-lg)] p-4 text-left hover:border-[var(--blue-100)] hover:shadow-[var(--elev-1)] transition-all"
           >
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-sky-50 flex items-center justify-center">
-                <Building2 className="w-4 h-4 text-sky-600" />
+              <div className="w-9 h-9 rounded-[var(--r-sm)] bg-[var(--info-tint)] flex items-center justify-center">
+                <Building2 className="w-4 h-4 text-[var(--info-ink)]" />
               </div>
 
               <div className="flex-1">
-                <p className="text-[12.5px] text-slate-500">Institutions</p>
+                <p className="text-[12.5px] text-[var(--text-secondary)]">Institutions</p>
 
-                <p className="text-lg font-bold text-slate-900">
+                <p className="text-lg font-bold text-[var(--text-primary)]">
                   {stats?.totalInstitutions === undefined
                     ? "—"
                     : stats.totalInstitutions.toLocaleString()}
                 </p>
               </div>
 
-              <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-sky-600" />
+              <ChevronRight className="w-4 h-4 text-[var(--text-disabled)] group-hover:text-[var(--info-ink)]" />
             </div>
           </button>
         )}
 
         <button
           onClick={() => router.push("/dashboard/admin/audit")}
-          className="group bg-white border border-slate-200 rounded-2xl p-4 text-left hover:border-slate-300 hover:shadow-sm transition-all"
+          className="group bg-[var(--surface-card)] border border-[var(--hc-border)] rounded-[var(--r-lg)] p-4 text-left hover:border-[var(--ink-300)] hover:shadow-[var(--elev-1)] transition-all"
         >
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center">
-              <Activity className="w-4 h-4 text-slate-600" />
+            <div className="w-9 h-9 rounded-[var(--r-sm)] bg-[var(--surface-sunken)] flex items-center justify-center">
+              <Activity className="w-4 h-4 text-[var(--text-secondary)]" />
             </div>
 
             <div className="flex-1">
-              <p className="text-[12.5px] text-slate-500">Audit events today</p>
+              <p className="text-[12.5px] text-[var(--text-secondary)]">Audit events today</p>
 
-              <p className="text-lg font-bold text-slate-900">
+              <p className="text-lg font-bold text-[var(--text-primary)]">
                 {stats?.auditLogsToday === undefined
                   ? "—"
                   : stats.auditLogsToday.toLocaleString()}
               </p>
             </div>
 
-            <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-600" />
+            <ChevronRight className="w-4 h-4 text-[var(--text-disabled)] group-hover:text-[var(--text-secondary)]" />
           </div>
         </button>
 

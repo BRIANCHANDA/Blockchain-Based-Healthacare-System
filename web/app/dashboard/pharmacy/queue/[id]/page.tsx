@@ -15,7 +15,31 @@ import {
   ChevronUp,
   ShieldCheck,
 } from "lucide-react";
-import { format, formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
+import {
+  Page,
+  Card,
+  CardHeader,
+  Field,
+  Textarea,
+  Button,
+  Pill as Badge,
+  Banner,
+  Toast,
+  SectionLabel,
+  LinkAction,
+} from "@/components/dashboard/ui";
+
+/* ==========================================================================
+   Dispense a prescription.
+
+   Items are selected individually — a prescription can be partially
+   dispensed when stock runs short, so the submit sends only the checked
+   item ids rather than the whole prescription.
+
+   Note the field names: this endpoint returns raw snake_case straight from
+   SQL (medication_name, is_dispensed), unlike most of the API.
+   ========================================================================== */
 
 const FREQUENCY_LABEL: Record<string, string> = {
   once_daily: "Once daily",
@@ -52,24 +76,47 @@ const FORM_ICON: Record<string, string> = {
   suppository: "📦",
 };
 
-function Toast({
-  message,
-  type,
+/** Meta cell in the prescription header strip. */
+function MetaCell({
+  icon: Icon,
+  label,
+  value,
 }: {
-  message: string;
-  type: "success" | "error";
+  icon: React.ElementType;
+  label: string;
+  value: React.ReactNode;
 }) {
   return (
-    <div
-      className={`fixed top-5 right-5 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl shadow-lg text-sm font-medium
-      ${type === "success" ? "bg-green-50 text-green-800 border border-green-200" : "bg-red-50 text-red-800 border border-red-100"}`}
-    >
-      {type === "success" ? (
-        <CheckCircle2 size={16} className="text-green-600" />
-      ) : (
-        <AlertTriangle size={16} className="text-red-500" />
-      )}
-      {message}
+    <div className="flex items-center" style={{ gap: 10 }}>
+      <span
+        className="inline-flex items-center justify-center flex-shrink-0"
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: "var(--r-xs)",
+          background: "var(--surface-sunken)",
+          color: "var(--text-muted)",
+        }}
+      >
+        <Icon className="w-3.5 h-3.5" />
+      </span>
+      <div className="min-w-0 flex flex-col" style={{ gap: 4 }}>
+        <span
+          style={{ font: "400 11.5px/1 var(--font-sans)", color: "var(--text-muted)" }}
+        >
+          {label}
+        </span>
+        <span
+          className="truncate"
+          style={{
+            font: "600 13px/1 var(--font-sans)",
+            color: "var(--text-primary)",
+            textTransform: "capitalize",
+          }}
+        >
+          {value}
+        </span>
+      </div>
     </div>
   );
 }
@@ -88,139 +135,235 @@ function MedCard({
   const [expanded, setExpanded] = useState(false);
   const icon = FORM_ICON[item.dosage_form] ?? "💊";
 
+  // An already-dispensed item is a receipt, not a control — no checkbox.
   if (item.is_dispensed) {
     return (
-      <div className="flex items-center gap-3 p-4 rounded-2xl border border-green-100 bg-green-50/50">
-        <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center flex-shrink-0 text-lg">
+      <div
+        className="flex items-center"
+        style={{
+          gap: 12,
+          padding: 14,
+          borderRadius: "var(--r-sm)",
+          background: "var(--brand-tint)",
+          border: "1px solid var(--green-100)",
+        }}
+      >
+        <span
+          className="inline-flex items-center justify-center flex-shrink-0"
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: "var(--r-xs)",
+            background: "var(--green-100)",
+            fontSize: 17,
+          }}
+        >
           {icon}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-gray-700 line-through truncate">
+        </span>
+        <div className="flex-1 min-w-0 flex flex-col" style={{ gap: 4 }}>
+          <p
+            className="truncate"
+            style={{
+              margin: 0,
+              font: "600 13.5px/1 var(--font-sans)",
+              color: "var(--text-secondary)",
+              textDecoration: "line-through",
+            }}
+          >
             {item.medication_name} {item.strength}
           </p>
-          <p className="text-xs text-green-600 font-semibold mt-0.5">
-            ✓ Dispensed{" "}
+          <p
+            style={{
+              margin: 0,
+              font: "600 11.5px/1 var(--font-sans)",
+              color: "var(--green-800)",
+            }}
+          >
+            Dispensed{" "}
             {item.dispensed_at
-              ? formatDistanceToNow(new Date(item.dispensed_at), {
-                  addSuffix: true,
-                })
+              ? formatDistanceToNow(new Date(item.dispensed_at), { addSuffix: true })
               : ""}
           </p>
         </div>
-        <CheckCircle2 size={20} className="text-green-500 flex-shrink-0" />
+        <CheckCircle2
+          className="w-5 h-5 flex-shrink-0"
+          style={{ color: "var(--green-700)" }}
+        />
       </div>
     );
   }
 
   return (
     <div
-      className="rounded-2xl border-2 overflow-hidden transition-all cursor-pointer"
-      style={{
-        borderColor: selected ? "#0A6640" : "#E5E7EB",
-        background: selected ? "#F0FDF4" : "#fff",
-      }}
       onClick={allDispensed ? undefined : onToggle}
+      style={{
+        borderRadius: "var(--r-sm)",
+        border: `1.5px solid ${selected ? "var(--brand)" : "var(--hc-border)"}`,
+        background: selected ? "var(--brand-tint)" : "var(--surface-card)",
+        overflow: "hidden",
+        cursor: allDispensed ? "default" : "pointer",
+        transition: "all var(--dur-fast) var(--ease-standard)",
+      }}
     >
-      <div className="flex items-center gap-3 p-4">
+      <div className="flex items-center" style={{ gap: 12, padding: 14 }}>
         {/* Checkbox */}
-        <div
-          className="w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all"
+        <span
+          className="inline-flex items-center justify-center flex-shrink-0"
           style={{
-            borderColor: selected ? "#0A6640" : "#D1D5DB",
-            backgroundColor: selected ? "#0A6640" : "#fff",
+            width: 20,
+            height: 20,
+            borderRadius: "var(--r-xs)",
+            border: `2px solid ${selected ? "var(--brand)" : "var(--ink-300)"}`,
+            background: selected ? "var(--brand)" : "var(--surface-card)",
+            transition: "all var(--dur-fast) var(--ease-standard)",
           }}
         >
           {selected && (
-            <svg viewBox="0 0 10 8" className="w-3 h-2.5 fill-white">
+            <svg viewBox="0 0 10 8" className="w-2.5 h-2">
               <path
                 d="M1 4l2.5 2.5L9 1"
-                stroke="white"
-                strokeWidth="1.5"
+                stroke="var(--on-brand)"
+                strokeWidth="1.8"
                 fill="none"
                 strokeLinecap="round"
+                strokeLinejoin="round"
               />
             </svg>
           )}
-        </div>
+        </span>
 
-        {/* Med icon */}
-        <div
-          className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
-          style={{ backgroundColor: selected ? "#DCFCE7" : "#F9FAFB" }}
+        <span
+          className="inline-flex items-center justify-center flex-shrink-0"
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: "var(--r-xs)",
+            background: selected ? "var(--green-100)" : "var(--surface-sunken)",
+            fontSize: 17,
+          }}
         >
           {icon}
-        </div>
+        </span>
 
-        {/* Info */}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-gray-900 truncate">
+        <div className="flex-1 min-w-0 flex flex-col" style={{ gap: 4 }}>
+          <p
+            className="truncate"
+            style={{
+              margin: 0,
+              font: "700 13.5px/1.2 var(--font-sans)",
+              color: "var(--text-primary)",
+            }}
+          >
             {item.medication_name}
             {item.strength && (
-              <span className="font-normal text-gray-500 ml-1">
+              <span style={{ fontWeight: 400, color: "var(--text-secondary)" }}>
+                {" "}
                 {item.strength}
               </span>
             )}
           </p>
-          <p className="text-xs text-gray-500 mt-0.5">
+          <p
+            className="truncate"
+            style={{
+              margin: 0,
+              font: "400 12px/1 var(--font-sans)",
+              color: "var(--text-muted)",
+            }}
+          >
             {item.dose} · {FREQUENCY_LABEL[item.frequency] ?? item.frequency} ·{" "}
             {ROUTE_LABEL[item.route] ?? item.route}
           </p>
         </div>
 
-        {/* Qty */}
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <div className="text-right">
-            <p className="text-lg font-extrabold text-gray-900 leading-none">
+        <div className="flex items-center flex-shrink-0" style={{ gap: 8 }}>
+          <div className="text-right flex flex-col" style={{ gap: 3 }}>
+            <span
+              style={{
+                font: "700 17px/1 var(--font-sans)",
+                letterSpacing: "var(--ls-tight)",
+                color: "var(--text-primary)",
+              }}
+            >
               {item.quantity}
-            </p>
-            <p className="text-xs text-gray-400">units</p>
+            </span>
+            <span
+              style={{ font: "400 11px/1 var(--font-sans)", color: "var(--text-muted)" }}
+            >
+              units
+            </span>
           </div>
           <button
             onClick={(e) => {
+              // The row itself toggles selection, so the chevron must not.
               e.stopPropagation();
               setExpanded((v) => !v);
             }}
-            className="p-1 rounded-lg hover:bg-gray-100 transition-colors"
+            className="inline-flex items-center justify-center"
+            style={{
+              width: 26,
+              height: 26,
+              border: "none",
+              borderRadius: "var(--r-xs)",
+              background: "transparent",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+            }}
           >
             {expanded ? (
-              <ChevronUp size={14} className="text-gray-400" />
+              <ChevronUp className="w-3.5 h-3.5" />
             ) : (
-              <ChevronDown size={14} className="text-gray-400" />
+              <ChevronDown className="w-3.5 h-3.5" />
             )}
           </button>
         </div>
       </div>
 
-      {/* Expanded details */}
       {expanded && (
-        <div className="px-4 pb-4 pt-0 border-t border-gray-100">
-          <div className="grid grid-cols-2 gap-3 pt-3">
-            {[
-              { label: "Dosage form", value: item.dosage_form },
-              { label: "Duration", value: item.duration },
-              { label: "Generic name", value: item.generic_name || "—" },
-              { label: "Refills", value: item.refills_allowed ?? 0 },
-            ].map(({ label, value }) => (
-              <div key={label}>
-                <p className="text-xs text-gray-400 uppercase tracking-wide font-semibold mb-0.5">
-                  {label}
-                </p>
-                <p className="text-sm text-gray-800 font-medium capitalize">
-                  {String(value)}
-                </p>
-              </div>
-            ))}
-            {item.instructions && (
-              <div className="col-span-2">
-                <p className="text-xs text-gray-400 uppercase tracking-wide font-semibold mb-0.5">
-                  Instructions
-                </p>
-                <p className="text-sm text-gray-800 italic">
-                  "{item.instructions}"
-                </p>
-              </div>
-            )}
-          </div>
+        <div
+          style={{
+            padding: "14px",
+            borderTop: "1px solid var(--border-faint)",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+            gap: 12,
+          }}
+        >
+          {[
+            { label: "Dosage form", value: item.dosage_form },
+            { label: "Duration", value: item.duration },
+            { label: "Generic name", value: item.generic_name || "—" },
+            { label: "Refills", value: item.refills_allowed ?? 0 },
+          ].map(({ label, value }) => (
+            <div key={label} className="flex flex-col" style={{ gap: 4 }}>
+              <SectionLabel>{label}</SectionLabel>
+              <span
+                style={{
+                  font: "500 13px/1.3 var(--font-sans)",
+                  color: "var(--text-primary)",
+                  textTransform: "capitalize",
+                }}
+              >
+                {String(value)}
+              </span>
+            </div>
+          ))}
+          {item.instructions && (
+            <div
+              className="flex flex-col"
+              style={{ gap: 4, gridColumn: "1 / -1" }}
+            >
+              <SectionLabel>Instructions</SectionLabel>
+              <span
+                style={{
+                  font: "400 13px/1.5 var(--font-sans)",
+                  color: "var(--text-secondary)",
+                  fontStyle: "italic",
+                }}
+              >
+                “{item.instructions}”
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -255,11 +398,10 @@ export default function PharmacyDispensePage() {
         setPrescription(res.data.data?.prescription ?? null);
         const itemList = res.data.data?.items ?? [];
         setItems(itemList);
-        // Pre-select all undispensed items
+        // Pre-select all undispensed items — dispensing everything is the
+        // common case, so deselecting is the exception the pharmacist makes.
         setSelected(
-          new Set(
-            itemList.filter((i: any) => !i.is_dispensed).map((i: any) => i.id),
-          ),
+          new Set(itemList.filter((i: any) => !i.is_dispensed).map((i: any) => i.id)),
         );
       })
       .catch(() => setPrescription(null))
@@ -297,11 +439,10 @@ export default function PharmacyDispensePage() {
         { itemIds: [...selected], dispensingNotes: notes.trim() || undefined },
       );
       showToast("Medications dispensed successfully.", "success");
+      // Let the toast land before navigating away.
       setTimeout(() => router.push("/dashboard/pharmacy/queue"), 1500);
     } catch (err: any) {
-      setError(
-        err.response?.data?.error?.message ?? "Failed to dispense. Try again.",
-      );
+      setError(err.response?.data?.error?.message ?? "Failed to dispense. Try again.");
     } finally {
       setSubmitting(false);
     }
@@ -309,29 +450,62 @@ export default function PharmacyDispensePage() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-64 gap-3">
-        <Loader2 size={28} className="animate-spin text-green-700" />
-        <p className="text-sm text-gray-400">Loading prescription…</p>
+      <div
+        className="flex flex-col items-center justify-center"
+        style={{ minHeight: 256, gap: 12 }}
+      >
+        <Loader2 className="w-7 h-7 animate-spin" style={{ color: "var(--brand)" }} />
+        <p
+          style={{
+            margin: 0,
+            font: "400 13px/1 var(--font-sans)",
+            color: "var(--text-muted)",
+          }}
+        >
+          Loading prescription…
+        </p>
       </div>
     );
   }
 
   if (!prescription) {
     return (
-      <div className="max-w-lg mx-auto text-center py-20">
-        <div className="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
-          <Pill size={28} className="text-gray-400" />
-        </div>
-        <p className="text-gray-700 font-semibold mb-1">
-          Prescription not found
-        </p>
-        <button
-          onClick={() => router.push("/dashboard/pharmacy/queue")}
-          className="text-green-700 text-sm font-medium hover:underline"
-        >
-          ← Back to queue
-        </button>
-      </div>
+      <Page maxWidth={520}>
+        <Card>
+          <div
+            className="flex flex-col items-center text-center"
+            style={{ padding: 48, gap: 12 }}
+          >
+            <span
+              className="inline-flex items-center justify-center"
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: "var(--r-sm)",
+                background: "var(--surface-sunken)",
+                color: "var(--text-muted)",
+              }}
+            >
+              <Pill className="w-6 h-6" />
+            </span>
+            <p
+              style={{
+                margin: 0,
+                font: "600 14px/1 var(--font-sans)",
+                color: "var(--text-primary)",
+              }}
+            >
+              Prescription not found
+            </p>
+            <LinkAction
+              arrow={false}
+              onClick={() => router.push("/dashboard/pharmacy/queue")}
+            >
+              Back to queue
+            </LinkAction>
+          </div>
+        </Card>
+      </Page>
     );
   }
 
@@ -340,130 +514,124 @@ export default function PharmacyDispensePage() {
   const allDone = pendingItems.length === 0;
 
   return (
-    <div
-      className="max-w-3xl mx-auto space-y-5"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
-    >
-      {toast && <Toast message={toast.message} type={toast.type} />}
+    <Page maxWidth={820}>
+      {toast && (
+        <Toast
+          message={toast.message}
+          icon={toast.type === "success" ? CheckCircle2 : AlertTriangle}
+          tone={toast.type === "success" ? "success" : "critical"}
+        />
+      )}
 
-      {/* Back */}
-      <button
+      <Button
+        variant="ghost"
+        icon={ChevronLeft}
         onClick={() => router.push("/dashboard/pharmacy/queue")}
-        className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+        style={{ alignSelf: "flex-start" }}
       >
-        <ChevronLeft size={16} /> Back to Queue
-      </button>
+        Back to queue
+      </Button>
 
       {/* Prescription header */}
-      <div
-        className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
-        style={{ borderTop: `4px solid #0A6640` }}
-      >
-        <div className="p-5">
-          <div className="flex items-start gap-4">
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0 bg-green-50">
-              <Package size={26} className="text-green-700" />
-            </div>
-            <div className="flex-1">
-              <div className="flex items-center gap-2 flex-wrap mb-1">
-                <h1 className="text-xl font-bold text-gray-900 font-mono">
+      <Card style={{ borderTop: "3px solid var(--brand)" }}>
+        <div style={{ padding: 20 }}>
+          <div className="flex items-start" style={{ gap: 16 }}>
+            <span
+              className="inline-flex items-center justify-center flex-shrink-0"
+              style={{
+                width: 52,
+                height: 52,
+                borderRadius: "var(--r-md)",
+                background: "var(--brand-tint)",
+                color: "var(--green-700)",
+              }}
+            >
+              <Package className="w-6 h-6" />
+            </span>
+
+            <div className="flex-1 min-w-0 flex flex-col" style={{ gap: 7 }}>
+              <div className="flex items-center flex-wrap" style={{ gap: 8 }}>
+                <h1
+                  style={{
+                    margin: 0,
+                    font: "700 20px/1.2 var(--font-mono)",
+                    color: "var(--text-primary)",
+                  }}
+                >
                   {prescription.prescription_number}
                 </h1>
                 {allDone ? (
-                  <span className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-green-50 text-green-700">
-                    <CheckCircle2 size={11} /> Fully Dispensed
-                  </span>
+                  <Badge tone="success" icon={CheckCircle2}>
+                    Fully dispensed
+                  </Badge>
                 ) : (
-                  <span className="text-xs font-semibold px-2.5 py-1 rounded-full bg-amber-50 text-amber-700">
-                    {pendingItems.length} item
-                    {pendingItems.length !== 1 ? "s" : ""} pending
-                  </span>
+                  <Badge tone="urgent">
+                    {pendingItems.length} item{pendingItems.length !== 1 ? "s" : ""}{" "}
+                    pending
+                  </Badge>
                 )}
               </div>
-              <p className="text-sm text-gray-500">
+              <p
+                style={{
+                  margin: 0,
+                  font: "400 13px/1 var(--font-sans)",
+                  color: "var(--text-secondary)",
+                }}
+              >
                 {prescription.visit_number}
               </p>
             </div>
           </div>
 
-          {/* Meta */}
-          <div className="grid grid-cols-3 gap-4 mt-5 pt-5 border-t border-gray-50">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center">
-                <Clock size={14} className="text-gray-500" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-400">Prescribed</p>
-                <p className="text-sm font-semibold text-gray-800">
-                  {formatDistanceToNow(new Date(prescription.prescribed_at), {
-                    addSuffix: true,
-                  })}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center">
-                <Pill size={14} className="text-gray-500" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-400">Total Items</p>
-                <p className="text-sm font-semibold text-gray-800">
-                  {items.length}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center">
-                <ShieldCheck size={14} className="text-gray-500" />
-              </div>
-              <div>
-                <p className="text-xs text-gray-400">Status</p>
-                <p className="text-sm font-semibold text-gray-800 capitalize">
-                  {prescription.status}
-                </p>
-              </div>
-            </div>
+          {/* Meta strip */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+              gap: 16,
+              marginTop: 20,
+              paddingTop: 20,
+              borderTop: "1px solid var(--border-faint)",
+            }}
+          >
+            <MetaCell
+              icon={Clock}
+              label="Prescribed"
+              value={formatDistanceToNow(new Date(prescription.prescribed_at), {
+                addSuffix: true,
+              })}
+            />
+            <MetaCell icon={Pill} label="Total items" value={items.length} />
+            <MetaCell icon={ShieldCheck} label="Status" value={prescription.status} />
           </div>
 
           {prescription.chief_complaint && (
-            <div className="mt-4 flex items-start gap-2.5 p-3 rounded-xl bg-blue-50 border border-blue-100">
-              <ClipboardList
-                size={14}
-                className="text-blue-500 mt-0.5 flex-shrink-0"
-              />
-              <div>
-                <p className="text-xs font-semibold text-blue-700 mb-0.5">
-                  Chief Complaint
-                </p>
-                <p className="text-sm text-blue-800">
-                  {prescription.chief_complaint}
-                </p>
-              </div>
+            <div style={{ marginTop: 16 }}>
+              <Banner tone="info" icon={ClipboardList} title="Chief complaint">
+                {prescription.chief_complaint}
+              </Banner>
             </div>
           )}
         </div>
-      </div>
+      </Card>
 
       {/* Medication items */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <div className="flex items-center justify-between mb-4">
-          <p className="text-sm font-bold text-gray-800">
-            Medications ({items.length})
-          </p>
-          {pendingItems.length > 0 && (
-            <button
-              onClick={toggleAll}
-              className="text-xs font-semibold text-green-700 hover:underline"
-            >
-              {selected.size === pendingItems.length
-                ? "Deselect all"
-                : "Select all"}
-            </button>
-          )}
-        </div>
+      <Card>
+        <CardHeader
+          icon={Pill}
+          title={`Medications (${items.length})`}
+          subtitle={allDone ? "All dispensed" : "Select what you are dispensing now"}
+          right={
+            pendingItems.length > 0 ? (
+              <LinkAction arrow={false} onClick={toggleAll}>
+                {selected.size === pendingItems.length ? "Deselect all" : "Select all"}
+              </LinkAction>
+            ) : undefined
+          }
+        />
 
-        <div className="space-y-3">
-          {/* Pending items */}
+        <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+          {/* Pending first — they are what the pharmacist is here to act on. */}
           {pendingItems.map((item) => (
             <MedCard
               key={item.id}
@@ -474,7 +642,6 @@ export default function PharmacyDispensePage() {
             />
           ))}
 
-          {/* Already dispensed */}
           {dispensedItems.map((item) => (
             <MedCard
               key={item.id}
@@ -485,95 +652,109 @@ export default function PharmacyDispensePage() {
             />
           ))}
         </div>
-      </div>
+      </Card>
 
       {/* Dispensing notes + submit */}
       {!allDone && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
-          <div>
-            <label className="block text-xs font-bold text-gray-400 uppercase tracking-wide mb-1.5">
-              Dispensing Notes{" "}
-              <span className="text-gray-300 font-normal normal-case">
-                (optional)
-              </span>
-            </label>
-            <textarea
-              rows={2}
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Patient counselled on dosage. Generic substitution made for…"
-              className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none
-                focus:border-green-500 focus:ring-2 focus:ring-green-500/10 focus:bg-white resize-none
-                placeholder:text-gray-400 transition-all"
-            />
-          </div>
+        <Card>
+          <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+            <Field label="Dispensing notes" hint="Optional — recorded against the dispense.">
+              <Textarea
+                rows={2}
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="e.g. Patient counselled on dosage. Generic substitution made for…"
+                style={{ minHeight: 68 }}
+              />
+            </Field>
 
-          {error && (
-            <div className="flex items-center gap-2 p-3 rounded-xl bg-red-50 border border-red-100 text-sm text-red-700">
-              <AlertTriangle size={14} /> {error}
-            </div>
-          )}
+            {error && (
+              <Banner tone="critical" icon={AlertTriangle}>
+                {error}
+              </Banner>
+            )}
 
-          {/* Selection summary */}
-          {selected.size > 0 && (
-            <div className="flex items-center gap-2 p-3 rounded-xl bg-green-50 border border-green-100">
-              <CheckCircle2 size={14} className="text-green-600" />
-              <p className="text-sm text-green-800 font-medium">
-                {selected.size} item{selected.size > 1 ? "s" : ""} selected for
-                dispensing
-              </p>
-            </div>
-          )}
+            {selected.size > 0 && (
+              <Banner tone="success" icon={CheckCircle2}>
+                {selected.size} item{selected.size > 1 ? "s" : ""} selected for dispensing.
+              </Banner>
+            )}
 
-          <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-            <button
-              onClick={() => router.push("/dashboard/pharmacy/queue")}
-              className="px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50 transition-colors"
+            <div
+              className="flex items-center justify-between"
+              style={{
+                gap: 12,
+                paddingTop: 16,
+                borderTop: "1px solid var(--border-faint)",
+              }}
             >
-              Cancel
-            </button>
-            <button
-              onClick={handleDispense}
-              disabled={submitting || selected.size === 0}
-              className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md disabled:opacity-50"
-              style={{ background: "linear-gradient(135deg,#0A6640,#15803d)" }}
-            >
-              {submitting ? (
-                <>
-                  <Loader2 size={15} className="animate-spin" /> Dispensing…
-                </>
-              ) : (
-                <>
-                  <Package size={15} /> Dispense {selected.size} Item
-                  {selected.size !== 1 ? "s" : ""}
-                </>
-              )}
-            </button>
+              <Button onClick={() => router.push("/dashboard/pharmacy/queue")}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                icon={Package}
+                loading={submitting}
+                disabled={selected.size === 0}
+                onClick={handleDispense}
+              >
+                {submitting
+                  ? "Dispensing…"
+                  : `Dispense ${selected.size} item${selected.size !== 1 ? "s" : ""}`}
+              </Button>
+            </div>
           </div>
-        </div>
+        </Card>
       )}
 
       {allDone && (
-        <div className="bg-white rounded-2xl border border-green-100 shadow-sm p-8 text-center">
-          <div className="w-16 h-16 rounded-2xl bg-green-50 flex items-center justify-center mx-auto mb-4">
-            <CheckCircle2 size={32} className="text-green-600" />
-          </div>
-          <p className="text-lg font-bold text-gray-900 mb-1">
-            All Items Dispensed
-          </p>
-          <p className="text-sm text-gray-500 mb-5">
-            This prescription has been fully dispensed and recorded on the
-            blockchain.
-          </p>
-          <button
-            onClick={() => router.push("/dashboard/pharmacy/queue")}
-            className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white"
-            style={{ background: "linear-gradient(135deg,#0A6640,#15803d)" }}
+        <Card>
+          <div
+            className="flex flex-col items-center text-center"
+            style={{ padding: 40, gap: 14 }}
           >
-            Back to Queue
-          </button>
-        </div>
+            <span
+              className="inline-flex items-center justify-center"
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: "var(--r-md)",
+                background: "var(--brand-tint)",
+                color: "var(--green-700)",
+              }}
+            >
+              <CheckCircle2 className="w-7 h-7" />
+            </span>
+            <p
+              style={{
+                margin: 0,
+                font: "700 18px/1.2 var(--font-sans)",
+                letterSpacing: "var(--ls-tight)",
+                color: "var(--text-primary)",
+              }}
+            >
+              All items dispensed
+            </p>
+            <p
+              style={{
+                margin: 0,
+                maxWidth: 360,
+                font: "400 13.5px/1.5 var(--font-sans)",
+                color: "var(--text-secondary)",
+              }}
+            >
+              This prescription has been fully dispensed and recorded on the blockchain.
+            </p>
+            <Button
+              variant="primary"
+              style={{ marginTop: 4 }}
+              onClick={() => router.push("/dashboard/pharmacy/queue")}
+            >
+              Back to queue
+            </Button>
+          </div>
+        </Card>
       )}
-    </div>
+    </Page>
   );
 }

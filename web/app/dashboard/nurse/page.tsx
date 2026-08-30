@@ -13,7 +13,6 @@ import {
   Clock,
   Stethoscope,
   Loader2,
-  X,
   UserCheck,
   CheckCircle2,
   RefreshCw,
@@ -22,13 +21,35 @@ import {
 } from "lucide-react";
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from "recharts";
 import {
+  Page,
+  PageHeader,
+  Card,
+  CardHeader,
   KpiCard,
-  Panel,
-  PanelHeader,
-  SkeletonRow,
+  KpiGrid,
+  Pill as Badge,
+  Button,
+  LinkAction,
+  Banner,
   EmptyState,
-  PageHeading,
-} from "@/components/dashboard/primitives";
+  SkeletonRow,
+  SkeletonBlock,
+  Modal,
+  hoverRow,
+  TONES,
+} from "@/components/dashboard/ui";
+import { getPriority, timeSince } from "./vocab";
+
+/* ==========================================================================
+   Nurse overview.
+
+   Two lists that mean different things: patients assigned to THIS nurse, and
+   patients at the institution with no nurse at all. Both need triage, but
+   only the second is anybody's to pick up.
+
+   Recharts renders SVG presentation attributes, which accept var() the same
+   way CSS does, so chart colours reference the same tokens as the page.
+   ========================================================================== */
 
 interface AssignedPatient {
   id: string;
@@ -52,134 +73,145 @@ interface Doctor {
   specialization?: string | null;
 }
 
-const PRIORITY: Record<string, { color: string; bg: string; label: string }> = {
-  critical: { color: "#dc2626", bg: "#fef2f2", label: "Critical" },
-  emergency: { color: "#ea580c", bg: "#fff7ed", label: "Emergency" },
-  urgent: { color: "#d97706", bg: "#fffbeb", label: "Urgent" },
-  routine: { color: "#16a34a", bg: "#f0fdf4", label: "Routine" },
-};
-const getP = (p: string) => PRIORITY[p] ?? PRIORITY.routine;
-
-function timeSince(iso: string) {
-  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (mins < 60) return `${mins}m`;
-  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
-}
-
 /* -------------------------------------------------------------------------- */
 /* Patient row                                                                */
 /* -------------------------------------------------------------------------- */
 
 function PatientRow({
   p,
-  isLast,
   onAssignDoctor,
   onTriage,
 }: {
   p: AssignedPatient;
-  isLast: boolean;
   onAssignDoctor: (p: AssignedPatient) => void;
   onTriage: (id: string) => void;
 }) {
-  const priority = getP(p.priority);
+  const priority = getPriority(p.priority);
+  const pTone = TONES[priority.tone];
   const hasDoctor = !!p.assignedDoctorId;
   const triageDone = p.hasVitals;
+  /* Half an hour untriaged is the point at which it is worth chasing. */
   const waitingLong =
     !triageDone && Date.now() - new Date(p.admissionDate).getTime() > 30 * 60_000;
 
   return (
     <div
-      className={`flex items-start gap-3 px-5 py-4 ${
-        isLast ? "" : "border-b border-slate-50"
-      }`}
+      className="flex items-start"
+      style={{
+        gap: 12,
+        padding: "14px 20px",
+        borderBottom: "1px solid var(--border-faint)",
+      }}
     >
-      <div
-        className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-        style={{ background: priority.bg }}
+      <span
+        className="inline-flex items-center justify-center flex-shrink-0"
+        style={{
+          width: 34,
+          height: 34,
+          borderRadius: "var(--r-sm)",
+          background: pTone.tint,
+          color: pTone.ink,
+        }}
       >
-        <Activity className="w-4 h-4" style={{ color: priority.color }} />
-      </div>
+        <Activity className="w-4 h-4" />
+      </span>
 
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <p className="text-[13px] font-semibold text-slate-800 truncate">
-            {p.patientName}
-          </p>
-
+      <div className="flex-1 min-w-0 flex flex-col" style={{ gap: 6 }}>
+        <div className="flex items-center flex-wrap" style={{ gap: 8 }}>
           <span
-            className="px-2 py-0.5 rounded-full text-[11px] font-bold"
-            style={{ background: priority.bg, color: priority.color }}
+            className="truncate"
+            style={{
+              font: "600 13.5px/1 var(--font-sans)",
+              color: "var(--text-primary)",
+            }}
           >
-            {priority.label}
+            {p.patientName}
           </span>
 
+          <Badge tone={priority.tone} style={{ height: 18, fontSize: 10 }}>
+            {priority.label}
+          </Badge>
+
           {hasDoctor && (
-            <span className="text-[11.5px] text-slate-500 flex items-center gap-1">
-              <UserCheck className="w-3 h-3" /> Dr. {p.doctorName}
+            <span
+              className="inline-flex items-center"
+              style={{
+                gap: 5,
+                font: "500 11.5px/1 var(--font-sans)",
+                color: "var(--text-secondary)",
+              }}
+            >
+              <UserCheck className="w-3 h-3" />
+              Dr. {p.doctorName}
             </span>
           )}
 
           {triageDone && (
-            <span className="text-[11.5px] text-emerald-700 flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3" /> Triaged
+            <span
+              className="inline-flex items-center"
+              style={{
+                gap: 5,
+                font: "500 11.5px/1 var(--font-sans)",
+                color: "var(--green-800)",
+              }}
+            >
+              <CheckCircle2 className="w-3 h-3" />
+              Triaged
             </span>
           )}
 
           {waitingLong && (
-            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-100">
+            <Badge tone="urgent" style={{ height: 18, fontSize: 10 }}>
               Waiting long
-            </span>
+            </Badge>
           )}
         </div>
 
-        <p className="text-[12.5px] text-slate-400 truncate mt-0.5">
+        <span
+          className="truncate"
+          style={{
+            font: "400 12.5px/1 var(--font-sans)",
+            color: "var(--text-muted)",
+          }}
+        >
           {p.chiefComplaint || "No chief complaint recorded yet"}
-        </p>
+        </span>
 
-        <div className="flex items-center gap-3 mt-1.5 text-[11.5px] text-slate-400">
-          <span className="flex items-center gap-1">
-            <Clock className="w-3 h-3" /> {timeSince(p.admissionDate)}
+        <span
+          className="flex items-center flex-wrap"
+          style={{
+            gap: 12,
+            font: "400 11.5px/1 var(--font-sans)",
+            color: "var(--text-muted)",
+          }}
+        >
+          <span className="inline-flex items-center" style={{ gap: 5 }}>
+            <Clock className="w-3 h-3" />
+            {timeSince(p.admissionDate)}
           </span>
-          <span>Visit #{p.visitNumber}</span>
-        </div>
+          <span style={{ fontFamily: "var(--font-mono)" }}>{p.visitNumber}</span>
+        </span>
       </div>
 
-      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-        <button
-          onClick={() => onAssignDoctor(p)}
+      <div className="flex flex-col items-end flex-shrink-0" style={{ gap: 7 }}>
+        <Button
+          size="sm"
+          icon={Stethoscope}
           disabled={hasDoctor}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
-            hasDoctor
-              ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-              : "bg-white border border-slate-200 text-slate-700 hover:border-emerald-200"
-          }`}
+          onClick={() => onAssignDoctor(p)}
         >
-          <Stethoscope className="w-3 h-3" />
-          {hasDoctor ? "Assigned" : "Assign Doctor"}
-        </button>
+          {hasDoctor ? "Assigned" : "Assign doctor"}
+        </Button>
 
-        <button
-          onClick={() => onTriage(p.id)}
+        <Button
+          variant={triageDone ? "secondary" : "primary"}
+          size="sm"
+          icon={triageDone ? CheckCircle2 : Activity}
           disabled={triageDone}
-          title={
-            triageDone ? "Vitals already recorded for this visit" : "Record vitals"
-          }
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
-            triageDone
-              ? "bg-slate-100 text-slate-400 cursor-not-allowed"
-              : "bg-emerald-700 text-white hover:bg-emerald-800"
-          }`}
+          onClick={() => onTriage(p.id)}
         >
-          {triageDone ? (
-            <>
-              <CheckCircle2 className="w-3 h-3" /> Triaged
-            </>
-          ) : (
-            <>
-              <Activity className="w-3 h-3" /> Triage
-            </>
-          )}
-        </button>
+          {triageDone ? "Triaged" : "Triage"}
+        </Button>
       </div>
     </div>
   );
@@ -285,12 +317,12 @@ export default function NurseOverview() {
   const triagedCount = patients.filter((p) => p.hasVitals).length;
   const pendingTriageCount = patients.length - triagedCount;
   const triageProgress = [
-    { key: "triaged", label: "Triaged", value: triagedCount, color: "#16a34a" },
+    { key: "triaged", label: "Triaged", value: triagedCount, color: "var(--success-ink)" },
     {
       key: "pending",
-      label: "Awaiting Triage",
+      label: "Awaiting triage",
       value: pendingTriageCount,
-      color: "#f59e0b",
+      color: "var(--amber-500)",
     },
   ].filter((d) => d.value > 0);
 
@@ -299,107 +331,126 @@ export default function NurseOverview() {
   const goTriage = (id: string) => router.push(`/dashboard/nurse/triage/${id}`);
 
   return (
-    <div className="w-full max-w-[1280px] mx-auto pb-8">
-      <PageHeading
+    <Page>
+      <PageHeader
         eyebrow="Nursing"
-        title={(user as any)?.institutionName || "Ward Overview"}
+        title={(user as any)?.institutionName || "Nursing"}
+        subtitle={
+          loading
+            ? "Loading your patients…"
+            : `${myPatients.length} assigned to you · ${pendingTriageCount} awaiting triage`
+        }
         actions={
           <>
-            <button
+            <Button
+              variant="primary"
+              icon={ClipboardList}
               onClick={() => router.push("/dashboard/nurse/queue")}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[13px] font-semibold shadow-sm transition-colors"
             >
-              <ClipboardList className="w-3.5 h-3.5" />
-              Today's Queue
-            </button>
-
-            <button
+              Today's queue
+            </Button>
+            <Button
+              icon={BedDouble}
               onClick={() => router.push("/dashboard/nurse/ward")}
-              className="hidden sm:inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:border-emerald-200 text-slate-700 text-[13px] font-semibold transition-colors"
             >
-              <BedDouble className="w-3.5 h-3.5" />
-              Ward View
-            </button>
-
-            <button
+              Ward view
+            </Button>
+            <Button
+              icon={RefreshCw}
               onClick={() => fetchAssignedPatients(true)}
               disabled={refreshing}
-              className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40"
-            >
-              <RefreshCw
-                className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`}
-              />
-            </button>
+              style={{ padding: 0, width: 38 }}
+            />
           </>
         }
       />
 
       {/* Untriaged patients are the nurse's queue — surface them first. */}
       {!loading && pendingTriageCount > 0 && (
-        <button
+        <Banner
+          tone="urgent"
+          icon={AlertTriangle}
           onClick={() => router.push("/dashboard/nurse/queue")}
-          className="w-full flex items-center gap-3 p-4 rounded-2xl mb-5 bg-amber-50 border border-amber-200 text-left hover:bg-amber-100/60 transition-colors"
+          action={
+            <span
+              className="inline-flex items-center whitespace-nowrap"
+              style={{
+                gap: 4,
+                font: "700 12.5px/1 var(--font-sans)",
+                color: "var(--urgent-ink)",
+              }}
+            >
+              Open queue
+              <ChevronRight className="w-3.5 h-3.5" />
+            </span>
+          }
         >
-          <AlertTriangle className="w-4 h-4 text-amber-500 flex-shrink-0" />
-          <p className="text-[13px] font-semibold text-amber-800 flex-1">
-            {pendingTriageCount} patient{pendingTriageCount > 1 ? "s" : ""}{" "}
-            awaiting triage
-          </p>
-          <span className="text-[13px] font-bold text-amber-700 flex items-center gap-1 whitespace-nowrap">
-            Open queue <ChevronRight className="w-3.5 h-3.5" />
-          </span>
-        </button>
+          {pendingTriageCount} patient{pendingTriageCount > 1 ? "s are" : " is"}{" "}
+          awaiting triage.
+        </Banner>
       )}
 
-      {/* KPIs */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+      <KpiGrid>
         <KpiCard
-          label="Assigned to Me"
-          value={loading ? undefined : myPatients.length}
-          description="In my care"
+          label="Assigned to me"
+          value={myPatients.length}
+          sub="In my care"
           icon={Users}
-          iconClass="bg-blue-50 text-blue-600"
-          href="/dashboard/nurse/patients"
+          tone="info"
+          loading={loading}
+          onClick={() => router.push("/dashboard/nurse/patients")}
         />
         <KpiCard
-          label="Critical / Emergency"
-          value={loading ? undefined : criticalCount}
-          description="Highest priority"
+          label="Critical / emergency"
+          value={criticalCount}
+          sub="Highest priority"
           icon={AlertTriangle}
-          iconClass="bg-red-50 text-red-600"
+          tone="critical"
+          loading={loading}
         />
         <KpiCard
           label="Urgent"
-          value={loading ? undefined : urgentCount}
-          description="Needs prompt care"
+          value={urgentCount}
+          sub="Needs prompt care"
           icon={Clock}
-          iconClass="bg-amber-50 text-amber-600"
+          tone="urgent"
+          loading={loading}
         />
         <KpiCard
           label="Routine"
-          value={loading ? undefined : routineCount}
-          description="Standard priority"
+          value={routineCount}
+          sub="Standard priority"
           icon={CheckCircle2}
-          iconClass="bg-emerald-50 text-emerald-600"
+          tone="success"
+          loading={loading}
         />
-      </section>
+      </KpiGrid>
 
       {/* Patients + triage progress */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2 space-y-4">
-          <Panel>
-            <PanelHeader
-              title="My Patients"
+      <div className="flex flex-wrap" style={{ gap: 16, alignItems: "flex-start" }}>
+        <div
+          style={{
+            flex: "2 1 460px",
+            minWidth: 0,
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+          }}
+        >
+          <Card>
+            <CardHeader
               icon={Users}
-              meta={
-                !loading && myPatients.length > 0 ? (
-                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-100">
-                    {myPatients.length}
-                  </span>
-                ) : undefined
+              title="My patients"
+              right={
+                <>
+                  {!loading && myPatients.length > 0 && (
+                    <Badge tone="info">{myPatients.length}</Badge>
+                  )}
+                  <LinkAction onClick={() => router.push("/dashboard/nurse/patients")}>
+                    View all
+                  </LinkAction>
+                </>
               }
-              action="View all"
-              onAction={() => router.push("/dashboard/nurse/patients")}
             />
 
             {loading ? (
@@ -407,30 +458,29 @@ export default function NurseOverview() {
             ) : myPatients.length === 0 ? (
               <EmptyState
                 icon={Users}
-                message="No patients are currently assigned to you."
+                title="No patients assigned"
+                message="Patients assigned to you appear here."
               />
             ) : (
-              myPatients.map((p, i) => (
+              myPatients.map((p) => (
                 <PatientRow
                   key={p.id}
                   p={p}
-                  isLast={i === myPatients.length - 1}
                   onAssignDoctor={openAssignModal}
                   onTriage={goTriage}
                 />
               ))
             )}
-          </Panel>
+          </Card>
 
-          <Panel>
-            <PanelHeader
-              title="Unassigned Patients"
+          <Card>
+            <CardHeader
               icon={ClipboardList}
-              meta={
+              title="Unassigned patients"
+              subtitle="No nurse taking care of these yet"
+              right={
                 !loading && unassignedPatients.length > 0 ? (
-                  <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-100">
-                    {unassignedPatients.length}
-                  </span>
+                  <Badge tone="urgent">{unassignedPatients.length}</Badge>
                 ) : undefined
               }
             />
@@ -440,35 +490,51 @@ export default function NurseOverview() {
             ) : unassignedPatients.length === 0 ? (
               <EmptyState
                 icon={CheckCircle2}
+                title="Everyone is covered"
                 message="Every patient has a nurse assigned."
               />
             ) : (
-              unassignedPatients.map((p, i) => (
+              unassignedPatients.map((p) => (
                 <PatientRow
                   key={p.id}
                   p={p}
-                  isLast={i === unassignedPatients.length - 1}
                   onAssignDoctor={openAssignModal}
                   onTriage={goTriage}
                 />
               ))
             )}
-          </Panel>
+          </Card>
         </div>
 
-        <div className="space-y-4">
-          <Panel>
-            <PanelHeader title="Triage Progress" icon={PieIcon} />
-            <div className="p-5">
+        <div
+          style={{
+            flex: "1 1 280px",
+            minWidth: 260,
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+          }}
+        >
+          <Card>
+            <CardHeader icon={PieIcon} title="Triage progress" />
+            <div style={{ padding: 20 }}>
               {loading ? (
-                <div className="h-24 rounded-xl bg-slate-50 animate-pulse" />
+                <SkeletonBlock height={96} />
               ) : triageProgress.length === 0 ? (
-                <p className="text-[13px] text-slate-400 text-center py-4">
+                <p
+                  style={{
+                    margin: 0,
+                    padding: "16px 0",
+                    textAlign: "center",
+                    font: "400 13px/1 var(--font-sans)",
+                    color: "var(--text-muted)",
+                  }}
+                >
                   No patients to triage.
                 </p>
               ) : (
-                <div className="flex items-center gap-4">
-                  <div className="w-24 h-24 flex-shrink-0">
+                <div className="flex items-center" style={{ gap: 16 }}>
+                  <div style={{ width: 96, height: 96, flexShrink: 0 }}>
                     <ResponsiveContainer width="100%" height="100%">
                       <PieChart>
                         <Pie
@@ -486,8 +552,10 @@ export default function NurseOverview() {
                         <Tooltip
                           formatter={(v: any, n: any) => [`${v} patients`, n]}
                           contentStyle={{
-                            borderRadius: 12,
-                            border: "1px solid #eaecf0",
+                            borderRadius: 10,
+                            border: "1px solid var(--hc-border)",
+                            boxShadow: "var(--elev-2)",
+                            fontFamily: "var(--font-sans)",
                             fontSize: 12,
                           }}
                         />
@@ -495,17 +563,33 @@ export default function NurseOverview() {
                     </ResponsiveContainer>
                   </div>
 
-                  <div className="flex-1 space-y-2 min-w-0">
+                  <div className="flex-1 min-w-0 flex flex-col" style={{ gap: 10 }}>
                     {triageProgress.map((d) => (
-                      <div key={d.key} className="flex items-center gap-2">
+                      <div key={d.key} className="flex items-center" style={{ gap: 8 }}>
                         <span
-                          className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ background: d.color }}
+                          className="flex-shrink-0"
+                          style={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: "50%",
+                            background: d.color,
+                          }}
                         />
-                        <span className="text-[12.5px] text-slate-600 flex-1 truncate">
+                        <span
+                          className="flex-1 truncate"
+                          style={{
+                            font: "500 12.5px/1 var(--font-sans)",
+                            color: "var(--text-secondary)",
+                          }}
+                        >
                           {d.label}
                         </span>
-                        <span className="text-[13px] font-bold text-slate-900">
+                        <span
+                          style={{
+                            font: "700 13px/1 var(--font-sans)",
+                            color: "var(--text-primary)",
+                          }}
+                        >
                           {d.value}
                         </span>
                       </div>
@@ -514,125 +598,196 @@ export default function NurseOverview() {
                 </div>
               )}
             </div>
-          </Panel>
+          </Card>
 
-          <Panel>
-            <PanelHeader title="Quick Actions" icon={ArrowRight} />
-            <div className="p-3 space-y-2">
+          <Card>
+            <CardHeader icon={ArrowRight} title="Quick actions" />
+            <div style={{ padding: 8, display: "flex", flexDirection: "column", gap: 2 }}>
               {[
                 {
-                  label: "Today's Queue",
+                  label: "Today's queue",
+                  sub: "Patients awaiting triage",
                   href: "/dashboard/nurse/queue",
                   icon: ClipboardList,
-                  cls: "bg-emerald-50 text-emerald-600",
+                  tint: "var(--brand-tint)",
+                  ink: "var(--green-700)",
                 },
                 {
-                  label: "Triage Patient",
+                  label: "Triage patient",
+                  sub: "Record vitals",
                   href: "/dashboard/nurse/triage",
                   icon: Activity,
-                  cls: "bg-blue-50 text-blue-600",
+                  tint: "var(--info-tint)",
+                  ink: "var(--info-ink)",
                 },
                 {
-                  label: "Ward View",
+                  label: "Ward view",
+                  sub: "Beds and admissions",
                   href: "/dashboard/nurse/ward",
                   icon: BedDouble,
-                  cls: "bg-violet-50 text-violet-600",
+                  tint: "var(--accent-tint)",
+                  ink: "var(--accent-ink)",
                 },
-              ].map(({ label, href, icon: Icon, cls }) => (
+              ].map(({ label, sub, href, icon: Icon, tint, ink }) => (
                 <button
                   key={href}
                   onClick={() => router.push(href)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-200 text-left hover:border-emerald-200 hover:shadow-sm transition-all group"
+                  className="flex items-center text-left"
+                  style={{
+                    gap: 12,
+                    padding: 10,
+                    border: "none",
+                    borderRadius: "var(--r-sm)",
+                    background: "transparent",
+                    cursor: "pointer",
+                    transition: "background var(--dur-fast) var(--ease-standard)",
+                  }}
+                  {...hoverRow}
                 >
-                  <div
-                    className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${cls}`}
+                  <span
+                    className="inline-flex items-center justify-center flex-shrink-0"
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: "var(--r-xs)",
+                      background: tint,
+                      color: ink,
+                    }}
                   >
                     <Icon className="w-4 h-4" />
-                  </div>
-
-                  <p className="flex-1 text-[13px] font-semibold text-slate-800">
-                    {label}
-                  </p>
-
-                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 transition-colors" />
+                  </span>
+                  <span className="flex-1 flex flex-col" style={{ gap: 3 }}>
+                    <span
+                      style={{
+                        font: "600 13.5px/1 var(--font-sans)",
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      {label}
+                    </span>
+                    <span
+                      style={{
+                        font: "400 11.5px/1 var(--font-sans)",
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      {sub}
+                    </span>
+                  </span>
+                  <ChevronRight
+                    className="w-4 h-4 flex-shrink-0"
+                    style={{ color: "var(--text-disabled)" }}
+                  />
                 </button>
               ))}
             </div>
-          </Panel>
+          </Card>
         </div>
-      </section>
+      </div>
 
       {/* ── Doctor assignment modal ─────────────────────────────────────────── */}
       {showAssignModal && selectedVisit && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-[2px]">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full overflow-hidden">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <h3 className="text-[15px] font-bold text-slate-900">
-                Assign Doctor
-              </h3>
-              <button
-                onClick={() => setShowAssignModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
+        <Modal
+          title="Assign doctor"
+          subtitle={selectedVisit.patientName}
+          icon={Stethoscope}
+          tone="info"
+          onClose={() => setShowAssignModal(false)}
+        >
+          {assignError && (
+            <Banner tone="critical" icon={AlertTriangle}>
+              {assignError}
+            </Banner>
+          )}
 
-            <div className="p-5">
-              <p className="text-[13px] text-slate-600 mb-4">
-                Select a doctor for{" "}
-                <span className="font-semibold text-slate-900">
-                  {selectedVisit.patientName}
-                </span>
-              </p>
+          {doctors.length === 0 ? (
+            <p
+              style={{
+                margin: 0,
+                padding: "24px 0",
+                textAlign: "center",
+                font: "400 13px/1 var(--font-sans)",
+                color: "var(--text-muted)",
+              }}
+            >
+              No doctors are currently online.
+            </p>
+          ) : (
+            <div
+              className="flex flex-col"
+              style={{ gap: 8, maxHeight: 300, overflowY: "auto" }}
+            >
+              {doctors.map((d) => (
+                <button
+                  key={d.id}
+                  onClick={() => assignDoctor(d.id)}
+                  disabled={assigning}
+                  className="w-full flex items-center text-left"
+                  style={{
+                    gap: 12,
+                    padding: 12,
+                    borderRadius: "var(--r-sm)",
+                    border: "1px solid var(--hc-border)",
+                    background: "var(--surface-card)",
+                    cursor: assigning ? "not-allowed" : "pointer",
+                    opacity: assigning ? 0.6 : 1,
+                    transition: "background var(--dur-fast) var(--ease-standard)",
+                  }}
+                  {...hoverRow}
+                >
+                  <span
+                    className="inline-flex items-center justify-center flex-shrink-0"
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: "var(--r-sm)",
+                      background: "var(--info-tint)",
+                      color: "var(--info-ink)",
+                    }}
+                  >
+                    <Stethoscope className="w-4 h-4" />
+                  </span>
 
-              {assignError && (
-                <div className="mb-3 px-3 py-2 rounded-xl bg-red-50 border border-red-100 text-[12.5px] text-red-700">
-                  {assignError}
-                </div>
-              )}
-
-              {doctors.length === 0 ? (
-                <p className="text-[13px] text-slate-400 text-center py-6">
-                  No doctors are currently online.
-                </p>
-              ) : (
-                <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                  {doctors.map((d) => (
-                    <button
-                      key={d.id}
-                      onClick={() => assignDoctor(d.id)}
-                      disabled={assigning}
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-200 text-left hover:border-emerald-200 hover:bg-slate-50 transition-all disabled:opacity-50"
+                  <span className="flex-1 min-w-0 flex flex-col" style={{ gap: 4 }}>
+                    <span
+                      className="truncate"
+                      style={{
+                        font: "600 13.5px/1 var(--font-sans)",
+                        color: "var(--text-primary)",
+                      }}
                     >
-                      <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center flex-shrink-0">
-                        <Stethoscope className="w-4 h-4" />
-                      </div>
+                      Dr. {d.firstName} {d.lastName}
+                    </span>
+                    {d.specialization && (
+                      <span
+                        className="truncate"
+                        style={{
+                          font: "400 11.5px/1 var(--font-sans)",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        {d.specialization}
+                      </span>
+                    )}
+                  </span>
 
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[13px] font-semibold text-slate-800 truncate">
-                          Dr. {d.firstName} {d.lastName}
-                        </p>
-                        {d.specialization && (
-                          <p className="text-[11.5px] text-slate-400 truncate mt-0.5">
-                            {d.specialization}
-                          </p>
-                        )}
-                      </div>
-
-                      {assigning ? (
-                        <Loader2 className="w-4 h-4 text-slate-300 animate-spin" />
-                      ) : (
-                        <ChevronRight className="w-4 h-4 text-slate-300" />
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
+                  {assigning ? (
+                    <Loader2
+                      className="w-4 h-4 animate-spin flex-shrink-0"
+                      style={{ color: "var(--text-muted)" }}
+                    />
+                  ) : (
+                    <ChevronRight
+                      className="w-4 h-4 flex-shrink-0"
+                      style={{ color: "var(--text-disabled)" }}
+                    />
+                  )}
+                </button>
+              ))}
             </div>
-          </div>
-        </div>
+          )}
+        </Modal>
       )}
-    </div>
+    </Page>
   );
 }

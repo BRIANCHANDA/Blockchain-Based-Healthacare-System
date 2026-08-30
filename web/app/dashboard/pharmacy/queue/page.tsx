@@ -11,17 +11,40 @@ import {
   RefreshCw,
   Search,
   AlertCircle,
-  Package,
+  X,
 } from "lucide-react";
-import { formatDistanceToNow, format } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
+import {
+  Page,
+  PageHeader,
+  Card,
+  Pill as Badge,
+  Button,
+  Banner,
+  EmptyState,
+  SearchInput,
+  SegmentedControl,
+  type Tone,
+} from "@/components/dashboard/ui";
 
-const STATUS_CONFIG: Record<
-  string,
-  { color: string; bg: string; label: string }
-> = {
-  prescribed: { color: "#C9952A", bg: "#FDF3DC", label: "Prescribed" },
-  dispensing: { color: "#1A6B8A", bg: "#E3F2F8", label: "In Progress" },
+/* ==========================================================================
+   Dispensing queue — every prescription still awaiting the pharmacy.
+
+   Wait time drives the whole visual hierarchy here: a prescription past 30
+   minutes is tinted amber, past 60 it goes coral. Nothing else on the row
+   competes for that attention.
+   ========================================================================== */
+
+const STATUS_CONFIG: Record<string, { tone: Tone; label: string }> = {
+  prescribed: { tone: "urgent", label: "Prescribed" },
+  dispensing: { tone: "info", label: "In progress" },
 };
+const getStatus = (s: string) => STATUS_CONFIG[s] ?? STATUS_CONFIG.prescribed;
+
+const THIRTY_MIN = 30 * 60 * 1000;
+const SIXTY_MIN = 60 * 60 * 1000;
+
+type Filter = "all" | "prescribed" | "dispensing";
 
 export default function PharmacyQueuePage() {
   const router = useRouter();
@@ -29,9 +52,7 @@ export default function PharmacyQueuePage() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "prescribed" | "dispensing">(
-    "all",
-  );
+  const [filter, setFilter] = useState<Filter>("all");
 
   const fetchData = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -62,236 +83,282 @@ export default function PharmacyQueuePage() {
     );
 
   const longWaiting = prescriptions.filter(
-    (p) => Date.now() - new Date(p.prescribedAt).getTime() > 30 * 60 * 1000,
+    (p) => Date.now() - new Date(p.prescribedAt).getTime() > THIRTY_MIN,
   ).length;
+
+  const countFor = (f: Filter) =>
+    f === "all"
+      ? prescriptions.length
+      : prescriptions.filter((p) => p.status === f).length;
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-64 gap-3">
-        <Loader2 size={28} className="animate-spin text-green-700" />
-        <p className="text-sm text-gray-400">Loading queue…</p>
+      <div
+        className="flex flex-col items-center justify-center"
+        style={{ minHeight: 256, gap: 12 }}
+      >
+        <Loader2 className="w-7 h-7 animate-spin" style={{ color: "var(--brand)" }} />
+        <p
+          style={{
+            margin: 0,
+            font: "400 13px/1 var(--font-sans)",
+            color: "var(--text-muted)",
+          }}
+        >
+          Loading queue…
+        </p>
       </div>
     );
   }
 
   return (
-    <div
-      className="max-w-4xl mx-auto space-y-5"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1
-            className="text-2xl font-bold text-gray-900"
-            style={{ fontFamily: "'Playfair Display', serif" }}
+    <Page maxWidth={1000}>
+      <PageHeader
+        eyebrow="Pharmacy"
+        title="Dispensing queue"
+        subtitle={`${prescriptions.length} prescription${
+          prescriptions.length !== 1 ? "s" : ""
+        } pending · auto-refreshes every 60 seconds`}
+        actions={
+          <Button
+            icon={RefreshCw}
+            onClick={() => fetchData(true)}
+            disabled={refreshing}
           >
-            Dispensing Queue
-          </h1>
-          <p className="text-gray-500 text-sm mt-0.5">
-            {prescriptions.length} prescription
-            {prescriptions.length !== 1 ? "s" : ""} pending · auto-refreshes
-            every 60s
-          </p>
-        </div>
-        <button
-          onClick={() => fetchData(true)}
-          disabled={refreshing}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-        >
-          <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />{" "}
-          Refresh
-        </button>
-      </div>
+            Refresh
+          </Button>
+        }
+      />
 
-      {/* Long-waiting alert */}
       {longWaiting > 0 && (
-        <div className="flex items-center gap-3 p-3.5 rounded-xl bg-amber-50 border border-amber-200">
-          <AlertCircle size={18} className="text-amber-500 flex-shrink-0" />
-          <p className="text-sm font-semibold text-amber-800">
-            {longWaiting} prescription{longWaiting > 1 ? "s have" : " has"} been
-            waiting over 30 minutes
-          </p>
-        </div>
+        <Banner tone="urgent" icon={AlertCircle}>
+          {longWaiting} prescription{longWaiting > 1 ? "s have" : " has"} been waiting
+          over 30 minutes.
+        </Banner>
       )}
 
       {/* Search + filter */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search
-            size={15}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-          />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by prescription no. or visit number…"
-            className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm outline-none
-              focus:border-green-500 focus:ring-2 focus:ring-green-500/10 placeholder:text-gray-400"
-          />
-        </div>
-        <div className="flex gap-2">
-          {(["all", "prescribed", "dispensing"] as const).map((f) => {
-            const cfg = f === "all" ? null : STATUS_CONFIG[f];
-            const count =
-              f === "all"
-                ? prescriptions.length
-                : prescriptions.filter((p) => p.status === f).length;
-            return (
-              <button
-                key={f}
-                onClick={() => setFilter(f)}
-                className="px-3 py-2 rounded-xl text-xs font-semibold transition-all"
-                style={
-                  filter === f
-                    ? { background: cfg?.color ?? "#374151", color: "#fff" }
-                    : {
-                        background: cfg?.bg ?? "#F3F4F6",
-                        color: cfg?.color ?? "#374151",
-                      }
-                }
-              >
-                {f === "all" ? "All" : cfg?.label} ({count})
-              </button>
-            );
-          })}
-        </div>
+      <div className="flex items-center justify-between flex-wrap" style={{ gap: 12 }}>
+        <SegmentedControl<Filter>
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: "all", label: "All", count: countFor("all") },
+            { value: "prescribed", label: "Prescribed", count: countFor("prescribed") },
+            { value: "dispensing", label: "In progress", count: countFor("dispensing") },
+          ]}
+        />
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search prescription or visit number…"
+          icon={Search}
+          clearIcon={X}
+          style={{ flex: "1 1 220px", maxWidth: 340 }}
+        />
       </div>
 
       {/* Queue list */}
       {filtered.length === 0 ? (
-        <div className="text-center py-20">
-          <div className="w-16 h-16 rounded-2xl bg-green-50 flex items-center justify-center mx-auto mb-4">
-            <CheckCircle2 size={28} className="text-green-600" />
-          </div>
-          <p className="text-gray-700 font-semibold">Queue is clear</p>
-          <p className="text-gray-400 text-sm mt-1">
-            {search
-              ? "No results found"
-              : "All prescriptions have been dispensed"}
-          </p>
-        </div>
+        <Card>
+          <EmptyState
+            icon={CheckCircle2}
+            title="Queue is clear"
+            message={
+              search || filter !== "all"
+                ? "No prescriptions match the current filter."
+                : "All prescriptions have been dispensed."
+            }
+            pad={64}
+          />
+        </Card>
       ) : (
-        <div className="space-y-3">
+        <div className="flex flex-col" style={{ gap: 12 }}>
           {filtered.map((rx) => {
-            const cfg = STATUS_CONFIG[rx.status] ?? STATUS_CONFIG.prescribed;
+            const cfg = getStatus(rx.status);
             const waited = Date.now() - new Date(rx.prescribedAt).getTime();
-            const isOld = waited > 30 * 60 * 1000;
-            const isVeryOld = waited > 60 * 60 * 1000;
+            const isOld = waited > THIRTY_MIN;
+            const isVeryOld = waited > SIXTY_MIN;
+
+            /* One decision drives border, chip and icon tint together. */
+            const urgency = isVeryOld ? "critical" : isOld ? "urgent" : "brand";
+            const edge =
+              urgency === "critical"
+                ? "var(--coral-500)"
+                : urgency === "urgent"
+                  ? "var(--amber-500)"
+                  : "var(--brand)";
+            const tint =
+              urgency === "critical"
+                ? "var(--critical-tint)"
+                : urgency === "urgent"
+                  ? "var(--urgent-tint)"
+                  : "var(--brand-tint)";
+            const ink =
+              urgency === "critical"
+                ? "var(--critical-ink)"
+                : urgency === "urgent"
+                  ? "var(--urgent-ink)"
+                  : "var(--green-700)";
+
+            const done = (rx.totalItems ?? 0) - (rx.pendingItems ?? 0);
+            const pct = rx.totalItems > 0 ? (done / rx.totalItems) * 100 : 0;
+
             return (
               <button
                 key={rx.id}
-                onClick={() =>
-                  router.push(`/dashboard/pharmacy/queue/${rx.id}`)
-                }
-                className="w-full bg-white rounded-2xl overflow-hidden border hover:shadow-md transition-all text-left group"
+                onClick={() => router.push(`/dashboard/pharmacy/queue/${rx.id}`)}
+                className="w-full text-left"
                 style={{
-                  borderColor: isVeryOld
-                    ? "#F5C6C6"
-                    : isOld
-                      ? "#F0D080"
-                      : "#F3F4F6",
-                  borderLeft: `4px solid ${isVeryOld ? "#C0392B" : isOld ? "#C9952A" : "#0A6640"}`,
+                  background: "var(--surface-card)",
+                  border: "1px solid var(--hc-border)",
+                  borderLeft: `4px solid ${edge}`,
+                  borderRadius: "var(--r-md)",
+                  boxShadow: "var(--elev-1)",
+                  overflow: "hidden",
+                  cursor: "pointer",
+                  transition: "box-shadow var(--dur-base) var(--ease-standard)",
                 }}
+                onMouseEnter={(e) =>
+                  (e.currentTarget.style.boxShadow = "var(--elev-2)")
+                }
+                onMouseLeave={(e) =>
+                  (e.currentTarget.style.boxShadow = "var(--elev-1)")
+                }
               >
-                <div className="flex items-center gap-4 p-4">
-                  {/* Icon */}
-                  <div
-                    className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
+                <div className="flex items-center" style={{ gap: 14, padding: 16 }}>
+                  <span
+                    className="inline-flex items-center justify-center flex-shrink-0"
                     style={{
-                      backgroundColor: isVeryOld
-                        ? "#FDECEA"
-                        : isOld
-                          ? "#FDF3DC"
-                          : "#E6F4EE",
+                      width: 44,
+                      height: 44,
+                      borderRadius: "var(--r-sm)",
+                      background: tint,
+                      color: ink,
                     }}
                   >
-                    <Pill
-                      size={22}
-                      style={{
-                        color: isVeryOld
-                          ? "#C0392B"
-                          : isOld
-                            ? "#C9952A"
-                            : "#0A6640",
-                      }}
-                    />
-                  </div>
+                    <Pill className="w-5 h-5" />
+                  </span>
 
-                  {/* Main */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <p className="text-sm font-bold text-gray-900 font-mono">
+                  <span className="flex-1 min-w-0 flex flex-col" style={{ gap: 5 }}>
+                    <span className="flex items-center flex-wrap" style={{ gap: 8 }}>
+                      <span
+                        style={{
+                          font: "700 13.5px/1 var(--font-mono)",
+                          color: "var(--text-primary)",
+                        }}
+                      >
                         {rx.prescriptionNumber}
-                      </p>
+                      </span>
                       {isVeryOld && (
-                        <span className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 px-2 py-0.5 rounded-full">
-                          <AlertCircle size={10} /> Urgent
-                        </span>
+                        <Badge tone="critical" icon={AlertCircle} style={{ height: 18, fontSize: 10 }}>
+                          Urgent
+                        </Badge>
                       )}
                       {isOld && !isVeryOld && (
-                        <span className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full">
+                        <Badge tone="urgent" style={{ height: 18, fontSize: 10 }}>
                           Waiting long
-                        </span>
+                        </Badge>
                       )}
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-gray-500">
-                        {rx.visitNumber}
-                      </span>
-                      <span className="text-xs text-gray-300">·</span>
-                      <span className="text-xs text-gray-500">
+                    </span>
+
+                    <span
+                      className="flex items-center flex-wrap"
+                      style={{
+                        gap: 8,
+                        font: "400 12.5px/1 var(--font-sans)",
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      <span>{rx.visitNumber}</span>
+                      <span style={{ color: "var(--text-disabled)" }}>·</span>
+                      <span>
                         {rx.pendingItems} of {rx.totalItems} item
                         {rx.totalItems != 1 ? "s" : ""} pending
                       </span>
-                    </div>
-                    {rx.chiefComplaint && (
-                      <p className="text-xs text-gray-400 italic truncate mt-0.5">
-                        "{rx.chiefComplaint}"
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Right */}
-                  <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                    <span
-                      className="text-xs font-semibold px-2 py-0.5 rounded-full"
-                      style={{ backgroundColor: cfg.bg, color: cfg.color }}
-                    >
-                      {cfg.label}
                     </span>
-                    <div className="flex items-center gap-1 text-xs text-gray-400">
-                      <Clock size={11} />
-                      {rx.prescribedAt &&
-                      !isNaN(new Date(rx.prescribedAt).getTime())
+
+                    {rx.chiefComplaint && (
+                      <span
+                        className="truncate"
+                        style={{
+                          font: "400 12px/1.3 var(--font-sans)",
+                          color: "var(--text-muted)",
+                          fontStyle: "italic",
+                        }}
+                      >
+                        “{rx.chiefComplaint}”
+                      </span>
+                    )}
+                  </span>
+
+                  <span
+                    className="flex flex-col items-end flex-shrink-0"
+                    style={{ gap: 7 }}
+                  >
+                    <Badge tone={cfg.tone}>{cfg.label}</Badge>
+                    <span
+                      className="inline-flex items-center"
+                      style={{
+                        gap: 5,
+                        font: "500 11.5px/1 var(--font-mono)",
+                        color: isOld ? ink : "var(--text-muted)",
+                      }}
+                    >
+                      <Clock className="w-3 h-3" />
+                      {rx.prescribedAt && !isNaN(new Date(rx.prescribedAt).getTime())
                         ? formatDistanceToNow(new Date(rx.prescribedAt), {
                             addSuffix: true,
                           })
                         : "Unknown"}
-                    </div>
-                    <ChevronRight
-                      size={16}
-                      className="text-gray-300 group-hover:text-gray-600 transition-colors"
-                    />
-                  </div>
+                    </span>
+                  </span>
+
+                  <ChevronRight
+                    className="w-4 h-4 flex-shrink-0"
+                    style={{ color: "var(--text-disabled)" }}
+                  />
                 </div>
 
-                {/* Item progress bar */}
+                {/* Item progress — only meaningful once some items exist. */}
                 {rx.totalItems > 0 && (
-                  <div className="px-4 pb-3">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs text-gray-400">
+                  <div style={{ padding: "0 16px 14px" }}>
+                    <div
+                      className="flex items-center justify-between"
+                      style={{ marginBottom: 6 }}
+                    >
+                      <span
+                        style={{
+                          font: "400 11.5px/1 var(--font-sans)",
+                          color: "var(--text-muted)",
+                        }}
+                      >
                         Dispensing progress
                       </span>
-                      <span className="text-xs font-semibold text-gray-600">
-                        {rx.totalItems - rx.pendingItems}/{rx.totalItems}
+                      <span
+                        style={{
+                          font: "600 11.5px/1 var(--font-mono)",
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        {done}/{rx.totalItems}
                       </span>
                     </div>
-                    <div className="w-full h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                    <div
+                      style={{
+                        height: 5,
+                        borderRadius: "var(--r-pill)",
+                        background: "var(--surface-sunken)",
+                        overflow: "hidden",
+                      }}
+                    >
                       <div
-                        className="h-full rounded-full bg-green-500 transition-all"
                         style={{
-                          width: `${((rx.totalItems - rx.pendingItems) / rx.totalItems) * 100}%`,
+                          height: "100%",
+                          width: `${pct}%`,
+                          borderRadius: "var(--r-pill)",
+                          background: "var(--brand)",
+                          transition: "width var(--dur-slow) var(--ease-out)",
                         }}
                       />
                     </div>
@@ -302,6 +369,6 @@ export default function PharmacyQueuePage() {
           })}
         </div>
       )}
-    </div>
+    </Page>
   );
 }

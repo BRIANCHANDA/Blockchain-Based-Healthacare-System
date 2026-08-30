@@ -2,11 +2,44 @@
 import { useState, useEffect } from "react";
 import { appointmentApi, visitApi } from "@/lib/api";
 import {
-  X, Stethoscope, Search, CheckCircle2, Clock,
-  AlertTriangle, Zap, Send, Loader2, ArrowRight, AlertCircle,
+  Stethoscope,
+  Search,
+  CheckCircle2,
+  Clock,
+  AlertTriangle,
+  Zap,
+  Send,
+  ArrowRight,
+  AlertCircle,
+  X,
 } from "lucide-react";
+import {
+  Field,
+  Input,
+  Textarea,
+  Button,
+  Pill as Badge,
+  Avatar,
+  Banner,
+  Modal,
+  SectionLabel,
+  SkeletonBlock,
+  SearchInput,
+  TONES,
+  type Tone,
+} from "@/components/dashboard/ui";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+/* ==========================================================================
+   Internal referral.
+
+   Books an appointment with another practitioner at THIS institution — no
+   blockchain involved, since the record never leaves the hospital. (The
+   cross-institution equivalent is CreateReferalModal.)
+
+   Urgency sets the default appointment time: routine lands tomorrow,
+   anything higher lands an hour from now.
+   ========================================================================== */
+
 interface Specialist {
   id: string;
   name: string;
@@ -14,37 +47,74 @@ interface Specialist {
 }
 
 interface InternalReferralModalProps {
-  visitId:        string;
-  patientId:      string;
-  patientName:    string;
+  visitId: string;
+  patientId: string;
+  patientName: string;
   chiefComplaint: string;
-  onClose:        () => void;
-  onSuccess:      (msg: string) => void;
+  onClose: () => void;
+  onSuccess: (msg: string) => void;
 }
 
-// ── Urgency config ────────────────────────────────────────────────────────────
-const URGENCY = [
-  { value: "routine",   label: "Routine",   desc: "Within the next few days",   color: "#166534", bg: "#f0fdf4", border: "#bbf7d0", icon: Clock         },
-  { value: "urgent",    label: "Urgent",    desc: "Same day, within hours",      color: "#d97706", bg: "#fffbeb", border: "#fde68a", icon: AlertTriangle  },
-  { value: "emergency", label: "Emergency", desc: "See specialist immediately",  color: "#ea580c", bg: "#fff7ed", border: "#fed7aa", icon: AlertTriangle  },
-  { value: "critical",  label: "Critical",  desc: "Life-threatening — now",      color: "#dc2626", bg: "#fef2f2", border: "#fecaca", icon: Zap            },
-] as const;
+const URGENCY: {
+  value: UrgencyValue;
+  label: string;
+  desc: string;
+  tone: Tone;
+  icon: React.ElementType;
+}[] = [
+  {
+    value: "routine",
+    label: "Routine",
+    desc: "Within the next few days",
+    tone: "success",
+    icon: Clock,
+  },
+  {
+    value: "urgent",
+    label: "Urgent",
+    desc: "Same day, within hours",
+    tone: "urgent",
+    icon: AlertTriangle,
+  },
+  {
+    value: "emergency",
+    label: "Emergency",
+    desc: "See specialist immediately",
+    tone: "critical",
+    icon: AlertTriangle,
+  },
+  {
+    value: "critical",
+    label: "Critical",
+    desc: "Life-threatening — now",
+    tone: "accent",
+    icon: Zap,
+  },
+];
 
 type UrgencyValue = "routine" | "urgent" | "emergency" | "critical";
 
 // ── Step dot ──────────────────────────────────────────────────────────────────
 function StepDot({ n, active, done }: { n: number; active: boolean; done: boolean }) {
   return (
-    <div
-      className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all"
-      style={
-        done   ? { background: "#16a34a", color: "#fff" } :
-        active ? { background: "#1d4ed8", color: "#fff" } :
-                 { background: "#f3f4f6", color: "#9ca3af" }
-      }
+    <span
+      className="inline-flex items-center justify-center flex-shrink-0"
+      style={{
+        width: 26,
+        height: 26,
+        borderRadius: "50%",
+        background: done
+          ? "var(--brand)"
+          : active
+            ? "var(--blue-600)"
+            : "var(--surface-sunken)",
+        color: done || active ? "var(--on-brand)" : "var(--text-muted)",
+        font: "700 11.5px/1 var(--font-sans)",
+        transition: "all var(--dur-base) var(--ease-standard)",
+      }}
     >
-      {done ? <CheckCircle2 className="w-4 h-4" /> : n}
-    </div>
+      {done ? <CheckCircle2 className="w-3.5 h-3.5" /> : n}
+    </span>
   );
 }
 
@@ -124,308 +194,425 @@ export function InternalReferralModal({
     }
   };
 
-  const selectedUrgency = URGENCY.find(u => u.value === urgency)!;
+  const selectedUrgency = URGENCY.find((u) => u.value === urgency)!;
+  const suTone = TONES[selectedUrgency.tone];
+
+  const footer =
+    step === 1 ? (
+      <>
+        <Button full onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          full
+          iconRight={ArrowRight}
+          disabled={!selected}
+          onClick={() => selected && setStep(2)}
+          style={{ background: "var(--blue-600)", boxShadow: "none" }}
+        >
+          Next
+        </Button>
+      </>
+    ) : step === 2 ? (
+      <>
+        <Button
+          full
+          onClick={() => {
+            setStep(1);
+            setError(null);
+          }}
+        >
+          Back
+        </Button>
+        <Button
+          variant="primary"
+          full
+          icon={Send}
+          loading={submitting}
+          disabled={reason.trim().length < 5}
+          onClick={handleSubmit}
+        >
+          {submitting ? "Booking…" : "Book referral"}
+        </Button>
+      </>
+    ) : (
+      <Button variant="primary" full icon={CheckCircle2} onClick={onClose}>
+        Done
+      </Button>
+    );
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+    <Modal
+      title="Internal referral"
+      subtitle={`Referring ${patientName} to a specialist`}
+      icon={Stethoscope}
+      tone="info"
+      width={620}
+      scroll
+      onClose={onClose}
+      footer={footer}
     >
-      <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-xl flex flex-col"
-        style={{ fontFamily: "'DM Sans', sans-serif", maxHeight: "90vh" }}
-      >
-        {/* ── Header ─────────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
-          <div>
-            <h2 className="text-base font-bold text-gray-900">Internal Referral</h2>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Referring <span className="font-semibold text-gray-700">{patientName}</span> to a specialist
+      {/* ── Step indicators ─────────────────────────────────────────────── */}
+      <div className="flex items-center" style={{ gap: 8 }}>
+        {[
+          { n: 1, label: "Specialist" },
+          { n: 2, label: "Details" },
+          { n: 3, label: "Done" },
+        ].map(({ n, label }, i, arr) => (
+          <div key={n} className="flex items-center flex-1" style={{ gap: 8 }}>
+            <StepDot n={n} active={step === n} done={step > n} />
+            <span
+              className="hidden sm:block"
+              style={{
+                font: `${step === n ? 700 : 500} 12px/1 var(--font-sans)`,
+                color:
+                  step === n
+                    ? "var(--info-ink)"
+                    : step > n
+                      ? "var(--green-800)"
+                      : "var(--text-muted)",
+              }}
+            >
+              {label}
+            </span>
+            {i < arr.length - 1 && (
+              <span
+                className="flex-1"
+                style={{
+                  height: 1,
+                  margin: "0 6px",
+                  background: step > n ? "var(--brand)" : "var(--hc-border)",
+                }}
+              />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* ── Step 1 — pick specialist ─────────────────────────────────────── */}
+      {step === 1 && (
+        <>
+          <p
+            style={{
+              margin: 0,
+              font: "600 13px/1 var(--font-sans)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            Select a specialist at your institution
+          </p>
+
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search by name or specialization…"
+            icon={Search}
+            clearIcon={X}
+            style={{ height: 40, boxShadow: "none" }}
+          />
+
+          <div
+            className="flex flex-col"
+            style={{ gap: 6, maxHeight: 288, overflowY: "auto" }}
+          >
+            {loading ? (
+              [...Array(4)].map((_, i) => (
+                <SkeletonBlock key={i} height={56} radius="var(--r-sm)" />
+              ))
+            ) : filtered.length === 0 ? (
+              <p
+                style={{
+                  margin: 0,
+                  padding: "40px 0",
+                  textAlign: "center",
+                  font: "400 13px/1 var(--font-sans)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                No specialists found at your institution
+              </p>
+            ) : (
+              filtered.map((spec, i) => {
+                const isSel = selected?.id === spec.id;
+                return (
+                  <button
+                    key={spec.id}
+                    onClick={() => setSelected(spec)}
+                    className="w-full flex items-center text-left"
+                    style={{
+                      gap: 12,
+                      padding: 12,
+                      borderRadius: "var(--r-sm)",
+                      border: `1px solid ${isSel ? "var(--blue-600)" : "var(--border-faint)"}`,
+                      background: isSel ? "var(--info-tint)" : "var(--surface-sunken)",
+                      cursor: "pointer",
+                      transition: "all var(--dur-fast) var(--ease-standard)",
+                    }}
+                  >
+                    <Avatar name={spec.name} size={34} seed={i} />
+                    <span className="flex-1 min-w-0 flex flex-col" style={{ gap: 4 }}>
+                      <span
+                        className="truncate"
+                        style={{
+                          font: "600 13.5px/1 var(--font-sans)",
+                          color: "var(--text-primary)",
+                        }}
+                      >
+                        Dr. {spec.name}
+                      </span>
+                      <span
+                        className="truncate"
+                        style={{
+                          font: "400 11.5px/1 var(--font-sans)",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        {spec.specialization ?? "General practitioner"}
+                      </span>
+                    </span>
+                    {isSel && (
+                      <CheckCircle2
+                        className="w-4 h-4 flex-shrink-0"
+                        style={{ color: "var(--info-ink)" }}
+                      />
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ── Step 2 — urgency, reason, date ───────────────────────────────── */}
+      {step === 2 && (
+        <>
+          <div
+            className="flex items-center"
+            style={{
+              gap: 12,
+              padding: "12px 16px",
+              borderRadius: "var(--r-sm)",
+              background: "var(--info-tint)",
+              border: "1px solid var(--blue-100)",
+            }}
+          >
+            <Stethoscope
+              className="w-4 h-4 flex-shrink-0"
+              style={{ color: "var(--info-ink)" }}
+            />
+            <span className="flex-1 min-w-0 flex flex-col" style={{ gap: 4 }}>
+              <SectionLabel style={{ color: "var(--info-ink)" }}>
+                Referring to
+              </SectionLabel>
+              <span
+                className="truncate"
+                style={{
+                  font: "700 13.5px/1 var(--font-sans)",
+                  color: "var(--info-ink)",
+                }}
+              >
+                Dr. {selected?.name}
+                {selected?.specialization ? ` · ${selected.specialization}` : ""}
+              </span>
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => setStep(1)}>
+              Change
+            </Button>
+          </div>
+
+          <Field label="Urgency" required>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                gap: 8,
+              }}
+            >
+              {URGENCY.map(({ value, label, desc, tone, icon: Icon }) => {
+                const active = urgency === value;
+                const t = TONES[tone];
+                return (
+                  <button
+                    key={value}
+                    onClick={() => setUrgency(value)}
+                    className="flex items-start text-left"
+                    style={{
+                      gap: 10,
+                      padding: 12,
+                      borderRadius: "var(--r-sm)",
+                      border: `1px solid ${active ? t.ink : "var(--border-faint)"}`,
+                      background: active ? t.tint : "var(--surface-sunken)",
+                      cursor: "pointer",
+                      transition: "all var(--dur-fast) var(--ease-standard)",
+                    }}
+                  >
+                    <Icon
+                      className="w-4 h-4 flex-shrink-0"
+                      style={{
+                        marginTop: 2,
+                        color: active ? t.ink : "var(--text-muted)",
+                      }}
+                    />
+                    <span className="flex flex-col" style={{ gap: 4 }}>
+                      <span
+                        style={{
+                          font: "700 13px/1 var(--font-sans)",
+                          color: active ? t.ink : "var(--text-secondary)",
+                        }}
+                      >
+                        {label}
+                      </span>
+                      <span
+                        style={{
+                          font: "400 10.5px/1.3 var(--font-sans)",
+                          color: active ? t.ink : "var(--text-muted)",
+                          opacity: active ? 0.85 : 1,
+                        }}
+                      >
+                        {desc}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+
+          <Field label="Reason for referral" required hint={`${reason.length} characters`}>
+            <Textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              placeholder="Clinical reason, working diagnosis, what you need the specialist to assess…"
+            />
+          </Field>
+
+          {/* A date only makes sense when the referral is not immediate. */}
+          {(urgency === "routine" || urgency === "urgent") && (
+            <Field
+              label="Preferred date & time"
+              hint={
+                urgency === "routine"
+                  ? "Optional — defaults to tomorrow."
+                  : "Optional — defaults to an hour from now."
+              }
+            >
+              <Input
+                type="datetime-local"
+                value={apptDate}
+                onChange={(e) => setApptDate(e.target.value)}
+                min={new Date().toISOString().slice(0, 16)}
+              />
+            </Field>
+          )}
+
+          {(urgency === "emergency" || urgency === "critical") && (
+            <Banner tone="critical" icon={AlertTriangle}>
+              <strong style={{ textTransform: "capitalize" }}>{urgency}</strong>{" "}
+              referral — the appointment is booked for an hour from now. Notify Dr.{" "}
+              {selected?.name} directly if immediate attention is required.
+            </Banner>
+          )}
+
+          {error && (
+            <Banner tone="critical" icon={AlertCircle}>
+              {error}
+            </Banner>
+          )}
+        </>
+      )}
+
+      {/* ── Step 3 — success ─────────────────────────────────────────────── */}
+      {step === 3 && apptNumber && (
+        <div
+          className="flex flex-col items-center text-center"
+          style={{ padding: "16px 0", gap: 16 }}
+        >
+          <span
+            className="inline-flex items-center justify-center"
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: "var(--r-md)",
+              background: "var(--brand-tint)",
+              color: "var(--green-700)",
+            }}
+          >
+            <CheckCircle2 className="w-7 h-7" />
+          </span>
+
+          <div className="flex flex-col" style={{ gap: 6 }}>
+            <p
+              style={{
+                margin: 0,
+                font: "700 15px/1.2 var(--font-sans)",
+                color: "var(--text-primary)",
+              }}
+            >
+              Internal referral created
+            </p>
+            <p
+              style={{
+                margin: 0,
+                font: "400 13px/1.5 var(--font-sans)",
+                color: "var(--text-secondary)",
+              }}
+            >
+              {patientName} has been referred to{" "}
+              <strong style={{ color: "var(--text-primary)" }}>
+                Dr. {selected?.name}
+              </strong>
+              .
             </p>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all">
-            <X className="w-4 h-4" />
-          </button>
+
+          {/* The receptionist works from this number, so it is the payload. */}
+          <div
+            className="w-full"
+            style={{
+              padding: "20px 24px",
+              borderRadius: "var(--r-md)",
+              border: `1.5px dashed ${suTone.ink}`,
+              background: suTone.tint,
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            <SectionLabel style={{ color: suTone.ink }}>
+              Appointment number
+            </SectionLabel>
+            <p
+              style={{
+                margin: 0,
+                font: "700 22px/1 var(--font-mono)",
+                letterSpacing: "0.02em",
+                color: suTone.ink,
+              }}
+            >
+              {apptNumber}
+            </p>
+            <p
+              style={{
+                margin: 0,
+                font: "400 11.5px/1.4 var(--font-sans)",
+                color: suTone.ink,
+                opacity: 0.8,
+              }}
+            >
+              The receptionist will see this in the Appointments queue.
+            </p>
+          </div>
+
+          <Badge tone={selectedUrgency.tone} dot style={{ height: 24 }}>
+            {selectedUrgency.label} urgency
+          </Badge>
         </div>
-
-        {/* ── Step indicators ─────────────────────────────────────────────── */}
-        <div className="flex items-center gap-2 px-6 pt-4 pb-3 flex-shrink-0">
-          {[
-            { n: 1, label: "Specialist" },
-            { n: 2, label: "Details"   },
-            { n: 3, label: "Done"      },
-          ].map(({ n, label }, i, arr) => (
-            <div key={n} className="flex items-center gap-2 flex-1">
-              <div className="flex items-center gap-2">
-                <StepDot n={n} active={step === n} done={step > n} />
-                <span
-                  className="text-xs font-semibold hidden sm:block"
-                  style={{ color: step === n ? "#1d4ed8" : step > n ? "#16a34a" : "#9ca3af" }}
-                >
-                  {label}
-                </span>
-              </div>
-              {i < arr.length - 1 && <div className="flex-1 h-px bg-gray-200 mx-2" />}
-            </div>
-          ))}
-        </div>
-
-        {/* ── Scrollable body ─────────────────────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-
-          {/* Step 1 — Pick specialist */}
-          {step === 1 && (
-            <div className="space-y-3">
-              <p className="text-sm font-semibold text-gray-700">
-                Select a specialist at your institution
-              </p>
-
-              <div className="relative">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                <input
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  placeholder="Search by name or specialization…"
-                  className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 placeholder:text-gray-400 transition-all"
-                />
-              </div>
-
-              <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                {loading ? (
-                  [...Array(4)].map((_, i) => <div key={i} className="h-14 rounded-xl bg-gray-50 animate-pulse" />)
-                ) : filtered.length === 0 ? (
-                  <div className="py-10 text-center text-sm text-gray-400">
-                    No specialists found at your institution
-                  </div>
-                ) : (
-                  filtered.map(spec => {
-                    const isSel = selected?.id === spec.id;
-                    return (
-                      <button
-                        key={spec.id}
-                        onClick={() => setSelected(spec)}
-                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all"
-                        style={isSel
-                          ? { background: "#eff6ff", borderColor: "#2563eb" }
-                          : { background: "#fafafa", borderColor: "#f1f5f9" }}
-                      >
-                        <div
-                          className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 text-xs font-bold"
-                          style={{
-                            background: isSel ? "#dbeafe" : "#f1f5f9",
-                            color:      isSel ? "#2563eb" : "#9ca3af",
-                          }}
-                        >
-                          {spec.name.split(" ").map(n => n[0]).join("").slice(0, 2)}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-900">Dr. {spec.name}</p>
-                          <p className="text-xs text-gray-400">
-                            {spec.specialization ?? "General Practitioner"}
-                          </p>
-                        </div>
-                        {isSel && <CheckCircle2 className="w-4 h-4 text-blue-600 flex-shrink-0" />}
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Step 2 — Urgency + reason + date */}
-          {step === 2 && (
-            <div className="space-y-5">
-              {/* Selected specialist recap */}
-              <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-50 border border-blue-100">
-                <Stethoscope className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-blue-500 uppercase tracking-wide">Referring to</p>
-                  <p className="text-sm font-bold text-blue-900">
-                    Dr. {selected?.name}
-                    {selected?.specialization && (
-                      <span className="font-normal text-blue-600"> · {selected.specialization}</span>
-                    )}
-                  </p>
-                </div>
-                <button onClick={() => setStep(1)} className="text-xs text-blue-500 hover:text-blue-700 font-semibold">
-                  Change
-                </button>
-              </div>
-
-              {/* Urgency */}
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">Urgency *</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {URGENCY.map(({ value, label, desc, color, bg, border, icon: Icon }) => {
-                    const active = urgency === value;
-                    return (
-                      <button
-                        key={value}
-                        onClick={() => setUrgency(value)}
-                        className="flex items-start gap-2.5 px-3 py-3 rounded-xl border text-left transition-all"
-                        style={active
-                          ? { background: bg, borderColor: color, borderWidth: 1.5 }
-                          : { background: "#fafafa", borderColor: "#f1f5f9" }}
-                      >
-                        <Icon className="w-4 h-4 flex-shrink-0 mt-0.5" style={{ color: active ? color : "#9ca3af" }} />
-                        <div>
-                          <p className="text-sm font-bold" style={{ color: active ? color : "#374151" }}>{label}</p>
-                          <p className="text-[10px] leading-tight mt-0.5" style={{ color: active ? color : "#9ca3af", opacity: active ? 0.8 : 1 }}>
-                            {desc}
-                          </p>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Reason */}
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-1.5">
-                  Reason for Referral *
-                </label>
-                <textarea
-                  value={reason}
-                  onChange={e => setReason(e.target.value)}
-                  rows={3}
-                  placeholder="Clinical reason, working diagnosis, what you need the specialist to assess…"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 resize-none placeholder:text-gray-400 transition-all"
-                />
-                <p className="text-[10px] text-gray-400 mt-1 text-right">{reason.length} chars</p>
-              </div>
-
-              {/* Preferred date — optional for urgent, skipped for critical */}
-              {(urgency === "routine" || urgency === "urgent") && (
-                <div>
-                  <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-1.5">
-                    Preferred Date & Time{" "}
-                    <span className="normal-case font-normal text-gray-400">
-                      {urgency === "routine" ? "(optional — defaults to tomorrow)" : "(optional — defaults to 1hr from now)"}
-                    </span>
-                  </label>
-                  <input
-                    type="datetime-local"
-                    value={apptDate}
-                    onChange={e => setApptDate(e.target.value)}
-                    min={new Date().toISOString().slice(0, 16)}
-                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 transition-all"
-                  />
-                </div>
-              )}
-
-              {/* Emergency/critical note */}
-              {(urgency === "emergency" || urgency === "critical") && (
-                <div
-                  className="flex items-start gap-2.5 px-4 py-3 rounded-xl border"
-                  style={{ background: "#fef2f2", borderColor: "#fecaca" }}
-                >
-                  <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-red-700 leading-relaxed">
-                    <span className="font-bold capitalize">{urgency}</span> referral — appointment booked for 1 hour from now.
-                    Notify Dr. {selected?.name} directly if immediate attention is required.
-                  </p>
-                </div>
-              )}
-
-              {error && (
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-red-50 border border-red-100">
-                  <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                  <p className="text-xs text-red-700">{error}</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Step 3 — Success */}
-          {step === 3 && apptNumber && (
-            <div className="py-6 text-center space-y-5">
-              <div className="w-16 h-16 rounded-2xl bg-green-50 flex items-center justify-center mx-auto">
-                <CheckCircle2 className="w-8 h-8 text-green-600" />
-              </div>
-              <div>
-                <p className="text-base font-bold text-gray-900">Internal Referral Created</p>
-                <p className="text-sm text-gray-500 mt-1">
-                  {patientName} has been referred to{" "}
-                  <span className="font-semibold text-gray-800">Dr. {selected?.name}</span>
-                </p>
-              </div>
-
-              {/* Appointment number */}
-              <div
-                className="px-6 py-5 rounded-2xl border-2 border-dashed"
-                style={{ borderColor: selectedUrgency.border, background: selectedUrgency.bg }}
-              >
-                <p className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: selectedUrgency.color }}>
-                  Appointment Number
-                </p>
-                <p className="text-2xl font-extrabold font-mono tracking-wide" style={{ color: selectedUrgency.color }}>
-                  {apptNumber}
-                </p>
-                <p className="text-xs mt-2" style={{ color: selectedUrgency.color, opacity: 0.75 }}>
-                  Receptionist will see this in the Appointments queue
-                </p>
-              </div>
-
-              {/* Urgency tag */}
-              <div
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold"
-                style={{ background: selectedUrgency.bg, color: selectedUrgency.color, border: `1px solid ${selectedUrgency.border}` }}
-              >
-                <span className="w-1.5 h-1.5 rounded-full" style={{ background: selectedUrgency.color }} />
-                {selectedUrgency.label} urgency
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ── Footer ─────────────────────────────────────────────────────── */}
-        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-3 flex-shrink-0">
-          {step === 1 && (
-            <>
-              <button onClick={onClose}
-                className="px-4 py-2.5 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-100 transition-all">
-                Cancel
-              </button>
-              <button
-                onClick={() => selected && setStep(2)}
-                disabled={!selected}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40"
-                style={{ background: "linear-gradient(135deg, #1d4ed8, #1e40af)" }}
-              >
-                Next <ArrowRight className="w-4 h-4" />
-              </button>
-            </>
-          )}
-
-          {step === 2 && (
-            <>
-              <button onClick={() => { setStep(1); setError(null); }}
-                className="px-4 py-2.5 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-100 transition-all">
-                Back
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={submitting || reason.trim().length < 5}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40"
-                style={{ background: "linear-gradient(135deg, #16a34a, #15803d)" }}
-              >
-                {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                {submitting ? "Booking…" : "Book Referral"}
-              </button>
-            </>
-          )}
-
-          {step === 3 && (
-            <button onClick={onClose}
-              className="w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white"
-              style={{ background: "linear-gradient(135deg, #166534, #15803d)" }}>
-              <CheckCircle2 className="w-4 h-4" /> Done
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
+      )}
+    </Modal>
   );
 }
+
+export default InternalReferralModal;

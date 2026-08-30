@@ -135,64 +135,35 @@ export default function AdminLayout({
     ? "System Administrator"
     : "Hospital Administrator";
 
-  /* Scope indicator — unique to this portal, so it is passed in rather than
-     baked into the shared shell. */
-  const contextCard = (
+  /*
+   * A hospital admin already sees their institution in the sidebar card, so a
+   * header chip would repeat it. A super admin has no institution card there,
+   * so the system-wide scope is worth stating.
+   */
+  const headerExtra = isSuperAdmin ? (
     <div
-      className={`flex items-center gap-2.5 px-3 py-2.5 rounded-xl border ${
-        isSuperAdmin
-          ? "bg-emerald-50 border-emerald-100"
-          : "bg-blue-50 border-blue-100"
-      }`}
+      className="hidden md:flex items-center gap-2"
+      style={{
+        padding: "6px 12px",
+        borderRadius: "var(--r-pill)",
+        background: "var(--brand-tint)",
+        border: "1px solid var(--green-100)",
+      }}
     >
-      <div
-        className={`w-7 h-7 rounded-lg flex items-center justify-center ${
-          isSuperAdmin
-            ? "bg-emerald-100 text-emerald-700"
-            : "bg-blue-100 text-blue-700"
-        }`}
+      <span
+        className="rounded-full"
+        style={{ width: 6, height: 6, background: "var(--brand)" }}
+      />
+      <span
+        style={{
+          font: "600 12px/1 var(--font-sans)",
+          color: "var(--success-ink)",
+        }}
       >
-        {isSuperAdmin ? (
-          <ShieldCheck className="w-3.5 h-3.5" />
-        ) : (
-          <Building2 className="w-3.5 h-3.5" />
-        )}
-      </div>
-
-      <div className="min-w-0 flex-1">
-        <p
-          className={`text-[10.5px] font-bold uppercase tracking-wider ${
-            isSuperAdmin ? "text-emerald-600" : "text-blue-600"
-          }`}
-        >
-          {isSuperAdmin ? "Super Administrator" : "Hospital Administrator"}
-        </p>
-
-        {!isSuperAdmin && (
-          <p className="text-[12.5px] font-semibold text-slate-700 truncate mt-0.5">
-            {institutionName ?? "Unknown Institution"}
-          </p>
-        )}
-      </div>
+        All institutions
+      </span>
     </div>
-  );
-
-  const headerExtra =
-    !isSuperAdmin && institutionName ? (
-      <div className="hidden md:flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-100 max-w-[220px]">
-        <Building2 className="w-3.5 h-3.5 text-emerald-600 flex-shrink-0" />
-        <span className="text-[12.5px] font-semibold text-emerald-800 truncate">
-          {institutionName}
-        </span>
-      </div>
-    ) : isSuperAdmin ? (
-      <div className="hidden md:flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-        <span className="text-[12px] font-semibold text-slate-600">
-          Super Admin
-        </span>
-      </div>
-    ) : null;
+  ) : null;
 
   return (
     <DashboardShell
@@ -200,7 +171,6 @@ export default function AdminLayout({
       basePath="/dashboard/admin"
       navGroups={getNavGroups(isSuperAdmin)}
       roleLabel={roleLabel}
-      contextCard={contextCard}
       headerExtra={headerExtra}
     >
       {children}

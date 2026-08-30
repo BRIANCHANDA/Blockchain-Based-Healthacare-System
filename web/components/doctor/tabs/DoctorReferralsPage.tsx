@@ -4,13 +4,7 @@ import { useRouter } from "next/navigation";
 import { api, appointmentApi } from "@/lib/api";
 import {
   ArrowLeftRight,
-  Building2,
-  Clock,
   CheckCircle2,
-  XCircle,
-  Hourglass,
-  AlertTriangle,
-  Zap,
   RefreshCw,
   AlertCircle,
   ChevronRight,
@@ -22,6 +16,40 @@ import {
   ArrowRight,
 } from "lucide-react";
 import { format, formatDistanceToNow, isToday, isTomorrow } from "date-fns";
+import {
+  Page,
+  PageHeader,
+  Card,
+  KpiCard,
+  KpiGrid,
+  Pill as Badge,
+  MonoTag,
+  Button,
+  Banner,
+  EmptyState,
+  SkeletonBlock,
+  SectionLabel,
+  SearchInput,
+  SegmentedControl,
+  TONES,
+  type Tone,
+} from "@/components/dashboard/ui";
+import { getReferralUrgency, getReferralStatus } from "./referralVocab";
+
+/* ==========================================================================
+   Referrals page.
+
+   Three streams, and the split is entirely client-side because the API has
+   no "referred by me" filter:
+
+     Incoming        APT- visits assigned TO me that carry an
+                     admittingDiagnosis (the marker of an internal referral)
+     Sent — internal  APT- visits I created but assigned to someone else
+     Sent — external  /api/referrals/outgoing (cross-institution, on-chain)
+
+   The session check at the top of load() exists only to get `myId` for that
+   split — without it, incoming and outgoing cannot be told apart.
+   ========================================================================== */
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface ExternalReferral {
@@ -59,200 +87,147 @@ interface InternalReferral {
 }
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const URGENCY: Record<
-  string,
-  {
-    color: string;
-    bg: string;
-    border: string;
-    dot: string;
-    label: string;
-    icon: any;
-  }
-> = {
-  routine: {
-    color: "#166534",
-    bg: "#f0fdf4",
-    border: "#bbf7d0",
-    dot: "#16a34a",
-    label: "Routine",
-    icon: Clock,
-  },
-  urgent: {
-    color: "#d97706",
-    bg: "#fffbeb",
-    border: "#fde68a",
-    dot: "#f59e0b",
-    label: "Urgent",
-    icon: AlertTriangle,
-  },
-  emergency: {
-    color: "#ea580c",
-    bg: "#fff7ed",
-    border: "#fed7aa",
-    dot: "#f97316",
-    label: "Emergency",
-    icon: AlertTriangle,
-  },
-  critical: {
-    color: "#dc2626",
-    bg: "#fef2f2",
-    border: "#fecaca",
-    dot: "#ef4444",
-    label: "Critical",
-    icon: Zap,
-  },
-};
-const getU = (u: string) => URGENCY[u] ?? URGENCY.routine;
-
-const STATUS: Record<
-  string,
-  { color: string; bg: string; border: string; label: string; icon: any }
-> = {
-  pending: {
-    color: "#d97706",
-    bg: "#fffbeb",
-    border: "#fde68a",
-    label: "Awaiting response",
-    icon: Hourglass,
-  },
-  accepted: {
-    color: "#1d4ed8",
-    bg: "#eff6ff",
-    border: "#bfdbfe",
-    label: "Accepted",
-    icon: CheckCircle2,
-  },
-  completed: {
-    color: "#166534",
-    bg: "#f0fdf4",
-    border: "#bbf7d0",
-    label: "Completed",
-    icon: CheckCircle2,
-  },
-  rejected: {
-    color: "#dc2626",
-    bg: "#fef2f2",
-    border: "#fecaca",
-    label: "Rejected",
-    icon: XCircle,
-  },
-  cancelled: {
-    color: "#6b7280",
-    bg: "#f9fafb",
-    border: "#e5e7eb",
-    label: "Cancelled",
-    icon: XCircle,
-  },
-  scheduled: {
-    color: "#0891b2",
-    bg: "#ecfeff",
-    border: "#a5f3fc",
-    label: "Scheduled",
-    icon: CalendarDays,
-  },
-  "in-progress": {
-    color: "#166534",
-    bg: "#f0fdf4",
-    border: "#bbf7d0",
-    label: "In Progress",
-    icon: CheckCircle2,
-  },
-};
-const getS = (s: string) => STATUS[s] ?? STATUS.pending;
-
 type FilterKey = "all" | "pending" | "accepted" | "completed" | "rejected";
 type MainTab = "incoming" | "outgoing-internal" | "outgoing-external";
 
+/* Which tone each main tab's count badge takes. */
+const TAB_TONE: Record<MainTab, Tone> = {
+  incoming: "success",
+  "outgoing-internal": "info",
+  "outgoing-external": "urgent",
+};
+
 // ── External referral card ────────────────────────────────────────────────────
 function ExternalCard({ referral }: { referral: ExternalReferral }) {
-  const u = getU(referral.urgency);
-  const s = getS(referral.status);
-  const StatusIcon = s.icon;
-  const UrgencyIcon = u.icon;
+  const u = getReferralUrgency(referral.urgency);
+  const st = getReferralStatus(referral.status);
+  const sTone = TONES[st.tone];
+  const StatusIcon = st.icon;
+
+  /* The backend writes "Converted to visit …" into responseNotes when the
+     receiving hospital admits the patient — that is an outcome, not a note. */
+  const admitted = referral.responseNotes?.startsWith("Converted to visit");
 
   return (
     <div
-      className="w-full bg-white rounded-2xl border overflow-hidden"
-      style={{ borderColor: s.border }}
+      className="w-full"
+      style={{
+        background: "var(--surface-card)",
+        border: "1px solid var(--hc-border)",
+        borderRadius: "var(--r-md)",
+        overflow: "hidden",
+      }}
     >
       <div
-        className="flex items-center justify-between px-4 py-2.5"
-        style={{ background: s.bg }}
+        className="flex items-center justify-between"
+        style={{ gap: 10, padding: "10px 16px", background: sTone.tint }}
       >
-        <div className="flex items-center gap-2">
-          <StatusIcon className="w-3.5 h-3.5" style={{ color: s.color }} />
-          <span className="text-xs font-bold" style={{ color: s.color }}>
-            {s.label}
+        <span className="inline-flex items-center" style={{ gap: 8 }}>
+          <StatusIcon className="w-3.5 h-3.5" style={{ color: sTone.ink }} />
+          <span
+            style={{ font: "700 11.5px/1 var(--font-sans)", color: sTone.ink }}
+          >
+            {st.label}
           </span>
-        </div>
-        <span className="text-xs font-mono text-gray-400">
-          {referral.referralNumber}
         </span>
+        <MonoTag style={{ height: 18, fontSize: 10, background: "var(--surface-card)" }}>
+          {referral.referralNumber}
+        </MonoTag>
       </div>
 
-      <div className="px-4 py-4 space-y-3">
-        <div>
-          <p className="text-sm font-bold text-gray-900">
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="flex flex-col" style={{ gap: 5 }}>
+          <p
+            style={{
+              margin: 0,
+              font: "700 13.5px/1 var(--font-sans)",
+              color: "var(--text-primary)",
+            }}
+          >
             {referral.patientName}
           </p>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <ArrowRight className="w-3 h-3 text-gray-400 flex-shrink-0" />
-            <p className="text-xs text-gray-500">
-              {referral.receivingInstitutionName}
-            </p>
-          </div>
+          <span
+            className="inline-flex items-center"
+            style={{
+              gap: 6,
+              font: "400 12px/1 var(--font-sans)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            <ArrowRight className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+            {referral.receivingInstitutionName}
+          </span>
         </div>
 
-        <p className="text-xs text-gray-600 leading-relaxed line-clamp-2">
+        <p
+          className="line-clamp-2"
+          style={{
+            margin: 0,
+            font: "400 12.5px/1.6 var(--font-sans)",
+            color: "var(--text-secondary)",
+          }}
+        >
           {referral.reason}
         </p>
 
-        <div className="flex items-center justify-between pt-1 border-t border-gray-50">
-          <span
-            className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded-full"
-            style={{
-              background: u.bg,
-              color: u.color,
-              border: `1px solid ${u.border}`,
-            }}
-          >
-            <UrgencyIcon className="w-2.5 h-2.5" />
+        <div
+          className="flex items-center justify-between flex-wrap"
+          style={{
+            gap: 10,
+            paddingTop: 10,
+            borderTop: "1px solid var(--border-faint)",
+          }}
+        >
+          <Badge tone={u.tone} icon={u.icon} style={{ height: 20, fontSize: 10 }}>
             {u.label}
-          </span>
-          <div className="text-right">
-            <p className="text-[10px] text-gray-400">
-              {formatDistanceToNow(new Date(referral.referredAt), {
-                addSuffix: true,
-              })}
-            </p>
+          </Badge>
+          <div className="text-right flex flex-col" style={{ gap: 3 }}>
+            <span
+              style={{
+                font: "400 11px/1 var(--font-sans)",
+                color: "var(--text-muted)",
+              }}
+            >
+              {formatDistanceToNow(new Date(referral.referredAt), { addSuffix: true })}
+            </span>
             {referral.acceptedAt && (
-              <p className="text-[10px] text-blue-500 mt-0.5">
-                Accepted{" "}
-                {format(new Date(referral.acceptedAt), "dd MMM, HH:mm")}
-              </p>
+              <span
+                style={{ font: "500 11px/1 var(--font-sans)", color: "var(--info-ink)" }}
+              >
+                Accepted {format(new Date(referral.acceptedAt), "dd MMM, HH:mm")}
+              </span>
             )}
           </div>
         </div>
 
-        {referral.responseNotes &&
-          !referral.responseNotes.startsWith("Converted to visit") && (
-            <div className="flex gap-2 px-3 py-2 rounded-xl bg-gray-50 border border-gray-100">
-              <span className="text-gray-400 text-[10px] font-bold uppercase tracking-wide flex-shrink-0 mt-0.5">
-                Note
-              </span>
-              <p className="text-xs text-gray-600 italic">
+        {admitted ? (
+          <Banner tone="success" icon={CheckCircle2}>
+            Patient admitted at the receiving institution.
+          </Banner>
+        ) : (
+          referral.responseNotes && (
+            <div
+              className="flex"
+              style={{
+                gap: 8,
+                padding: "10px 12px",
+                borderRadius: "var(--r-xs)",
+                background: "var(--surface-sunken)",
+              }}
+            >
+              <SectionLabel style={{ flexShrink: 0, marginTop: 2 }}>Note</SectionLabel>
+              <p
+                style={{
+                  margin: 0,
+                  font: "400 12px/1.5 var(--font-sans)",
+                  color: "var(--text-secondary)",
+                  fontStyle: "italic",
+                }}
+              >
                 {referral.responseNotes}
               </p>
             </div>
-          )}
-        {referral.responseNotes?.startsWith("Converted to visit") && (
-          <div className="flex gap-2 px-3 py-2 rounded-xl bg-green-50 border border-green-100">
-            <CheckCircle2 className="w-3.5 h-3.5 text-green-600 flex-shrink-0 mt-0.5" />
-            <p className="text-xs text-green-700 font-medium">
-              Patient admitted at receiving institution
-            </p>
-          </div>
+          )
         )}
       </div>
     </div>
@@ -269,10 +244,10 @@ function InternalCard({
   direction: "incoming" | "outgoing";
   onOpen?: () => void;
 }) {
-  const u = getU(referral.priority);
-  const s = getS(referral.status);
-  const UIcon = u.icon;
-  const StatusIcon = s.icon;
+  const u = getReferralUrgency(referral.priority);
+  const st = getReferralStatus(referral.status);
+  const uTone = TONES[u.tone];
+  const StatusIcon = st.icon;
   const date = new Date(referral.admissionDate);
   const dateLabel = isToday(date)
     ? "Today"
@@ -283,115 +258,148 @@ function InternalCard({
   return (
     <button
       onClick={onOpen}
-      className={`w-full text-left bg-white rounded-2xl border overflow-hidden transition-all ${onOpen ? "hover:shadow-md hover:-translate-y-px" : ""} group`}
-      style={{ borderColor: u.border }}
+      className="w-full text-left"
+      style={{
+        background: "var(--surface-card)",
+        border: "1px solid var(--hc-border)",
+        borderRadius: "var(--r-md)",
+        overflow: "hidden",
+        cursor: onOpen ? "pointer" : "default",
+        transition: "box-shadow var(--dur-base) var(--ease-standard)",
+      }}
+      onMouseEnter={(e) => {
+        if (onOpen) e.currentTarget.style.boxShadow = "var(--elev-2)";
+      }}
+      onMouseLeave={(e) => {
+        if (onOpen) e.currentTarget.style.boxShadow = "none";
+      }}
     >
-      {/* Header */}
       <div
-        className="flex items-center justify-between px-4 py-2.5"
-        style={{ background: u.bg }}
+        className="flex items-center justify-between flex-wrap"
+        style={{ gap: 10, padding: "10px 16px", background: uTone.tint }}
       >
-        <div className="flex items-center gap-2">
-          <Stethoscope className="w-3.5 h-3.5" style={{ color: u.color }} />
-          <span className="text-xs font-bold" style={{ color: u.color }}>
-            {direction === "incoming"
-              ? "Internal Referral — Incoming"
-              : "Internal Referral — Sent"}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          {/* Status pill */}
+        <span className="inline-flex items-center" style={{ gap: 8 }}>
+          <Stethoscope className="w-3.5 h-3.5" style={{ color: uTone.ink }} />
           <span
-            className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full"
-            style={{
-              background: s.bg,
-              color: s.color,
-              border: `1px solid ${s.border}`,
-            }}
+            style={{ font: "700 11.5px/1 var(--font-sans)", color: uTone.ink }}
           >
-            <StatusIcon className="w-2.5 h-2.5" />
-            {s.label}
+            {direction === "incoming" ? "Incoming" : "Sent"} · internal
           </span>
-          <span className="text-xs font-mono text-gray-400">
+        </span>
+        <span className="inline-flex items-center" style={{ gap: 8 }}>
+          <Badge tone={st.tone} icon={StatusIcon} style={{ height: 18, fontSize: 10 }}>
+            {st.label}
+          </Badge>
+          <MonoTag
+            style={{ height: 18, fontSize: 10, background: "var(--surface-card)" }}
+          >
             {referral.visitNumber}
-          </span>
-        </div>
+          </MonoTag>
+        </span>
       </div>
 
-      <div className="px-4 py-4 space-y-3">
-        {/* Patient */}
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <User className="w-3.5 h-3.5 text-gray-400 flex-shrink-0" />
-              <p className="text-sm font-bold text-gray-900">
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="flex items-start justify-between" style={{ gap: 12 }}>
+          <div className="min-w-0 flex flex-col" style={{ gap: 6 }}>
+            <span className="inline-flex items-center" style={{ gap: 8 }}>
+              <User className="w-3.5 h-3.5" style={{ color: "var(--text-muted)" }} />
+              <span
+                style={{
+                  font: "700 13.5px/1 var(--font-sans)",
+                  color: "var(--text-primary)",
+                }}
+              >
                 {referral.patientName}
-              </p>
-            </div>
+              </span>
+            </span>
 
-            {/* Direction context */}
+            {/* Who it came from, or who it went to. */}
             {direction === "outgoing" && referral.doctorName && (
-              <div className="flex items-center gap-1.5 mt-1 ml-5">
-                <ArrowRight className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                <p className="text-xs text-gray-500">
-                  Referred to{" "}
-                  <span className="font-semibold text-gray-700">
-                    Dr. {referral.doctorName}
-                  </span>
-                </p>
-              </div>
+              <span
+                className="inline-flex items-center"
+                style={{
+                  gap: 6,
+                  marginLeft: 22,
+                  font: "400 12px/1 var(--font-sans)",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                <ArrowRight className="w-3 h-3" style={{ color: "var(--text-muted)" }} />
+                Referred to Dr. {referral.doctorName}
+              </span>
             )}
             {direction === "incoming" && referral.referringDoctorName && (
-              <div className="flex items-center gap-1.5 mt-1 ml-5">
+              <span
+                className="inline-flex items-center"
+                style={{
+                  gap: 6,
+                  marginLeft: 22,
+                  font: "400 12px/1 var(--font-sans)",
+                  color: "var(--text-secondary)",
+                }}
+              >
                 <ArrowRight
-                  className="w-3 h-3 text-gray-400 flex-shrink-0"
-                  style={{ transform: "scaleX(-1)" }}
+                  className="w-3 h-3"
+                  style={{ color: "var(--text-muted)", transform: "scaleX(-1)" }}
                 />
-                <p className="text-xs text-gray-500">
-                  From{" "}
-                  <span className="font-semibold text-gray-700">
-                    Dr. {referral.referringDoctorName}
-                  </span>
-                </p>
-              </div>
+                From Dr. {referral.referringDoctorName}
+              </span>
             )}
           </div>
           {onOpen && (
-            <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-green-600 transition-colors flex-shrink-0 mt-0.5" />
+            <ChevronRight
+              className="w-4 h-4 flex-shrink-0"
+              style={{ color: "var(--text-disabled)", marginTop: 2 }}
+            />
           )}
         </div>
 
-        {/* Referral message / reason */}
-        <div className="px-3 py-2.5 rounded-xl bg-gray-50 border border-gray-100">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
-            {direction === "outgoing"
-              ? "Your Referral Note"
-              : "Reason for Referral"}
-          </p>
-          <p className="text-xs text-gray-700 leading-relaxed">
+        <div
+          style={{
+            padding: "10px 12px",
+            borderRadius: "var(--r-xs)",
+            background: "var(--surface-sunken)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 5,
+          }}
+        >
+          <SectionLabel>
+            {direction === "outgoing" ? "Your referral note" : "Reason for referral"}
+          </SectionLabel>
+          <p
+            style={{
+              margin: 0,
+              font: "400 12.5px/1.6 var(--font-sans)",
+              color: "var(--text-secondary)",
+            }}
+          >
             {referral.admittingDiagnosis || referral.chiefComplaint}
           </p>
         </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between pt-1 border-t border-gray-50">
+        <div
+          className="flex items-center justify-between flex-wrap"
+          style={{
+            gap: 10,
+            paddingTop: 10,
+            borderTop: "1px solid var(--border-faint)",
+          }}
+        >
+          <Badge tone={u.tone} icon={u.icon} style={{ height: 20, fontSize: 10 }}>
+            {u.label}
+          </Badge>
           <span
-            className="inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded-full"
+            className="inline-flex items-center"
             style={{
-              background: u.bg,
-              color: u.color,
-              border: `1px solid ${u.border}`,
+              gap: 6,
+              font: "400 11px/1 var(--font-sans)",
+              color: "var(--text-muted)",
             }}
           >
-            <UIcon className="w-2.5 h-2.5" />
-            {u.label}
-          </span>
-          <div className="flex items-center gap-1.5 text-[10px] text-gray-400">
             <CalendarDays className="w-3 h-3" />
-            <span>
-              {dateLabel} · {format(date, "h:mm a")}
-            </span>
-          </div>
+            {dateLabel} · {format(date, "h:mm a")}
+          </span>
         </div>
       </div>
     </button>
@@ -400,20 +408,7 @@ function InternalCard({
 
 // ── Skeleton ──────────────────────────────────────────────────────────────────
 function SkeletonCard() {
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden animate-pulse">
-      <div className="h-9 bg-gray-50" />
-      <div className="p-4 space-y-3">
-        <div className="h-4 w-36 bg-gray-100 rounded" />
-        <div className="h-3 w-48 bg-gray-100 rounded" />
-        <div className="h-12 bg-gray-100 rounded-xl" />
-        <div className="flex justify-between pt-1">
-          <div className="h-6 w-20 bg-gray-100 rounded-full" />
-          <div className="h-3 w-24 bg-gray-100 rounded" />
-        </div>
-      </div>
-    </div>
-  );
+  return <SkeletonBlock height={210} radius="var(--r-md)" />;
 }
 
 // ── Tabs config ───────────────────────────────────────────────────────────────
@@ -581,269 +576,156 @@ export default function DoctorReferralsPage() {
     "referringDoctorName",
   ]);
 
-  const filterTabs: {
-    key: FilterKey;
-    label: string;
-    color: string;
-    bg: string;
-  }[] = [
-    { key: "all", label: "All", color: "#374151", bg: "#f3f4f6" },
-    { key: "pending", label: "Pending", color: "#d97706", bg: "#fffbeb" },
-    { key: "accepted", label: "Accepted", color: "#1d4ed8", bg: "#eff6ff" },
-    { key: "completed", label: "Completed", color: "#166534", bg: "#f0fdf4" },
-    { key: "rejected", label: "Rejected", color: "#dc2626", bg: "#fef2f2" },
-  ];
-
   const tabBadge: Record<MainTab, number> = {
     incoming: incoming.length,
     "outgoing-internal": outgoingInternal.length,
     "outgoing-external": extCounts.pending,
   };
 
-  const badgeColor: Record<MainTab, string> = {
-    incoming: "#166534",
-    "outgoing-internal": "#0891b2",
-    "outgoing-external": "#d97706",
+  const isFiltered = !!search || filter !== "all";
+  const clearFilters = () => {
+    setSearch("");
+    setFilter("all");
   };
 
-  const badgeBg: Record<MainTab, string> = {
-    incoming: "#f0fdf4",
-    "outgoing-internal": "#ecfeff",
-    "outgoing-external": "#fffbeb",
+  /* Every stream renders the same grid — only the cards differ. */
+  const gridStyle: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))",
+    gap: 14,
   };
 
   return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif" }} className="space-y-5">
-      {/* ── Header ─────────────────────────────────────────────────────── */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1
-            className="text-2xl font-bold text-gray-900"
-            style={{ fontFamily: "'Playfair Display', serif" }}
-          >
-            Referrals
-          </h1>
-          <p className="text-sm text-gray-400 mt-1">
+    <Page maxWidth={1200}>
+      <PageHeader
+        eyebrow="Coordination"
+        title="Referrals"
+        subtitle={
+          <>
             {format(new Date(), "EEEE, d MMMM yyyy")}
             {!loading && incoming.length > 0 && (
-              <>
+              <span style={{ color: "var(--green-700)", fontWeight: 600 }}>
                 {" "}
-                ·{" "}
-                <span className="text-green-700 font-medium">
-                  {incoming.length} incoming
-                </span>
-              </>
+                · {incoming.length} incoming
+              </span>
             )}
             {!loading && extCounts.pending > 0 && (
-              <>
+              <span style={{ color: "var(--urgent-ink)", fontWeight: 600 }}>
                 {" "}
-                ·{" "}
-                <span className="text-amber-600 font-medium">
-                  {extCounts.pending} awaiting response
-                </span>
-              </>
+                · {extCounts.pending} awaiting response
+              </span>
             )}
-          </p>
-        </div>
-        <button
-          onClick={() => load(true)}
-          disabled={refreshing}
-          className="p-2.5 rounded-xl border border-gray-200 text-gray-400 hover:text-gray-600 hover:bg-white transition-all disabled:opacity-40"
-        >
-          <RefreshCw
-            className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
+          </>
+        }
+        actions={
+          <Button
+            icon={RefreshCw}
+            onClick={() => load(true)}
+            disabled={refreshing}
+            style={{ padding: 0, width: 38 }}
           />
-        </button>
-      </div>
+        }
+      />
 
-      {/* ── Stat pills ──────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          {
-            label: "Incoming",
-            value: incoming.length,
-            color: "#166534",
-            bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
-            border: "#bbf7d0",
-          },
-          {
-            label: "Sent — Internal",
-            value: outgoingInternal.length,
-            color: "#0891b2",
-            bg: "linear-gradient(135deg,#ecfeff,#cffafe)",
-            border: "#a5f3fc",
-          },
-          {
-            label: "Sent — External",
-            value: outgoingExternal.length,
-            color: "#d97706",
-            bg: "linear-gradient(135deg,#fffbeb,#fef3c7)",
-            border: "#fde68a",
-          },
-        ].map(({ label, value, color, bg, border }) => (
-          <div
-            key={label}
-            className="relative rounded-2xl border overflow-hidden p-4"
-            style={{ background: bg, borderColor: border }}
-          >
-            <div
-              className="absolute -right-3 -bottom-3 w-12 h-12 rounded-full opacity-[0.08]"
-              style={{ background: color }}
-            />
-            <p
-              className="text-2xl font-extrabold leading-none tabular-nums"
-              style={{ color }}
-            >
-              {loading ? (
-                <span className="inline-block w-7 h-6 rounded-lg bg-black/5 animate-pulse" />
-              ) : (
-                value
-              )}
-            </p>
-            <p
-              className="text-xs font-bold mt-1"
-              style={{ color, opacity: 0.7 }}
-            >
-              {label}
-            </p>
-          </div>
-        ))}
-      </div>
+      <KpiGrid min={220}>
+        <KpiCard
+          label="Incoming"
+          value={incoming.length}
+          sub="Referred to you"
+          icon={Stethoscope}
+          tone="success"
+          loading={loading}
+          onClick={() => setMainTab("incoming")}
+        />
+        <KpiCard
+          label="Sent · internal"
+          value={outgoingInternal.length}
+          sub="To colleagues here"
+          icon={ArrowRight}
+          tone="info"
+          loading={loading}
+          onClick={() => setMainTab("outgoing-internal")}
+        />
+        <KpiCard
+          label="Sent · external"
+          value={outgoingExternal.length}
+          sub="To other institutions"
+          icon={ArrowLeftRight}
+          tone="urgent"
+          loading={loading}
+          onClick={() => setMainTab("outgoing-external")}
+        />
+      </KpiGrid>
 
       {/* ── Main tabs + search ──────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex gap-1 p-1 rounded-xl bg-gray-100/80">
-          {TABS.map(({ key, label }) => {
-            const badge = tabBadge[key];
-            const active = mainTab === key;
-            return (
-              <button
-                key={key}
-                onClick={() => setMainTab(key)}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-                style={
-                  active
-                    ? {
-                        background: "#fff",
-                        color: "#111827",
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-                      }
-                    : { color: "#6b7280" }
-                }
-              >
-                {label}
-                {badge > 0 && (
-                  <span
-                    className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                    style={
-                      active
-                        ? { background: badgeBg[key], color: badgeColor[key] }
-                        : { background: "rgba(0,0,0,0.06)", color: "#9ca3af" }
-                    }
-                  >
-                    {badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Status filter — only for external outgoing */}
-        {mainTab === "outgoing-external" && (
-          <div className="flex gap-1 p-1 rounded-xl bg-gray-100/80">
-            {filterTabs.map(({ key, label, color, bg }) => {
-              const active = filter === key;
-              return (
-                <button
-                  key={key}
-                  onClick={() => setFilter(key)}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-                  style={
-                    active
-                      ? {
-                          background: "#fff",
-                          color,
-                          boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-                        }
-                      : { color: "#6b7280" }
-                  }
-                >
-                  {label}
-                  {extCounts[key] > 0 && (
-                    <span
-                      className="text-xs font-bold px-1.5 rounded-full"
-                      style={
-                        active
-                          ? { background: bg, color }
-                          : { background: "rgba(0,0,0,0.06)", color: "#9ca3af" }
-                      }
-                    >
-                      {extCounts[key]}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Search */}
-        <div className="relative flex-1 max-w-xs">
-          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search patient, doctor, reason…"
-            className="w-full pl-9 pr-8 py-2 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/10 placeholder:text-gray-400 transition-all"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
+      <div className="flex items-center justify-between flex-wrap" style={{ gap: 12 }}>
+        <SegmentedControl<MainTab>
+          value={mainTab}
+          onChange={setMainTab}
+          options={TABS.map(({ key, label }) => ({
+            value: key,
+            label,
+            count: tabBadge[key],
+          }))}
+        />
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search patient, doctor, reason…"
+          icon={Search}
+          clearIcon={X}
+          style={{ flex: "1 1 200px", maxWidth: 320 }}
+        />
       </div>
 
-      {/* ── Error ───────────────────────────────────────────────────────── */}
+      {/* Status filter — only meaningful for external referrals. */}
+      {mainTab === "outgoing-external" && (
+        <SegmentedControl<FilterKey>
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: "all", label: "All", count: extCounts.all },
+            { value: "pending", label: "Pending", count: extCounts.pending },
+            { value: "accepted", label: "Accepted", count: extCounts.accepted },
+            { value: "completed", label: "Completed", count: extCounts.completed },
+            { value: "rejected", label: "Rejected", count: extCounts.rejected },
+          ]}
+        />
+      )}
+
       {error && (
-        <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-red-50 border border-red-100">
-          <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-          <p className="text-sm text-red-700 flex-1">{error}</p>
-          <button
-            onClick={() => load(false)}
-            className="text-xs font-semibold text-red-700 underline"
-          >
-            Retry
-          </button>
-        </div>
+        <Banner
+          tone="critical"
+          icon={AlertCircle}
+          action={
+            <Button variant="ghost" size="sm" onClick={() => load(false)}>
+              Retry
+            </Button>
+          }
+        >
+          {error}
+        </Banner>
       )}
 
       {/* ── INCOMING INTERNAL ────────────────────────────────────────────── */}
       {mainTab === "incoming" &&
         (loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div style={gridStyle}>
             {[...Array(4)].map((_, i) => (
               <SkeletonCard key={i} />
             ))}
           </div>
         ) : filteredIncoming.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm py-20 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-green-50 flex items-center justify-center mx-auto mb-4">
-              <Stethoscope className="w-6 h-6 text-green-300" />
-            </div>
-            <p className="text-sm font-semibold text-gray-500">
-              No incoming referrals
-            </p>
-            <p className="text-xs text-gray-400 mt-1">
-              When a colleague refers a patient to you, it will appear here
-            </p>
-          </div>
+          <Card>
+            <EmptyState
+              icon={Stethoscope}
+              title="No incoming referrals"
+              message="When a colleague refers a patient to you, it appears here."
+              pad={64}
+            />
+          </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div style={gridStyle}>
             {filteredIncoming.map((r) => (
               <InternalCard
                 key={r.id}
@@ -858,26 +740,23 @@ export default function DoctorReferralsPage() {
       {/* ── OUTGOING INTERNAL ────────────────────────────────────────────── */}
       {mainTab === "outgoing-internal" &&
         (loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div style={gridStyle}>
             {[...Array(4)].map((_, i) => (
               <SkeletonCard key={i} />
             ))}
           </div>
         ) : filteredOutInternal.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm py-20 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-cyan-50 flex items-center justify-center mx-auto mb-4">
-              <ArrowRight className="w-6 h-6 text-cyan-300" />
-            </div>
-            <p className="text-sm font-semibold text-gray-500">
-              No internal referrals sent
-            </p>
-            <p className="text-xs text-gray-400 mt-1">
-              Patients you refer to a colleague within this institution appear
-              here
-            </p>
-          </div>
+          <Card>
+            <EmptyState
+              icon={ArrowRight}
+              title="No internal referrals sent"
+              message="Patients you refer to a colleague within this institution appear here."
+              tone="info"
+              pad={64}
+            />
+          </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div style={gridStyle}>
             {filteredOutInternal.map((r) => (
               <InternalCard key={r.id} referral={r} direction="outgoing" />
             ))}
@@ -887,50 +766,53 @@ export default function DoctorReferralsPage() {
       {/* ── OUTGOING EXTERNAL ────────────────────────────────────────────── */}
       {mainTab === "outgoing-external" &&
         (loading ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div style={gridStyle}>
             {[...Array(4)].map((_, i) => (
               <SkeletonCard key={i} />
             ))}
           </div>
         ) : filteredExternal.length === 0 ? (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm py-20 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-blue-50 flex items-center justify-center mx-auto mb-4">
-              <ArrowLeftRight className="w-6 h-6 text-blue-300" />
-            </div>
-            <p className="text-sm font-semibold text-gray-500">
-              {outgoingExternal.length === 0
-                ? "No external referrals sent"
-                : "No referrals match your filters"}
-            </p>
-            <p className="text-xs text-gray-400 mt-1">
-              {outgoingExternal.length === 0
-                ? "Referrals to other institutions appear here"
-                : "Try clearing your filters"}
-            </p>
-            {(search || filter !== "all") && (
-              <button
-                onClick={() => {
-                  setSearch("");
-                  setFilter("all");
-                }}
-                className="mt-4 text-xs font-semibold px-4 py-2 rounded-xl"
-                style={{ background: "#f0fdf4", color: "#166534" }}
-              >
-                Clear filters
-              </button>
-            )}
-          </div>
+          <Card>
+            <EmptyState
+              icon={ArrowLeftRight}
+              title={
+                outgoingExternal.length === 0
+                  ? "No external referrals sent"
+                  : "No referrals match your filters"
+              }
+              message={
+                outgoingExternal.length === 0
+                  ? "Referrals to other institutions appear here."
+                  : "Try clearing your search or status filter."
+              }
+              tone="urgent"
+              pad={64}
+              action={
+                isFiltered ? (
+                  <Button size="sm" onClick={clearFilters}>
+                    Clear filters
+                  </Button>
+                ) : undefined
+              }
+            />
+          </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div style={gridStyle}>
             {filteredExternal.map((r) => (
               <ExternalCard key={r.id} referral={r} />
             ))}
           </div>
         ))}
 
-      {/* Footer count */}
       {!loading && (
-        <p className="text-xs text-center text-gray-400">
+        <p
+          className="text-center"
+          style={{
+            margin: 0,
+            font: "400 12px/1 var(--font-sans)",
+            color: "var(--text-muted)",
+          }}
+        >
           {mainTab === "incoming" &&
             `${filteredIncoming.length} incoming referral${filteredIncoming.length !== 1 ? "s" : ""}`}
           {mainTab === "outgoing-internal" &&
@@ -939,6 +821,6 @@ export default function DoctorReferralsPage() {
             `${filteredExternal.length} of ${outgoingExternal.length} external referral${outgoingExternal.length !== 1 ? "s" : ""}`}
         </p>
       )}
-    </div>
+    </Page>
   );
 }

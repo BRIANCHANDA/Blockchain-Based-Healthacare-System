@@ -13,6 +13,87 @@ import {
 import { visitApi, permissionApi } from "@/lib/api";
 import { FieldGroup } from "../shared/FieldGroup";
 import { TextArea } from "../shared/TextArea";
+import {
+  Card,
+  Pill as Badge,
+  Button,
+  Banner,
+  SectionLabel,
+  LinkAction,
+  TONES,
+  type Tone,
+} from "@/components/dashboard/ui";
+
+/* ==========================================================================
+   Permission gate.
+
+   Stands in front of a visit the doctor has no blockchain consent for. The
+   patient approves from their own device, so there is nothing to await —
+   the gate polls the request every 3s and gives up after 10 minutes.
+
+   Five stages: form → waiting → approved | rejected | expired.
+   ========================================================================== */
+
+/** Centred single-message screen shared by the terminal stages. */
+function StageScreen({
+  icon: Icon,
+  tone,
+  title,
+  message,
+  children,
+}: {
+  icon: React.ElementType;
+  tone: Tone;
+  title: string;
+  message?: React.ReactNode;
+  children?: React.ReactNode;
+}) {
+  const t = TONES[tone];
+  return (
+    <div
+      className="flex flex-col items-center justify-center text-center"
+      style={{ padding: "64px 20px", gap: 16 }}
+    >
+      <span
+        className="inline-flex items-center justify-center"
+        style={{
+          width: 72,
+          height: 72,
+          borderRadius: "50%",
+          background: t.tint,
+          color: t.ink,
+        }}
+      >
+        <Icon className="w-9 h-9" />
+      </span>
+      <div className="flex flex-col" style={{ gap: 6 }}>
+        <p
+          style={{
+            margin: 0,
+            font: "700 17px/1.2 var(--font-sans)",
+            letterSpacing: "var(--ls-tight)",
+            color: "var(--text-primary)",
+          }}
+        >
+          {title}
+        </p>
+        {message && (
+          <p
+            style={{
+              margin: 0,
+              maxWidth: 340,
+              font: "400 13px/1.5 var(--font-sans)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            {message}
+          </p>
+        )}
+      </div>
+      {children}
+    </div>
+  );
+}
 
 const PERMISSION_OPTIONS = [
   {
@@ -154,303 +235,305 @@ export function PermissionGate({
 
   if (stage === "approved") {
     return (
-      <div className="flex flex-col items-center justify-center min-h-64 gap-4 text-center py-16">
-        <div className="w-20 h-20 rounded-full bg-green-100 flex items-center justify-center">
-          <CheckCircle2 size={40} className="text-green-600" />
-        </div>
-        <div>
-          <p className="text-lg font-bold text-gray-900">Access Granted</p>
-          <p className="text-sm text-gray-500 mt-1">Opening visit workspace…</p>
-        </div>
-        <Loader2 className="animate-spin text-green-600" size={20} />
-      </div>
+      <StageScreen
+        icon={CheckCircle2}
+        tone="success"
+        title="Access granted"
+        message="Opening the visit workspace…"
+      >
+        <Loader2 className="w-5 h-5 animate-spin" style={{ color: "var(--brand)" }} />
+      </StageScreen>
     );
   }
 
   if (stage === "rejected") {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 text-center py-16">
-        <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center">
-          <XCircle size={40} className="text-red-500" />
-        </div>
-        <div>
-          <p className="text-lg font-bold text-gray-900">Request Denied</p>
-          <p className="text-sm text-gray-500 mt-1 max-w-xs">
-            {patientName} declined to grant access to their records.
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={onBack}
-            className="px-5 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50"
-          >
-            Back to Queue
-          </button>
-          <button
+      <StageScreen
+        icon={XCircle}
+        tone="critical"
+        title="Request denied"
+        message={`${patientName} declined to grant access to their records.`}
+      >
+        <div className="flex items-center" style={{ gap: 12 }}>
+          <Button onClick={onBack}>Back to queue</Button>
+          <Button
+            variant="primary"
+            icon={Shield}
             onClick={() => {
               setStage("form");
               setReason("");
               setRequestId("");
               setElapsed(0);
             }}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white"
-            style={{ background: "linear-gradient(135deg,#166534,#15803d)" }}
           >
-            <Shield size={14} /> Request Again
-          </button>
+            Request again
+          </Button>
         </div>
-      </div>
+      </StageScreen>
     );
   }
 
   if (stage === "expired") {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 text-center py-16">
-        <div className="w-20 h-20 rounded-full bg-amber-100 flex items-center justify-center">
-          <Clock size={40} className="text-amber-500" />
-        </div>
-        <div>
-          <p className="text-lg font-bold text-gray-900">Request Timed Out</p>
-          <p className="text-sm text-gray-500 mt-1 max-w-xs">
-            The patient did not respond within the time window.
-          </p>
-        </div>
-        <div className="flex gap-3">
-          <button
-            onClick={onBack}
-            className="px-5 py-2.5 rounded-xl border border-gray-200 text-sm font-semibold text-gray-600 hover:bg-gray-50"
-          >
-            Back to Queue
-          </button>
-          <button
+      <StageScreen
+        icon={Clock}
+        tone="urgent"
+        title="Request timed out"
+        message="The patient did not respond within the time window."
+      >
+        <div className="flex items-center" style={{ gap: 12 }}>
+          <Button onClick={onBack}>Back to queue</Button>
+          <Button
+            variant="primary"
+            icon={RefreshCw}
             onClick={() => {
               setStage("form");
               setRequestId("");
               setElapsed(0);
             }}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white"
-            style={{ background: "linear-gradient(135deg,#166534,#15803d)" }}
           >
-            <RefreshCw size={14} /> Try Again
-          </button>
+            Try again
+          </Button>
         </div>
-      </div>
+      </StageScreen>
     );
   }
 
   if (stage === "waiting") {
     return (
-      <div className="flex flex-col items-center justify-center gap-6 text-center py-16 max-w-sm mx-auto">
-        <div className="relative">
-          <div
-            className="absolute inset-0 rounded-full animate-ping opacity-20"
-            style={{ background: "#166534" }}
-          />
-          <div
-            className="relative w-24 h-24 rounded-full flex items-center justify-center"
-            style={{
-              background: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
-              border: "2px solid #86efac",
-            }}
-          >
-            <Shield size={40} className="text-green-700" />
-          </div>
-        </div>
-        <div>
-          <p className="text-lg font-bold text-gray-900">
-            Waiting for Patient Approval
-          </p>
-          <p className="text-sm text-gray-500 mt-1.5 max-w-xs">
+      <StageScreen
+        icon={Shield}
+        tone="brand"
+        title="Waiting for patient approval"
+        message={
+          <>
             A notification has been sent to <strong>{patientName}</strong>'s
-            HealthChain app. This page will update automatically when they
-            respond.
-          </p>
-        </div>
-        <div
-          className="flex items-center gap-2 px-4 py-2 rounded-xl"
-          style={{ background: "#f0fdf4", border: "1px solid #bbf7d0" }}
+            HealthChain app. This page updates automatically when they respond.
+          </>
+        }
+      >
+        {/* Elapsed timer — the only moving part while nothing else changes. */}
+        <span
+          className="inline-flex items-center"
+          style={{
+            gap: 8,
+            height: 34,
+            padding: "0 14px",
+            borderRadius: "var(--r-md)",
+            background: "var(--brand-tint)",
+            border: "1px solid var(--green-100)",
+          }}
         >
-          <Clock size={14} className="text-green-600" />
-          <span className="font-mono text-sm font-semibold text-green-800">
+          <Clock className="w-3.5 h-3.5" style={{ color: "var(--green-700)" }} />
+          <span
+            style={{ font: "600 13px/1 var(--font-mono)", color: "var(--green-800)" }}
+          >
             {String(mins).padStart(2, "0")}:{String(secs).padStart(2, "0")}
           </span>
-          <span className="text-xs text-green-600">waiting</span>
-        </div>
-        <div className="flex flex-wrap gap-1.5 justify-center">
-          {selectedPerms.map((p) => {
-            const opt = PERMISSION_OPTIONS.find((o) => o.value === p);
+          <span
+            style={{ font: "400 11.5px/1 var(--font-sans)", color: "var(--green-800)" }}
+          >
+            waiting
+          </span>
+        </span>
+
+        <div className="flex flex-wrap justify-center" style={{ gap: 6 }}>
+          {selectedPerms.map((perm) => {
+            const opt = PERMISSION_OPTIONS.find((o) => o.value === perm);
             return opt ? (
-              <span
-                key={p}
-                className="text-xs font-semibold px-2.5 py-1 rounded-full"
-                style={{
-                  background: "#f0fdf4",
-                  color: "#166534",
-                  border: "1px solid #bbf7d0",
-                }}
-              >
+              <Badge key={perm} tone="success">
                 {opt.label}
-              </span>
+              </Badge>
             ) : null;
           })}
         </div>
-        <div className="flex gap-1.5">
-          {[0, 0.3, 0.6].map((d, i) => (
-            <span
-              key={i}
-              className="w-2 h-2 rounded-full bg-green-400 animate-bounce"
-              style={{ animationDelay: `${d}s` }}
-            />
-          ))}
-        </div>
-        <p className="text-xs text-gray-400 font-mono">
-          Req ID: {requestId.slice(0, 8)}…
-        </p>
-        <button
+
+        <span
+          style={{ font: "400 11px/1 var(--font-mono)", color: "var(--text-muted)" }}
+        >
+          Request {requestId.slice(0, 8)}…
+        </span>
+
+        <LinkAction
+          arrow={false}
           onClick={() => {
             setStage("form");
             setRequestId("");
             setElapsed(0);
           }}
-          className="text-xs text-gray-400 underline hover:text-gray-600"
         >
           Cancel and go back
-        </button>
-      </div>
+        </LinkAction>
+      </StageScreen>
     );
   }
 
+  const reasonOk = reason.trim().length >= 10;
+
   return (
     <div
-      className="max-w-xl mx-auto space-y-4"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
+      style={{
+        maxWidth: 620,
+        margin: "0 auto",
+        display: "flex",
+        flexDirection: "column",
+        gap: 16,
+      }}
     >
-      <div className="flex items-start gap-3 mb-2">
-        <button
+      <div className="flex items-start" style={{ gap: 10 }}>
+        <Button
+          variant="ghost"
+          icon={ChevronLeft}
           onClick={onBack}
-          className="mt-0.5 p-1.5 rounded-lg hover:bg-gray-200 transition-colors"
-        >
-          <ChevronLeft size={18} className="text-gray-600" />
-        </button>
-        <div>
+          style={{ width: 30, padding: 0, marginTop: 2 }}
+        />
+        <div className="min-w-0 flex flex-col" style={{ gap: 5 }}>
           <h2
-            className="text-lg font-bold text-gray-900"
-            style={{ fontFamily: "'Playfair Display', serif" }}
+            style={{
+              margin: 0,
+              font: "700 18px/1.2 var(--font-sans)",
+              letterSpacing: "var(--ls-tight)",
+              color: "var(--text-primary)",
+            }}
           >
-            Request Patient Access
+            Request patient access
           </h2>
-          <p className="text-sm text-gray-500 mt-0.5">
-            You need blockchain consent from <strong>{patientName}</strong> to
-            view this visit
+          <p
+            style={{
+              margin: 0,
+              font: "400 13px/1.5 var(--font-sans)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            You need blockchain consent from <strong>{patientName}</strong> to view
+            this visit.
           </p>
         </div>
       </div>
-      <div className="flex items-start gap-3 p-4 rounded-2xl border border-blue-100 bg-blue-50">
-        <Shield size={15} className="text-blue-500 mt-0.5 flex-shrink-0" />
-        <div className="text-sm text-blue-800">
-          <p className="font-semibold mb-0.5">Blockchain consent required</p>
-          <p className="text-blue-700 text-xs">
-            The patient approves via their HealthChain mobile app. Once
-            approved, access is recorded on Hyperledger Fabric and auto-revoked
-            at discharge.
-          </p>
-        </div>
-      </div>
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">
-          Step 1 — Permissions Needed
-        </p>
-        <div className="space-y-2">
+
+      <Banner tone="info" icon={Shield} title="Blockchain consent required">
+        The patient approves from their HealthChain mobile app. Once approved, access
+        is recorded on Hyperledger Fabric and auto-revoked at discharge.
+      </Banner>
+
+      <Card pad={20}>
+        <SectionLabel style={{ marginBottom: 12 }}>
+          Step 1 — permissions needed
+        </SectionLabel>
+        <div className="flex flex-col" style={{ gap: 8 }}>
           {PERMISSION_OPTIONS.map(({ value, label, desc }) => {
             const checked = selectedPerms.includes(value);
             return (
               <button
                 key={value}
                 onClick={() => togglePerm(value)}
-                className="w-full flex items-center gap-3 p-3.5 rounded-xl border text-left transition-all"
-                style={
-                  checked
-                    ? { background: "#f0fdf4", borderColor: "#86efac" }
-                    : { background: "#fafafa", borderColor: "#e5e7eb" }
-                }
+                className="w-full flex items-center text-left"
+                style={{
+                  gap: 12,
+                  padding: 14,
+                  borderRadius: "var(--r-sm)",
+                  border: `1px solid ${checked ? "var(--brand)" : "var(--hc-border)"}`,
+                  background: checked ? "var(--brand-tint)" : "var(--surface-sunken)",
+                  cursor: "pointer",
+                  transition: "all var(--dur-fast) var(--ease-standard)",
+                }}
               >
-                <div
-                  className="w-4 h-4 rounded flex items-center justify-center flex-shrink-0 border-2 transition-all"
-                  style={
-                    checked
-                      ? { background: "#166534", borderColor: "#166534" }
-                      : { background: "#fff", borderColor: "#d1d5db" }
-                  }
+                <span
+                  className="inline-flex items-center justify-center flex-shrink-0"
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: "var(--r-xs)",
+                    border: `2px solid ${checked ? "var(--brand)" : "var(--ink-300)"}`,
+                    background: checked ? "var(--brand)" : "var(--surface-card)",
+                  }}
                 >
                   {checked && (
-                    <svg viewBox="0 0 10 8" className="w-2.5 h-2 fill-white">
+                    <svg viewBox="0 0 10 8" className="w-2.5 h-2">
                       <path
                         d="M1 4l2.5 2.5L9 1"
-                        stroke="white"
-                        strokeWidth="1.5"
+                        stroke="var(--on-brand)"
+                        strokeWidth="1.8"
                         fill="none"
                         strokeLinecap="round"
+                        strokeLinejoin="round"
                       />
                     </svg>
                   )}
-                </div>
-                <div className="flex-1">
-                  <p className="text-sm font-semibold text-gray-900">{label}</p>
-                  <p className="text-xs text-gray-400">{desc}</p>
-                </div>
-                <Lock size={13} className="text-gray-300 flex-shrink-0" />
+                </span>
+
+                <span className="flex-1 min-w-0 flex flex-col" style={{ gap: 4 }}>
+                  <span
+                    style={{
+                      font: "600 13.5px/1 var(--font-sans)",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    {label}
+                  </span>
+                  <span
+                    style={{
+                      font: "400 11.5px/1 var(--font-sans)",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    {desc}
+                  </span>
+                </span>
+
+                <Lock
+                  className="w-3.5 h-3.5 flex-shrink-0"
+                  style={{ color: "var(--text-disabled)" }}
+                />
               </button>
             );
           })}
         </div>
-      </div>
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-        <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">
-          Step 2 — Clinical Reason
-        </p>
-        <FieldGroup label="Reason (shown to patient)">
+      </Card>
+
+      <Card pad={20}>
+        <SectionLabel style={{ marginBottom: 12 }}>
+          Step 2 — clinical reason
+        </SectionLabel>
+        <FieldGroup label="Reason (shown to the patient)">
           <TextArea
             value={reason}
             onChange={setReason}
             rows={3}
             placeholder="e.g. Attending physician for this admission — requires full access to manage treatment…"
           />
-          <p className="text-xs text-gray-400 mt-1">
-            {reason.trim().length}/10 min ·{" "}
-            <span
-              style={{
-                color: reason.trim().length >= 10 ? "#15803d" : "#9ca3af",
-              }}
-            >
-              {reason.trim().length >= 10
-                ? "✓ Sufficient"
-                : `${10 - reason.trim().length} more needed`}
-            </span>
+          <p
+            style={{
+              margin: "6px 0 0",
+              font: "400 11.5px/1 var(--font-sans)",
+              color: reasonOk ? "var(--green-800)" : "var(--text-muted)",
+            }}
+          >
+            {reasonOk
+              ? "Sufficient detail"
+              : `${10 - reason.trim().length} more character${
+                  10 - reason.trim().length !== 1 ? "s" : ""
+                } needed`}
           </p>
         </FieldGroup>
-      </div>
+      </Card>
+
       {submitError && (
-        <div className="flex items-start gap-2 p-3.5 rounded-xl bg-red-50 border border-red-100 text-sm text-red-700">
-          <AlertCircle size={14} className="flex-shrink-0 mt-0.5" />{" "}
+        <Banner tone="critical" icon={AlertCircle}>
           {submitError}
-        </div>
+        </Banner>
       )}
-      <div className="flex justify-end pb-2">
-        <button
+
+      <div className="flex justify-end">
+        <Button
+          variant="primary"
+          icon={Shield}
+          loading={submitting}
+          disabled={!reasonOk || !selectedPerms.length}
           onClick={handleSubmit}
-          disabled={
-            submitting || reason.trim().length < 10 || !selectedPerms.length
-          }
-          className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md disabled:opacity-50"
-          style={{ background: "linear-gradient(135deg,#166534,#15803d)" }}
         >
-          {submitting ? (
-            <Loader2 size={15} className="animate-spin" />
-          ) : (
-            <Shield size={15} />
-          )}
-          {submitting ? "Sending…" : "Send Access Request"}
-        </button>
+          {submitting ? "Sending…" : "Send access request"}
+        </Button>
       </div>
     </div>
   );

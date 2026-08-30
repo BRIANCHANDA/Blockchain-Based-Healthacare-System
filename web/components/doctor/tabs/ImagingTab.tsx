@@ -13,7 +13,6 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
-  Image as ImageIcon,
   FileText,
   Loader2,
   PlusCircle,
@@ -22,6 +21,31 @@ import {
   Radio,
   ExternalLink,
 } from "lucide-react";
+import {
+  Card,
+  CardHeader,
+  Pill as Badge,
+  MonoTag,
+  Button,
+  Banner,
+  EmptyState,
+  SectionLabel,
+  hoverRow,
+  TONES,
+  type Tone,
+} from "@/components/dashboard/ui";
+import { getModality } from "@/app/dashboard/radiology/vocab";
+
+/* ==========================================================================
+   Imaging tab.
+
+   Orders an imaging study and reads back the radiologist's report.
+
+   Reports are fetched lazily — expanding a card triggers the load — but an
+   order may already carry an embedded `report`, in which case it is seeded
+   into state up front and no request is made. `undefined` means "not fetched
+   yet"; `null` means "fetched, and there is no report".
+   ========================================================================== */
 
 interface StaffMember {
   id: string;
@@ -32,6 +56,7 @@ interface StaffMember {
   lastSeenAt: string | null;
 }
 
+/* Keys mirror imagingModalityEnum in backend/src/db/schema.ts. */
 const MODALITIES = [
   "x-ray",
   "ct_scan",
@@ -42,25 +67,17 @@ const MODALITIES = [
   "fluoroscopy",
 ] as const;
 
-const MODALITY_COLOR: Record<string, { color: string; bg: string }> = {
-  "x-ray": { color: "#0ea5e9", bg: "#f0f9ff" },
-  ct_scan: { color: "#8b5cf6", bg: "#f5f3ff" },
-  mri: { color: "#7c3aed", bg: "#fdf4ff" },
-  ultrasound: { color: "#0891b2", bg: "#ecfeff" },
-  pet_scan: { color: "#f59e0b", bg: "#fffbeb" },
-  mammogram: { color: "#ec4899", bg: "#fdf2f8" },
-  fluoroscopy: { color: "#6366f1", bg: "#eef2ff" },
+const STATUS_STYLE: Record<string, { tone: Tone; icon: React.ElementType }> = {
+  ordered: { tone: "urgent", icon: Clock },
+  scheduled: { tone: "info", icon: Clock },
+  in_progress: { tone: "info", icon: Clock },
+  pending: { tone: "info", icon: Clock },
+  completed: { tone: "success", icon: CheckCircle2 },
+  reported: { tone: "success", icon: CheckCircle2 },
+  cancelled: { tone: "neutral", icon: AlertCircle },
 };
-
-const STATUS_STYLE: Record<
-  string,
-  { bg: string; text: string; icon: React.ElementType }
-> = {
-  ordered: { bg: "#fffbeb", text: "#d97706", icon: Clock },
-  pending: { bg: "#eff6ff", text: "#2563eb", icon: Clock },
-  reported: { bg: "#f0fdf4", text: "#15803d", icon: CheckCircle2 },
-  cancelled: { bg: "#f9fafb", text: "#6b7280", icon: AlertCircle },
-};
+const getStatusStyle = (s: string) =>
+  STATUS_STYLE[s] ?? { tone: "neutral" as Tone, icon: Clock };
 
 // ── Imaging order card ────────────────────────────────────────────────────────
 function ImagingOrderCard({
@@ -75,150 +92,291 @@ function ImagingOrderCard({
   isLoading: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const mc = MODALITY_COLOR[order.modality] ?? {
-    color: "#6b7280",
-    bg: "#f9fafb",
-  };
-  const sc = STATUS_STYLE[order.status] ?? STATUS_STYLE.ordered;
+  const m = getModality(order.modality);
+  const mTone = TONES[m.tone];
+  const sc = getStatusStyle(order.status);
   const StatusIcon = sc.icon;
-  const hasReport = report && report !== null;
+  const hasReport = report != null;
 
   const handleToggle = () => {
+    // Only fetch on the opening edge — collapsing must not re-request.
     if (!open) onOpen();
     setOpen((v) => !v);
   };
 
   return (
-    <div className="rounded-2xl border border-gray-100 overflow-hidden">
+    <div
+      style={{
+        border: "1px solid var(--hc-border)",
+        borderRadius: "var(--r-md)",
+        overflow: "hidden",
+      }}
+    >
       <button
         onClick={handleToggle}
-        className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50/60 transition-colors"
+        className="w-full flex items-center text-left"
+        style={{
+          gap: 12,
+          padding: "12px 16px",
+          border: "none",
+          background: "transparent",
+          cursor: "pointer",
+          transition: "background var(--dur-fast) var(--ease-standard)",
+        }}
+        {...hoverRow}
       >
-        {/* Modality icon */}
-        <div
-          className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-          style={{ background: mc.bg }}
+        <span
+          className="inline-flex items-center justify-center flex-shrink-0"
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: "var(--r-sm)",
+            background: mTone.tint,
+            color: mTone.ink,
+          }}
         >
-          <Radio className="w-4 h-4" style={{ color: mc.color }} />
-        </div>
+          <Radio className="w-4 h-4" />
+        </span>
 
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-bold text-gray-800">
-            {order.modality?.replace(/_/g, " ").toUpperCase()} —{" "}
-            {order.bodyPart}
-          </p>
-          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-            <span className="text-xs font-mono text-gray-400">
+        <span className="flex-1 min-w-0 flex flex-col" style={{ gap: 5 }}>
+          <span
+            className="truncate"
+            style={{
+              font: "700 13.5px/1 var(--font-sans)",
+              color: "var(--text-primary)",
+            }}
+          >
+            {m.label}
+            {order.bodyPart ? ` — ${order.bodyPart}` : ""}
+          </span>
+          <span className="flex items-center flex-wrap" style={{ gap: 8 }}>
+            <MonoTag style={{ height: 17, fontSize: 10 }}>
               {order.orderNumber}
-            </span>
-            <span className="text-gray-300">·</span>
+            </MonoTag>
             {order.assignedToName && (
-              <span className="text-xs text-gray-400">
+              <span
+                style={{
+                  font: "400 11.5px/1 var(--font-sans)",
+                  color: "var(--text-muted)",
+                }}
+              >
                 {order.assignedToName}
               </span>
             )}
-          </div>
-        </div>
+          </span>
+        </span>
 
-        <div className="flex items-center gap-2 flex-shrink-0">
-          <span
-            className="hidden sm:inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded-full capitalize"
-            style={{ background: sc.bg, color: sc.text }}
-          >
-            <StatusIcon className="w-3 h-3" />
-            {order.status}
+        <span className="flex items-center flex-shrink-0" style={{ gap: 9 }}>
+          <span className="hidden sm:inline-flex">
+            <Badge tone={sc.tone} icon={StatusIcon}>
+              {order.status?.replace(/_/g, " ")}
+            </Badge>
           </span>
           {open ? (
-            <ChevronUp className="w-4 h-4 text-gray-400" />
+            <ChevronUp className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
           ) : (
-            <ChevronDown className="w-4 h-4 text-gray-400" />
+            <ChevronDown className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
           )}
-        </div>
+        </span>
       </button>
 
       {open && (
-        <div className="border-t border-gray-100 px-4 py-4 bg-white space-y-4">
-          {/* Indication */}
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
-              Clinical Indication
+        <div
+          style={{
+            padding: 16,
+            borderTop: "1px solid var(--border-faint)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+          }}
+        >
+          <div className="flex flex-col" style={{ gap: 5 }}>
+            <SectionLabel>Clinical indication</SectionLabel>
+            <p
+              style={{
+                margin: 0,
+                font: "400 13px/1.6 var(--font-sans)",
+                color: "var(--text-secondary)",
+              }}
+            >
+              {order.indication}
             </p>
-            <p className="text-sm text-gray-700">{order.indication}</p>
           </div>
 
-          {/* Report section */}
           {isLoading ? (
-            <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading report…
-            </div>
+            <span
+              className="inline-flex items-center"
+              style={{
+                gap: 8,
+                font: "400 13px/1 var(--font-sans)",
+                color: "var(--text-muted)",
+              }}
+            >
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Loading report…
+            </span>
           ) : hasReport ? (
-            <div className="rounded-2xl border border-purple-100 bg-purple-50/50 overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-purple-100">
-                <div className="flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-purple-600" />
-                  <p className="text-xs font-bold text-purple-700 uppercase tracking-wide">
-                    Radiology Report
-                  </p>
-                </div>
+            <div
+              style={{
+                borderRadius: "var(--r-sm)",
+                border: "1px solid var(--violet-100)",
+                background: "var(--accent-tint)",
+                overflow: "hidden",
+              }}
+            >
+              <div
+                className="flex items-center justify-between"
+                style={{
+                  gap: 10,
+                  padding: "10px 16px",
+                  borderBottom: "1px solid var(--violet-100)",
+                }}
+              >
+                <span className="inline-flex items-center" style={{ gap: 8 }}>
+                  <FileText
+                    className="w-4 h-4"
+                    style={{ color: "var(--accent-ink)" }}
+                  />
+                  <span
+                    style={{
+                      font: "700 11px/1 var(--font-sans)",
+                      letterSpacing: "var(--ls-caps)",
+                      textTransform: "uppercase",
+                      color: "var(--accent-ink)",
+                    }}
+                  >
+                    Radiology report
+                  </span>
+                </span>
                 {report.reportedAt && (
-                  <span className="text-xs text-purple-400">
+                  <span
+                    style={{
+                      font: "400 11px/1 var(--font-mono)",
+                      color: "var(--accent-ink)",
+                      opacity: 0.75,
+                    }}
+                  >
                     {safeFormatDate(report.reportedAt, "dd MMM yyyy")}
                   </span>
                 )}
               </div>
-              <div className="px-4 py-4 space-y-3">
+
+              <div
+                style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}
+              >
                 {report.findings && (
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-purple-500 mb-1">
+                  <div className="flex flex-col" style={{ gap: 5 }}>
+                    <SectionLabel style={{ color: "var(--accent-ink)" }}>
                       Findings
-                    </p>
-                    <p className="text-sm text-gray-800 whitespace-pre-wrap leading-relaxed">
+                    </SectionLabel>
+                    <p
+                      style={{
+                        margin: 0,
+                        font: "400 13px/1.6 var(--font-sans)",
+                        color: "var(--text-primary)",
+                        whiteSpace: "pre-wrap",
+                      }}
+                    >
                       {report.findings}
                     </p>
                   </div>
                 )}
+
+                {/* The impression is the conclusion — it gets its own surface. */}
                 {report.impression && (
-                  <div className="p-3 rounded-xl bg-white border border-purple-100">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-purple-500 mb-1">
+                  <div
+                    style={{
+                      padding: 12,
+                      borderRadius: "var(--r-xs)",
+                      background: "var(--surface-card)",
+                      border: "1px solid var(--violet-100)",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 5,
+                    }}
+                  >
+                    <SectionLabel style={{ color: "var(--accent-ink)" }}>
                       Impression
-                    </p>
-                    <p className="text-sm font-semibold text-gray-900">
+                    </SectionLabel>
+                    <p
+                      style={{
+                        margin: 0,
+                        font: "600 13.5px/1.5 var(--font-sans)",
+                        color: "var(--text-primary)",
+                      }}
+                    >
                       {report.impression}
                     </p>
                   </div>
                 )}
+
                 {report.recommendations && (
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-purple-500 mb-1">
+                  <div className="flex flex-col" style={{ gap: 5 }}>
+                    <SectionLabel style={{ color: "var(--accent-ink)" }}>
                       Recommendations
-                    </p>
-                    <p className="text-sm text-gray-700">
+                    </SectionLabel>
+                    <p
+                      style={{
+                        margin: 0,
+                        font: "400 13px/1.6 var(--font-sans)",
+                        color: "var(--text-secondary)",
+                      }}
+                    >
                       {report.recommendations}
                     </p>
                   </div>
                 )}
+
                 {report.imageUrls?.length > 0 && (
-                  <div>
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-purple-500 mb-2">
+                  <div className="flex flex-col" style={{ gap: 8 }}>
+                    <SectionLabel style={{ color: "var(--accent-ink)" }}>
                       Images ({report.imageUrls.length})
-                    </p>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    </SectionLabel>
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fill, minmax(130px, 1fr))",
+                        gap: 8,
+                      }}
+                    >
                       {report.imageUrls.map((url: string, i: number) => (
                         <a
                           key={i}
                           href={url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="group relative block rounded-xl overflow-hidden border border-purple-100 hover:shadow-md transition-all"
+                          className="relative block"
+                          style={{
+                            borderRadius: "var(--r-xs)",
+                            border: "1px solid var(--violet-100)",
+                            overflow: "hidden",
+                          }}
                         >
                           <img
                             src={url}
                             alt={`Image ${i + 1}`}
-                            className="w-full h-28 object-cover bg-gray-100"
+                            style={{
+                              width: "100%",
+                              height: 108,
+                              objectFit: "cover",
+                              background: "var(--surface-sunken)",
+                              display: "block",
+                            }}
                           />
-                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center">
-                            <ExternalLink className="w-5 h-5 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                          </div>
+                          <span
+                            className="absolute inline-flex items-center justify-center"
+                            style={{
+                              right: 6,
+                              bottom: 6,
+                              width: 22,
+                              height: 22,
+                              borderRadius: "var(--r-xs)",
+                              background: "var(--scrim)",
+                              color: "var(--white)",
+                            }}
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                          </span>
                         </a>
                       ))}
                     </div>
@@ -227,13 +385,13 @@ function ImagingOrderCard({
               </div>
             </div>
           ) : order.status === "reported" ? (
-            <div className="flex items-center gap-2 p-3 rounded-xl bg-gray-50 text-sm text-gray-500">
-              <AlertCircle className="w-4 h-4" /> Report data unavailable.
-            </div>
+            <Banner tone="neutral" icon={AlertCircle}>
+              Report data unavailable.
+            </Banner>
           ) : (
-            <div className="flex items-center gap-2 p-3 rounded-xl bg-amber-50 border border-amber-100 text-sm text-amber-700">
-              <Clock className="w-4 h-4" /> Awaiting radiologist report.
-            </div>
+            <Banner tone="urgent" icon={Clock}>
+              Awaiting radiologist report.
+            </Banner>
           )}
         </div>
       )}
@@ -267,9 +425,7 @@ export function ImagingTab({
     assignedTo: "",
   });
   const [reports, setReports] = useState<Record<string, any>>({});
-  const [loadingReports, setLoadingReports] = useState<Record<string, boolean>>(
-    {},
-  );
+  const [loadingReports, setLoadingReports] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     practitionersApi
@@ -279,12 +435,13 @@ export function ImagingTab({
       .finally(() => setRadiosLoading(false));
   }, []);
 
-  // Pre-populate reports from embedded report data in the order props
+  // Seed any report already embedded in the order props, so expanding those
+  // cards costs nothing. `null` is a real value here — "no report yet".
   useEffect(() => {
     const preloaded: Record<string, any> = {};
     for (const order of imagingOrders) {
       if (order.report !== undefined) {
-        preloaded[order.id] = order.report; // null means no report yet
+        preloaded[order.id] = order.report;
       }
     }
     if (Object.keys(preloaded).length > 0) {
@@ -342,26 +499,19 @@ export function ImagingTab({
   const selectedRadio = radiologists.find((r) => r.id === form.assignedTo);
 
   return (
-    <div
-      className="p-5 space-y-4"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
-    >
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {imagingOrders.length > 0 && (
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2.5 px-0.5">
-            Imaging Orders ({imagingOrders.length})
-          </p>
-          <div className="space-y-2.5">
-            {imagingOrders.map((order: any) => (
-              <ImagingOrderCard
-                key={order.id}
-                order={order}
-                onOpen={() => fetchReport(order.id)}
-                report={reports[order.id]}
-                isLoading={!!loadingReports[order.id]}
-              />
-            ))}
-          </div>
+        <div className="flex flex-col" style={{ gap: 10 }}>
+          <SectionLabel>Imaging orders ({imagingOrders.length})</SectionLabel>
+          {imagingOrders.map((order: any) => (
+            <ImagingOrderCard
+              key={order.id}
+              order={order}
+              onOpen={() => fetchReport(order.id)}
+              report={reports[order.id]}
+              isLoading={!!loadingReports[order.id]}
+            />
+          ))}
         </div>
       )}
 
@@ -369,74 +519,93 @@ export function ImagingTab({
         (!showForm ? (
           <button
             onClick={() => setShowForm(true)}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-dashed border-gray-200 text-sm font-semibold text-gray-400 hover:border-purple-300 hover:text-purple-600 hover:bg-purple-50/40 transition-all"
+            className="w-full inline-flex items-center justify-center"
+            style={{
+              gap: 8,
+              padding: 14,
+              borderRadius: "var(--r-md)",
+              border: "1.5px dashed var(--hc-border)",
+              background: "transparent",
+              font: "600 13.5px/1 var(--font-sans)",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              transition: "all var(--dur-fast) var(--ease-standard)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "var(--accent)";
+              e.currentTarget.style.color = "var(--accent-ink)";
+              e.currentTarget.style.background = "var(--violet-050)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = "var(--hc-border)";
+              e.currentTarget.style.color = "var(--text-muted)";
+              e.currentTarget.style.background = "transparent";
+            }}
           >
             <PlusCircle className="w-4 h-4" />
-            Order Imaging Study
+            Order imaging study
           </button>
         ) : (
-          <div className="rounded-2xl border border-purple-100 overflow-hidden">
-            <div className="flex items-center gap-3 px-5 py-4 bg-gradient-to-r from-purple-50 to-white border-b border-purple-100">
-              <div className="w-9 h-9 rounded-xl bg-purple-100 flex items-center justify-center flex-shrink-0">
-                <Scan className="w-4 h-4 text-purple-700" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-gray-800">
-                  Order Imaging Study
-                </p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  Select modality and assign a radiologist
-                </p>
-              </div>
-              <button
-                onClick={() => setShowForm(false)}
-                className="ml-auto text-xs text-gray-400 hover:text-gray-600 font-medium"
-              >
-                Cancel
-              </button>
-            </div>
+          <Card>
+            <CardHeader
+              icon={Scan}
+              title="Order imaging study"
+              subtitle="Select modality and assign a radiologist"
+              tone="accent"
+              right={
+                <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}>
+                  Cancel
+                </Button>
+              }
+            />
 
-            <div className="p-5 space-y-4 bg-white">
-              {/* Modality visual picker */}
-              <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                  Modality *
-                </p>
-                <div className="grid grid-cols-4 gap-2">
-                  {MODALITIES.map((m) => {
-                    const mc = MODALITY_COLOR[m] ?? {
-                      color: "#6b7280",
-                      bg: "#f9fafb",
-                    };
-                    const selected = form.modality === m;
+            <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 18 }}>
+              {/* Seven modalities — shown as chips rather than a dropdown so
+                  the choice is one tap. */}
+              <div className="flex flex-col" style={{ gap: 8 }}>
+                <SectionLabel>Modality *</SectionLabel>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
+                    gap: 8,
+                  }}
+                >
+                  {MODALITIES.map((mKey) => {
+                    const cfg = getModality(mKey);
+                    const t = TONES[cfg.tone];
+                    const selected = form.modality === mKey;
                     return (
                       <button
-                        key={m}
-                        onClick={() => f("modality")(m)}
-                        className="py-2 px-2 rounded-xl border text-center transition-all text-xs font-semibold capitalize"
-                        style={
-                          selected
-                            ? {
-                                background: mc.bg,
-                                borderColor: mc.color,
-                                color: mc.color,
-                              }
-                            : {
-                                background: "#fafafa",
-                                borderColor: "#e5e7eb",
-                                color: "#9ca3af",
-                              }
-                        }
+                        key={mKey}
+                        onClick={() => f("modality")(mKey)}
+                        style={{
+                          height: 38,
+                          padding: "0 10px",
+                          borderRadius: "var(--r-sm)",
+                          border: `1px solid ${selected ? t.ink : "var(--hc-border)"}`,
+                          background: selected ? t.tint : "var(--surface-sunken)",
+                          color: selected ? t.ink : "var(--text-secondary)",
+                          font: `${selected ? 700 : 500} 12px/1 var(--font-sans)`,
+                          cursor: "pointer",
+                          transition: "all var(--dur-fast) var(--ease-standard)",
+                        }}
                       >
-                        {m.replace(/_/g, " ")}
+                        {cfg.label}
                       </button>
                     );
                   })}
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <FieldGroup label="Body Part *">
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                  gap: 14,
+                }}
+              >
+                <FieldGroup label="Body part *">
                   <InputField
                     value={form.bodyPart}
                     onChange={f("bodyPart")}
@@ -457,7 +626,7 @@ export function ImagingTab({
                 </FieldGroup>
               </div>
 
-              <FieldGroup label="Clinical Indication *">
+              <FieldGroup label="Clinical indication *">
                 <TextArea
                   value={form.indication}
                   onChange={f("indication")}
@@ -466,7 +635,7 @@ export function ImagingTab({
                 />
               </FieldGroup>
 
-              <FieldGroup label="Assign Radiologist *">
+              <FieldGroup label="Assign radiologist *">
                 <StaffDropdown
                   value={form.assignedTo}
                   onChange={f("assignedTo")}
@@ -475,34 +644,60 @@ export function ImagingTab({
                   placeholder="Select a radiologist…"
                 />
                 {selectedRadio?.lastSeenAt && (
-                  <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-500 inline-block" />
+                  <p
+                    className="inline-flex items-center"
+                    style={{
+                      margin: "6px 0 0",
+                      gap: 6,
+                      font: "500 11.5px/1 var(--font-sans)",
+                      color: "var(--green-800)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background: "var(--green-600)",
+                      }}
+                    />
                     Online {safeDistanceToNow(selectedRadio.lastSeenAt)}
-                    {selectedRadio.specialization &&
-                      ` · ${selectedRadio.specialization}`}
+                    {selectedRadio.specialization
+                      ? ` · ${selectedRadio.specialization}`
+                      : ""}
                   </p>
                 )}
               </FieldGroup>
 
-              <div className="flex justify-end pt-3 border-t border-gray-100">
+              <div
+                className="flex justify-end"
+                style={{ paddingTop: 14, borderTop: "1px solid var(--border-faint)" }}
+              >
                 <SubmitBtn
                   onClick={handleSubmit}
                   loading={submitting}
-                  label="Submit Imaging Order"
+                  label="Submit imaging order"
                 />
               </div>
             </div>
-          </div>
+          </Card>
         ))}
 
       {imagingOrders.length === 0 && isCompleted && (
-        <div className="flex flex-col items-center gap-2 py-10 rounded-2xl border border-dashed border-gray-200 bg-gray-50/60">
-          <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center">
-            <Scan className="w-5 h-5 text-gray-300" />
-          </div>
-          <p className="text-sm font-semibold text-gray-400">
-            No imaging orders
-          </p>
+        <div
+          style={{
+            borderRadius: "var(--r-md)",
+            border: "1.5px dashed var(--hc-border)",
+            background: "var(--surface-sunken)",
+          }}
+        >
+          <EmptyState
+            icon={Scan}
+            title="No imaging orders"
+            message="No imaging was ordered during this visit."
+            tone="neutral"
+            pad={32}
+          />
         </div>
       )}
     </div>

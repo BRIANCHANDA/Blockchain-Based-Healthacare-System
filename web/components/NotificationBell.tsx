@@ -17,20 +17,20 @@ const EVENT_META: Record<
 > = {
   lab_result_ready: {
     label: "Lab Result Ready",
-    color: "#1d4ed8",
-    bg: "#eff6ff",
+    color: "var(--info-ink)",
+    bg: "var(--blue-050)",
     Icon: FlaskConical,
   },
   imaging_result_ready: {
     label: "Imaging Report Ready",
-    color: "#7c3aed",
-    bg: "#faf5ff",
+    color: "var(--accent-ink)",
+    bg: "var(--violet-050)",
     Icon: ScanLine,
   },
   patient_admitted: {
     label: "Patient Admitted — Needs Bed",
-    color: "#d97706",
-    bg: "#fffbeb",
+    color: "var(--urgent-ink)",
+    bg: "var(--amber-050)",
     Icon: BedDouble,
     nurseRoute: true,
   },
@@ -46,8 +46,8 @@ function NotificationItem({
   const router = useRouter();
   const meta = EVENT_META[n.event] ?? {
     label: n.event,
-    color: "#374151",
-    bg: "#f9fafb",
+    color: "var(--text-secondary)",
+    bg: "var(--surface-inset)",
     Icon: Bell,
   };
   const { Icon, color, bg, label } = meta;
@@ -64,11 +64,11 @@ function NotificationItem({
   return (
     <button
       onClick={handleClick}
-      className="w-full flex items-start gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors text-left"
+      className="w-full flex items-start gap-3 px-4 py-3.5 hover:bg-[var(--surface-inset)] transition-colors text-left"
       style={{ opacity: n.read ? 0.6 : 1 }}
     >
       <div
-        className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5"
+        className="w-9 h-9 rounded-[var(--r-sm)] flex items-center justify-center flex-shrink-0 mt-0.5"
         style={{ background: bg }}
       >
         <Icon className="w-4 h-4" style={{ color }} />
@@ -77,19 +77,19 @@ function NotificationItem({
         <p className="text-xs font-bold" style={{ color }}>
           {label}
         </p>
-        <p className="text-sm font-semibold text-gray-900 mt-0.5 leading-snug">
+        <p className="text-sm font-semibold text-[var(--text-primary)] mt-0.5 leading-snug">
           {n.data.patientName ?? "Patient"}
           {n.data.testName ? ` — ${n.data.testName}` : ""}
           {n.data.modality ? ` — ${n.data.modality}` : ""}
           {n.data.admittingDiagnosis ? ` — ${n.data.admittingDiagnosis}` : ""}
         </p>
-        <p className="text-xs text-gray-400 mt-0.5">
+        <p className="text-xs text-[var(--text-muted)] mt-0.5">
           {n.data.orderNumber ? `${n.data.orderNumber} · ` : ""}
           {formatDistanceToNow(new Date(n.receivedAt), { addSuffix: true })}
         </p>
       </div>
       {!n.read && (
-        <span className="w-2 h-2 rounded-full bg-blue-500 flex-shrink-0 mt-1.5" />
+        <span className="w-2 h-2 rounded-full bg-[var(--info)] flex-shrink-0 mt-1.5" />
       )}
     </button>
   );
@@ -125,11 +125,11 @@ export function NotificationBell() {
       {/* Bell button */}
       <button
         onClick={handleOpen}
-        className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-colors hover:bg-gray-100"
+        className="relative w-9 h-9 rounded-[var(--r-sm)] flex items-center justify-center transition-colors hover:bg-[var(--surface-inset)]"
       >
-        <Bell className="w-5 h-5 text-gray-500" />
+        <Bell className="w-5 h-5 text-[var(--text-secondary)]" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center px-1 leading-none">
+          <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] rounded-full bg-[var(--critical)] text-[var(--white)] text-[10px] font-bold flex items-center justify-center px-1 leading-none">
             {unreadCount > 9 ? "9+" : unreadCount}
           </span>
         )}
@@ -138,15 +138,15 @@ export function NotificationBell() {
       {/* Dropdown panel */}
       {open && (
         <div
-          className="absolute right-0 top-11 w-80 bg-white rounded-2xl shadow-2xl border border-gray-100 z-50 overflow-hidden"
+          className="absolute right-0 top-11 w-80 bg-[var(--surface-card)] rounded-[var(--r-lg)] shadow-[var(--elev-3)] border border-[var(--border-faint)] z-50 overflow-hidden"
           style={{ maxHeight: "70vh" }}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50">
-            <p className="text-sm font-bold text-gray-900">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-faint)]">
+            <p className="text-sm font-bold text-[var(--text-primary)]">
               Notifications
               {unreadCount > 0 && (
-                <span className="ml-2 text-xs font-semibold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
+                <span className="ml-2 text-xs font-semibold text-[var(--critical-ink)] bg-[var(--coral-050)] px-2 py-0.5 rounded-full">
                   {unreadCount} new
                 </span>
               )}
@@ -157,16 +157,16 @@ export function NotificationBell() {
                   <button
                     onClick={markAllRead}
                     title="Mark all read"
-                    className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                    className="p-1.5 rounded-[var(--r-xs)] hover:bg-[var(--surface-inset)] transition-colors"
                   >
-                    <CheckCheck className="w-3.5 h-3.5 text-gray-400" />
+                    <CheckCheck className="w-3.5 h-3.5 text-[var(--text-muted)]" />
                   </button>
                   <button
                     onClick={clearAll}
                     title="Clear all"
-                    className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors"
+                    className="p-1.5 rounded-[var(--r-xs)] hover:bg-[var(--surface-inset)] transition-colors"
                   >
-                    <Trash2 className="w-3.5 h-3.5 text-gray-400" />
+                    <Trash2 className="w-3.5 h-3.5 text-[var(--text-muted)]" />
                   </button>
                 </>
               )}
@@ -175,18 +175,18 @@ export function NotificationBell() {
 
           {/* List */}
           <div
-            className="overflow-y-auto divide-y divide-gray-50"
+            className="overflow-y-auto divide-y divide-[var(--border-faint)]"
             style={{ maxHeight: "calc(70vh - 52px)" }}
           >
             {notifications.length === 0 ? (
               <div className="py-12 text-center">
-                <div className="w-10 h-10 rounded-2xl bg-gray-50 flex items-center justify-center mx-auto mb-3">
-                  <Bell className="w-4 h-4 text-gray-300" />
+                <div className="w-10 h-10 rounded-[var(--r-lg)] bg-[var(--surface-inset)] flex items-center justify-center mx-auto mb-3">
+                  <Bell className="w-4 h-4 text-[var(--text-disabled)]" />
                 </div>
-                <p className="text-sm font-semibold text-gray-400">
+                <p className="text-sm font-semibold text-[var(--text-muted)]">
                   All caught up
                 </p>
-                <p className="text-xs text-gray-300 mt-1">
+                <p className="text-xs text-[var(--text-disabled)] mt-1">
                   Lab results will appear here
                 </p>
               </div>

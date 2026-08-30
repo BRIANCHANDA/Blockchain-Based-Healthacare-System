@@ -16,29 +16,34 @@ import {
   X,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import {
+  Page,
+  PageHeader,
+  Card,
+  Field,
+  Textarea,
+  Button,
+  Pill as Badge,
+  Banner,
+  EmptyState,
+  SearchInput,
+  SegmentedControl,
+  SectionLabel,
+  Modal,
+  TONES,
+} from "@/components/dashboard/ui";
+import { getUrgency, getModality, getStatus } from "../vocab";
 
-const URGENCY_CONFIG = {
-  critical: { label: "Critical", color: "#B91C1C", bg: "#FEE2E2" },
-  emergency: { label: "Emergency", color: "#B45309", bg: "#FDE68A" },
-  urgent: { label: "Urgent", color: "#C2410B", bg: "#FED7AA" },
-  routine: { label: "Routine", color: "#065F46", bg: "#DCFCE7" },
-} as const;
+/* ==========================================================================
+   Radiology worklist.
 
-const STATUS_CONFIG = {
-  ordered: { label: "Ordered", color: "#047857", bg: "#D1FAE5" },
-  in_progress: { label: "In Progress", color: "#0F766E", bg: "#CCFBF1" },
-  completed: { label: "Completed", color: "#134E4A", bg: "#D1FAE5" },
-  reported: { label: "Reported", color: "#1D4ED8", bg: "#DBEAFE" },
-  cancelled: { label: "Cancelled", color: "#B91C1C", bg: "#FEE2E2" },
-} as const;
+   Opening a study is gated on blockchain permission: handleOrderClick checks
+   before navigating, and offers the patient-consent request flow instead of
+   letting the report page 403.
 
-const MODALITY_CONFIG = {
-  CT: { label: "CT", color: "#1D4ED8", bg: "#DBEAFE" },
-  MRI: { label: "MRI", color: "#7C3AED", bg: "#EDE9FE" },
-  XRAY: { label: "X-Ray", color: "#0F172A", bg: "#E2E8F0" },
-  US: { label: "Ultrasound", color: "#047857", bg: "#DCFCE7" },
-  PET: { label: "PET", color: "#BE185D", bg: "#FCE7F3" },
-} as const;
+   Labels come from ../vocab, which is keyed to the Postgres enums — the maps
+   previously declared here used different keys and never matched.
+   ========================================================================== */
 
 const safeDateDistance = (date?: string | null) => {
   if (!date) return "unknown";
@@ -53,14 +58,12 @@ const safeDateDistance = (date?: string | null) => {
 // Permission request modal component
 // ─────────────────────────────────────────────────────────────────────────────
 function RequestAccessModal({
-  isOpen,
   onClose,
   patientId,
   visitId,
   patientName,
   onSuccess,
 }: {
-  isOpen: boolean;
   onClose: () => void;
   patientId: string;
   visitId: string;
@@ -75,7 +78,10 @@ function RequestAccessModal({
   >(null);
   const [error, setError] = useState("");
 
-  // Poll for request status once we have a requestId
+  /*
+   * Approval happens on the patient's device, so there is nothing to await —
+   * poll until the request resolves, then hand control back to the parent.
+   */
   useEffect(() => {
     if (!requestId) return;
     const pollInterval = setInterval(async () => {
@@ -98,7 +104,7 @@ function RequestAccessModal({
       } catch (err) {
         console.error("Poll error", err);
       }
-    }, 3000); // poll every 3 seconds
+    }, 3000);
     return () => clearInterval(pollInterval);
   }, [requestId, onSuccess]);
 
@@ -134,104 +140,141 @@ function RequestAccessModal({
     }
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl max-w-md w-full p-6 relative">
-        <button
-          onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
-        >
-          <X size={20} />
-        </button>
-        <div className="flex items-center gap-3 mb-4">
-          <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
-            <Shield size={20} className="text-purple-700" />
-          </div>
-          <h2 className="text-xl font-bold text-gray-900">Access Required</h2>
-        </div>
-        <p className="text-gray-600 text-sm mb-2">
-          You do not have blockchain permission to report imaging for{" "}
-          <span className="font-semibold">{patientName}</span>.
-        </p>
-        <p className="text-gray-500 text-xs mb-4">
-          The patient must grant you access before you can submit a report.
-        </p>
-
-        {!requestId ? (
+    <Modal
+      title="Access required"
+      subtitle={patientName}
+      icon={Shield}
+      tone="accent"
+      onClose={onClose}
+      footer={
+        // Once the request is out, the only action left is to walk away.
+        requestId ? (
+          <Button full onClick={onClose}>
+            Close
+          </Button>
+        ) : (
           <>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Reason for access
-            </label>
-            <textarea
+            <Button full onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              full
+              icon={Shield}
+              loading={isSubmitting}
+              onClick={handleSubmit}
+            >
+              Request access
+            </Button>
+          </>
+        )
+      }
+    >
+      {!requestId ? (
+        <>
+          <p
+            style={{
+              margin: 0,
+              font: "400 13px/1.5 var(--font-sans)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            You do not have blockchain permission to report imaging for{" "}
+            <strong style={{ color: "var(--text-primary)" }}>{patientName}</strong>.
+            The patient must grant access before you can submit a report.
+          </p>
+
+          <Field label="Reason for access" required>
+            <Textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               rows={3}
-              className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:border-purple-500 focus:ring-2 focus:ring-purple-500/10"
-              placeholder="e.g., I need to review the MRI and provide a report for your ongoing treatment."
+              placeholder="e.g. I need to review the MRI and provide a report for your ongoing treatment."
             />
-            {error && <p className="text-red-500 text-xs mt-2">{error}</p>}
-            <div className="flex justify-end gap-3 mt-5">
-              <button
-                onClick={onClose}
-                className="px-4 py-2 rounded-xl text-gray-600 hover:bg-gray-100"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={isSubmitting}
-                className="px-4 py-2 rounded-xl bg-purple-700 text-white font-medium hover:bg-purple-800 disabled:opacity-50 flex items-center gap-2"
-              >
-                {isSubmitting && <Loader2 size={16} className="animate-spin" />}
-                Request Access
-              </button>
-            </div>
-          </>
-        ) : (
-          <div className="text-center py-6">
-            <div className="w-12 h-12 rounded-full bg-amber-100 flex items-center justify-center mx-auto mb-3">
-              <Mail size={22} className="text-amber-700" />
-            </div>
-            <p className="font-semibold text-gray-900">Request sent</p>
-            <p className="text-sm text-gray-500 mt-1">
-              The patient has been notified. Once they approve, you will be
-              automatically redirected to the report page.
-            </p>
-            <div className="mt-4 flex items-center justify-center gap-2 text-xs text-gray-400">
-              <Loader2 size={14} className="animate-spin" />
-              Waiting for approval...
-            </div>
-            {status === "rejected" && (
-              <p className="text-red-500 text-xs mt-3">
-                Request was rejected. You can try again.
-              </p>
-            )}
-            {status === "expired" && (
-              <p className="text-red-500 text-xs mt-3">
-                Request expired. Please submit a new request.
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
+          </Field>
+
+          {error && (
+            <Banner tone="critical" icon={TriangleAlert}>
+              {error}
+            </Banner>
+          )}
+        </>
+      ) : (
+        <div
+          className="flex flex-col items-center text-center"
+          style={{ padding: "16px 0", gap: 12 }}
+        >
+          <span
+            className="inline-flex items-center justify-center"
+            style={{
+              width: 48,
+              height: 48,
+              borderRadius: "var(--r-sm)",
+              background: "var(--urgent-tint)",
+              color: "var(--urgent-ink)",
+            }}
+          >
+            <Mail className="w-5 h-5" />
+          </span>
+          <p
+            style={{
+              margin: 0,
+              font: "600 14px/1 var(--font-sans)",
+              color: "var(--text-primary)",
+            }}
+          >
+            Request sent
+          </p>
+          <p
+            style={{
+              margin: 0,
+              maxWidth: 320,
+              font: "400 12.5px/1.5 var(--font-sans)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            The patient has been notified. Once they approve, you will be redirected
+            to the report page automatically.
+          </p>
+
+          {status === "rejected" || status === "expired" ? (
+            <Banner tone="critical" icon={TriangleAlert}>
+              {status === "rejected"
+                ? "Request was rejected. You can try again."
+                : "Request expired. Please submit a new request."}
+            </Banner>
+          ) : (
+            <span
+              className="inline-flex items-center"
+              style={{
+                gap: 7,
+                font: "400 11.5px/1 var(--font-sans)",
+                color: "var(--text-muted)",
+              }}
+            >
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              Waiting for approval…
+            </span>
+          )}
+        </div>
+      )}
+    </Modal>
   );
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Main Radiology Queue Page
 // ─────────────────────────────────────────────────────────────────────────────
+type UrgencyFilter = "all" | "critical" | "emergency" | "urgent" | "routine";
+
 export default function RadiologyQueuePage() {
   const router = useRouter();
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<
-    "all" | "critical" | "emergency" | "urgent" | "routine"
-  >("all");
+  const [filter, setFilter] = useState<UrgencyFilter>("all");
   const [modalityFilter, setModalityFilter] = useState("all");
 
   // Permission request modal state
@@ -278,26 +321,21 @@ export default function RadiologyQueuePage() {
       const patientName = visitInfo.data.patientName;
 
       // Check blockchain permission
-      const permRes = await fetch(
-        `/api/visits/${order.visit_id}/my-permission`,
-        {
-          headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
-        },
-      );
+      const permRes = await fetch(`/api/visits/${order.visit_id}/my-permission`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+      });
       const permData = await permRes.json();
       const hasPermission = permData.success && permData.data.hasPermission;
 
       if (hasPermission) {
-        // Redirect directly to report page
         router.push(`/dashboard/radiology/queue/${order.id}`);
       } else {
-        // Show request access modal
         setPatientInfo({ id: patientId, name: patientName });
         setModalOpen(true);
       }
     } catch (err) {
       console.error("Permission check failed", err);
-      // Fallback: try to go to report page anyway (will likely 403)
+      // Fallback: try the report page anyway — it enforces access server-side.
       router.push(`/dashboard/radiology/queue/${order.id}`);
     } finally {
       setCheckingPermission(false);
@@ -306,12 +344,12 @@ export default function RadiologyQueuePage() {
 
   const handleAccessGranted = () => {
     setModalOpen(false);
-    // Permission now exists, redirect to the report page
     if (selectedOrder) {
       router.push(`/dashboard/radiology/queue/${selectedOrder.id}`);
     }
   };
 
+  // Only offer modality filters that actually appear in the current worklist.
   const modalities = [...new Set(orders.map((o) => o.modality))];
 
   const filtered = orders
@@ -331,134 +369,111 @@ export default function RadiologyQueuePage() {
     (o) => o.urgency === "critical" || o.urgency === "emergency",
   ).length;
 
+  const countFor = (f: UrgencyFilter) =>
+    f === "all" ? orders.length : orders.filter((o) => o.urgency === f).length;
+
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-64 gap-3">
-        <Loader2 size={28} className="animate-spin text-green-700" />
-        <p className="text-sm text-gray-400">Loading worklist…</p>
+      <div
+        className="flex flex-col items-center justify-center"
+        style={{ minHeight: 256, gap: 12 }}
+      >
+        <Loader2 className="w-7 h-7 animate-spin" style={{ color: "var(--brand)" }} />
+        <p
+          style={{
+            margin: 0,
+            font: "400 13px/1 var(--font-sans)",
+            color: "var(--text-muted)",
+          }}
+        >
+          Loading worklist…
+        </p>
       </div>
     );
   }
 
   return (
     <>
-      <div
-        className="max-w-4xl mx-auto space-y-5"
-        style={{ fontFamily: "'DM Sans', sans-serif" }}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1
-              className="text-2xl font-bold text-gray-900"
-              style={{ fontFamily: "'Playfair Display', serif" }}
+      <Page maxWidth={1000}>
+        <PageHeader
+          eyebrow="Radiology"
+          title="Worklist"
+          subtitle={`${orders.length} pending stud${
+            orders.length !== 1 ? "ies" : "y"
+          } · auto-refreshes every 60 seconds`}
+          actions={
+            <Button
+              icon={RefreshCw}
+              onClick={() => fetchOrders(true)}
+              disabled={refreshing}
             >
-              Radiology Worklist
-            </h1>
-            <p className="text-gray-500 text-sm mt-0.5">
-              {orders.length} pending stud{orders.length !== 1 ? "ies" : "y"} ·
-              auto-refreshes every 60s
-            </p>
-          </div>
-          <button
-            onClick={() => fetchOrders(true)}
-            disabled={refreshing}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-          >
-            <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />{" "}
-            Refresh
-          </button>
-        </div>
+              Refresh
+            </Button>
+          }
+        />
 
-        {/* Critical banner */}
         {criticalCount > 0 && (
-          <div className="flex items-center gap-3 p-3.5 rounded-xl bg-red-50 border border-red-200">
-            <TriangleAlert size={18} className="text-red-500 flex-shrink-0" />
-            <p className="text-sm font-semibold text-red-800">
-              {criticalCount} critical/emergency stud
-              {criticalCount > 1 ? "ies" : "y"} — report immediately
-            </p>
-          </div>
+          <Banner tone="critical" icon={TriangleAlert}>
+            {criticalCount} critical or emergency stud
+            {criticalCount > 1 ? "ies" : "y"} — report immediately.
+          </Banner>
         )}
 
-        {/* Search + filters (unchanged) */}
-        <div className="space-y-3">
-          <div className="relative">
-            <Search
-              size={15}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-            />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by modality, body part, visit number, indication…"
-              className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm outline-none
-                focus:border-green-500 focus:ring-2 focus:ring-green-500/10 placeholder:text-gray-400"
-            />
-          </div>
+        {/* Search + filters */}
+        <div className="flex flex-col" style={{ gap: 12 }}>
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search modality, body part, visit number, indication…"
+            icon={Search}
+            clearIcon={X}
+          />
 
-          {/* Urgency filter */}
-          <div className="flex gap-2 flex-wrap">
-            {(
-              ["all", "critical", "emergency", "urgent", "routine"] as const
-            ).map((f) => {
-              const cfg = f === "all" ? null : URGENCY_CONFIG[f as keyof typeof URGENCY_CONFIG];
-              const count =
-                f === "all"
-                  ? orders.length
-                  : orders.filter((o) => o.urgency === f).length;
-              return (
-                <button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
-                  style={
-                    filter === f
-                      ? { background: cfg?.color ?? "#374151", color: "#fff" }
-                      : {
-                          background: cfg?.bg ?? "#F3F4F6",
-                          color: cfg?.color ?? "#374151",
-                        }
-                  }
-                >
-                  {f.charAt(0).toUpperCase() + f.slice(1)} ({count})
-                </button>
-              );
-            })}
-          </div>
+          <SegmentedControl<UrgencyFilter>
+            value={filter}
+            onChange={setFilter}
+            options={[
+              { value: "all", label: "All", count: countFor("all") },
+              { value: "critical", label: "Critical", count: countFor("critical") },
+              { value: "emergency", label: "Emergency", count: countFor("emergency") },
+              { value: "urgent", label: "Urgent", count: countFor("urgent") },
+              { value: "routine", label: "Routine", count: countFor("routine") },
+            ]}
+          />
 
-          {/* Modality filter */}
+          {/* Modality filter — pointless with only one modality in the list. */}
           {modalities.length > 1 && (
-            <div className="flex gap-2 flex-wrap">
-              <button
-                onClick={() => setModalityFilter("all")}
-                className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
-                style={
-                  modalityFilter === "all"
-                    ? { background: "#374151", color: "#fff" }
-                    : { background: "#F3F4F6", color: "#374151" }
-                }
-              >
-                All Modalities
-              </button>
-              {modalities.map((m) => {
-                const cfg = MODALITY_CONFIG[m as keyof typeof MODALITY_CONFIG] ?? {
-                  label: m,
-                  color: "#374151",
-                  bg: "#F3F4F6",
-                };
+            <div className="flex items-center flex-wrap" style={{ gap: 8 }}>
+              <SectionLabel style={{ marginRight: 2 }}>Modality</SectionLabel>
+              {["all", ...modalities].map((m) => {
+                const on = modalityFilter === m;
+                const cfg = m === "all" ? null : getModality(m);
+                const t = cfg ? TONES[cfg.tone] : null;
                 return (
                   <button
                     key={m}
                     onClick={() => setModalityFilter(m)}
-                    className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
-                    style={
-                      modalityFilter === m
-                        ? { background: cfg.color, color: "#fff" }
-                        : { background: cfg.bg, color: cfg.color }
-                    }
+                    style={{
+                      height: 26,
+                      padding: "0 11px",
+                      borderRadius: "var(--r-pill)",
+                      border: `1px solid ${on ? (t ? t.ink : "var(--brand)") : "var(--hc-border)"}`,
+                      background: on
+                        ? t
+                          ? t.tint
+                          : "var(--brand-tint)"
+                        : "var(--surface-card)",
+                      color: on
+                        ? t
+                          ? t.ink
+                          : "var(--green-700)"
+                        : "var(--text-secondary)",
+                      font: `${on ? 700 : 500} 11.5px/1 var(--font-sans)`,
+                      cursor: "pointer",
+                      transition: "all var(--dur-fast) var(--ease-standard)",
+                    }}
                   >
-                    {cfg.label}
+                    {m === "all" ? "All" : cfg!.label}
                   </button>
                 );
               })}
@@ -468,110 +483,155 @@ export default function RadiologyQueuePage() {
 
         {/* Orders list */}
         {filtered.length === 0 ? (
-          <div className="text-center py-20">
-            <div className="w-16 h-16 rounded-2xl bg-green-50 flex items-center justify-center mx-auto mb-4">
-              <CheckCircle2 size={28} className="text-green-600" />
-            </div>
-            <p className="text-gray-700 font-semibold">No studies found</p>
-            <p className="text-gray-400 text-sm mt-1">
-              {search
-                ? "Try a different search term"
-                : "All studies have been reported"}
-            </p>
-          </div>
+          <Card>
+            <EmptyState
+              icon={CheckCircle2}
+              title="No studies found"
+              message={
+                search || filter !== "all" || modalityFilter !== "all"
+                  ? "No studies match the current filters."
+                  : "All studies have been reported."
+              }
+              pad={64}
+            />
+          </Card>
         ) : (
-          <div className="space-y-3">
+          <div className="flex flex-col" style={{ gap: 12 }}>
             {filtered.map((order) => {
-              const urgency =
-                URGENCY_CONFIG[order.urgency as keyof typeof URGENCY_CONFIG] ?? URGENCY_CONFIG.routine;
-              const status =
-                STATUS_CONFIG[order.status as keyof typeof STATUS_CONFIG] ?? STATUS_CONFIG.ordered;
-              const modality = MODALITY_CONFIG[order.modality as keyof typeof MODALITY_CONFIG] ?? {
-                label: order.modality,
-                color: "#374151",
-                bg: "#F3F4F6",
-              };
+              const urgency = getUrgency(order.urgency);
+              const status = getStatus(order.status);
+              const modality = getModality(order.modality);
+              const uTone = TONES[urgency.tone];
+              const mTone = TONES[modality.tone];
+              const busy = checkingPermission && selectedOrder?.id === order.id;
+
               return (
                 <button
                   key={order.id}
                   onClick={() => handleOrderClick(order)}
-                  disabled={
-                    checkingPermission && selectedOrder?.id === order.id
+                  disabled={busy}
+                  className="w-full text-left"
+                  style={{
+                    background: "var(--surface-card)",
+                    border: "1px solid var(--hc-border)",
+                    // The left edge carries urgency at a glance.
+                    borderLeft: `4px solid ${uTone.dot}`,
+                    borderRadius: "var(--r-md)",
+                    boxShadow: "var(--elev-1)",
+                    overflow: "hidden",
+                    cursor: busy ? "wait" : "pointer",
+                    opacity: busy ? 0.6 : 1,
+                    transition: "box-shadow var(--dur-base) var(--ease-standard)",
+                  }}
+                  onMouseEnter={(e) =>
+                    (e.currentTarget.style.boxShadow = "var(--elev-2)")
                   }
-                  className="w-full bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 hover:shadow-md transition-all text-left group"
-                  style={{ borderLeft: `4px solid ${urgency.color}` }}
+                  onMouseLeave={(e) =>
+                    (e.currentTarget.style.boxShadow = "var(--elev-1)")
+                  }
                 >
-                  <div className="flex items-center gap-4 p-4">
-                    {/* Modality icon */}
-                    <div
-                      className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{ backgroundColor: modality.bg }}
+                  <div className="flex items-center" style={{ gap: 14, padding: 16 }}>
+                    <span
+                      className="inline-flex items-center justify-center flex-shrink-0"
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: "var(--r-sm)",
+                        background: mTone.tint,
+                        color: mTone.ink,
+                      }}
                     >
-                      <Scan size={22} style={{ color: modality.color }} />
-                    </div>
+                      {busy ? (
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                      ) : (
+                        <Scan className="w-5 h-5" />
+                      )}
+                    </span>
 
-                    {/* Main info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap mb-1">
-                        <p className="text-sm font-bold text-gray-900">
-                          {modality.label} — {order.body_part}
-                        </p>
+                    <span className="flex-1 min-w-0 flex flex-col" style={{ gap: 5 }}>
+                      <span className="flex items-center flex-wrap" style={{ gap: 8 }}>
                         <span
-                          className="text-xs font-semibold px-2 py-0.5 rounded-full"
                           style={{
-                            backgroundColor: urgency.bg,
-                            color: urgency.color,
+                            font: "700 13.5px/1 var(--font-sans)",
+                            color: "var(--text-primary)",
                           }}
                         >
-                          {urgency.label}
+                          {modality.label}
+                          {order.body_part ? ` — ${order.body_part}` : ""}
                         </span>
-                      </div>
-                      <p className="text-xs text-gray-500 mb-1">
-                        {order.visit_number} · {order.order_number}
-                      </p>
-                      {order.patientName && (
-                        <p className="text-xs text-gray-600 font-medium">
-                          👤 {order.patientName}
-                        </p>
-                      )}
-                      {order.indication && (
-                        <p className="text-xs text-gray-400 italic truncate">
-                          "{order.indication}"
-                        </p>
-                      )}
-                    </div>
-                    {/* Right */}
-                    <div className="flex flex-col items-end gap-2 flex-shrink-0">
+                        <Badge tone={urgency.tone} style={{ height: 18, fontSize: 10 }}>
+                          {urgency.label}
+                        </Badge>
+                      </span>
+
                       <span
-                        className="text-xs font-semibold px-2 py-0.5 rounded-full"
                         style={{
-                          backgroundColor: status.bg,
-                          color: status.color,
+                          font: "400 11.5px/1 var(--font-mono)",
+                          color: "var(--text-muted)",
                         }}
                       >
-                        {status.label}
+                        {order.visit_number} · {order.order_number}
                       </span>
-                      <div className="flex items-center gap-1 text-xs text-gray-400">
-                        <Clock size={11} />
+
+                      {order.patientName && (
+                        <span
+                          className="truncate"
+                          style={{
+                            font: "500 12.5px/1 var(--font-sans)",
+                            color: "var(--text-secondary)",
+                          }}
+                        >
+                          {order.patientName}
+                        </span>
+                      )}
+
+                      {order.indication && (
+                        <span
+                          className="truncate"
+                          style={{
+                            font: "400 12px/1.3 var(--font-sans)",
+                            color: "var(--text-muted)",
+                            fontStyle: "italic",
+                          }}
+                        >
+                          “{order.indication}”
+                        </span>
+                      )}
+                    </span>
+
+                    <span
+                      className="flex flex-col items-end flex-shrink-0"
+                      style={{ gap: 7 }}
+                    >
+                      <Badge tone={status.tone}>{status.label}</Badge>
+                      <span
+                        className="inline-flex items-center"
+                        style={{
+                          gap: 5,
+                          font: "500 11.5px/1 var(--font-mono)",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        <Clock className="w-3 h-3" />
                         {safeDateDistance(order.ordered_at)}
-                      </div>
-                      <ChevronRight
-                        size={16}
-                        className="text-gray-300 group-hover:text-gray-600 transition-colors"
-                      />
-                    </div>
+                      </span>
+                    </span>
+
+                    <ChevronRight
+                      className="w-4 h-4 flex-shrink-0"
+                      style={{ color: "var(--text-disabled)" }}
+                    />
                   </div>
                 </button>
               );
             })}
           </div>
         )}
-      </div>
+      </Page>
 
       {/* Permission Request Modal */}
       {modalOpen && selectedOrder && (
         <RequestAccessModal
-          isOpen={modalOpen}
           onClose={() => setModalOpen(false)}
           patientId={patientInfo.id}
           visitId={selectedOrder.visit_id}

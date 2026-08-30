@@ -26,6 +26,30 @@ import {
   RefreshCw,
   X,
 } from "lucide-react";
+import {
+  Card,
+  CardHeader,
+  Pill as Badge,
+  Button,
+  Banner,
+  EmptyState,
+  SectionLabel,
+  hoverRow,
+  TONES,
+  type Tone,
+} from "@/components/dashboard/ui";
+
+/* ==========================================================================
+   Prescriptions tab.
+
+   One prescription holds many medications, so the form builds a list of
+   rows. DRUG_FORMULARY drives autocomplete; picking an entry pre-fills the
+   strength, form and route so the common case is a few taps.
+
+   Interaction checking calls OpenFDA directly from the browser and is
+   strictly advisory — it never blocks prescribing, and a failed pair is
+   skipped silently rather than surfacing a network error mid-consultation.
+   ========================================================================== */
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Medication = {
@@ -428,58 +452,42 @@ const ROUTES = [
 ];
 
 // ── Style maps ────────────────────────────────────────────────────────────────
-const FORM_COLOR: Record<string, { color: string; bg: string }> = {
-  tablet: { color: "#2563eb", bg: "#eff6ff" },
-  capsule: { color: "#7c3aed", bg: "#fdf4ff" },
-  syrup: { color: "#0891b2", bg: "#ecfeff" },
-  injection: { color: "#dc2626", bg: "#fef2f2" },
-  cream: { color: "#d97706", bg: "#fffbeb" },
-  ointment: { color: "#92400e", bg: "#fef3c7" },
-  drops: { color: "#0ea5e9", bg: "#f0f9ff" },
-  inhaler: { color: "#059669", bg: "#ecfdf5" },
-  suppository: { color: "#6b7280", bg: "#f9fafb" },
+/* Dosage form → tone. Purely a visual grouping; the form itself carries no
+   clinical severity. */
+const FORM_TONE: Record<string, Tone> = {
+  tablet: "info",
+  capsule: "accent",
+  syrup: "info",
+  injection: "critical",
+  cream: "urgent",
+  ointment: "urgent",
+  drops: "info",
+  inhaler: "success",
+  suppository: "neutral",
 };
+const formTone = (f: string): Tone => FORM_TONE[f] ?? "neutral";
 
-const SEVERITY_CONFIG = {
-  major: {
-    color: "#dc2626",
-    bg: "#fef2f2",
-    border: "#fecaca",
-    label: "Major",
-    icon: ShieldAlert,
-  },
-  moderate: {
-    color: "#d97706",
-    bg: "#fffbeb",
-    border: "#fde68a",
-    label: "Moderate",
-    icon: TriangleAlert,
-  },
-  minor: {
-    color: "#2563eb",
-    bg: "#eff6ff",
-    border: "#bfdbfe",
-    label: "Minor",
-    icon: AlertCircle,
-  },
-  unknown: {
-    color: "#6b7280",
-    bg: "#f9fafb",
-    border: "#e5e7eb",
-    label: "Unknown",
-    icon: AlertCircle,
-  },
-};
-
-const RX_STATUS: Record<
+/* Interaction severity, inferred from the OpenFDA label text below. */
+const SEVERITY_CONFIG: Record<
   string,
-  { bg: string; text: string; icon: React.ElementType }
+  { tone: Tone; label: string; icon: React.ElementType }
 > = {
-  prescribed: { bg: "#fffbeb", text: "#d97706", icon: Clock },
-  dispensing: { bg: "#eff6ff", text: "#2563eb", icon: Clock },
-  dispensed: { bg: "#f0fdf4", text: "#15803d", icon: CheckCircle2 },
-  cancelled: { bg: "#f9fafb", text: "#6b7280", icon: AlertCircle },
+  major: { tone: "critical", label: "Major", icon: ShieldAlert },
+  moderate: { tone: "urgent", label: "Moderate", icon: TriangleAlert },
+  minor: { tone: "info", label: "Minor", icon: AlertCircle },
+  unknown: { tone: "neutral", label: "Unknown", icon: AlertCircle },
 };
+
+/* Keys mirror prescriptionStatusEnum in backend/src/db/schema.ts. */
+const RX_STATUS: Record<string, { tone: Tone; icon: React.ElementType }> = {
+  prescribed: { tone: "urgent", icon: Clock },
+  dispensing: { tone: "info", icon: Clock },
+  dispensed: { tone: "success", icon: CheckCircle2 },
+  administered: { tone: "success", icon: CheckCircle2 },
+  cancelled: { tone: "neutral", icon: AlertCircle },
+};
+const rxStatus = (st: string) =>
+  RX_STATUS[st] ?? { tone: "neutral" as Tone, icon: AlertCircle };
 
 // ── OpenFDA interaction checker ───────────────────────────────────────────────
 async function checkInteractionsOpenFDA(
@@ -601,7 +609,15 @@ function DrugAutocomplete({
   return (
     <div ref={containerRef} className="relative">
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+        <Search
+          className="absolute w-3.5 h-3.5 pointer-events-none"
+          style={{
+            left: 12,
+            top: "50%",
+            transform: "translateY(-50%)",
+            color: "var(--text-muted)",
+          }}
+        />
         <input
           value={value}
           onChange={(e) => {
@@ -612,15 +628,38 @@ function DrugAutocomplete({
             setFocused(true);
             setOpen(true);
           }}
+          /* Delay the blur so a mousedown on a suggestion still registers. */
           onBlur={() => setTimeout(() => setFocused(false), 150)}
           placeholder={placeholder ?? "Search drug name…"}
-          className="w-full pl-9 pr-3 py-2.5 rounded-xl border border-gray-200 text-sm font-medium text-gray-800 bg-gray-50 focus:outline-none focus:border-cyan-400 focus:bg-white transition-colors"
+          style={{
+            width: "100%",
+            height: 40,
+            padding: "0 34px 0 34px",
+            borderRadius: "var(--r-sm)",
+            border: "1px solid var(--hc-border)",
+            background: "var(--surface-sunken)",
+            font: "500 13.5px/1 var(--font-sans)",
+            color: "var(--text-primary)",
+            outline: "none",
+          }}
         />
         {value && (
           <button
             type="button"
             onClick={() => onChange("")}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-500"
+            className="absolute inline-flex items-center justify-center"
+            style={{
+              right: 8,
+              top: "50%",
+              transform: "translateY(-50%)",
+              width: 24,
+              height: 24,
+              border: "none",
+              borderRadius: "var(--r-xs)",
+              background: "transparent",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+            }}
           >
             <X className="w-3.5 h-3.5" />
           </button>
@@ -628,57 +667,109 @@ function DrugAutocomplete({
       </div>
 
       {showDropdown && open && (
-        <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-white rounded-xl border border-gray-200 shadow-xl overflow-hidden">
-          {filtered.map((drug, i) => (
-            <button
-              key={i}
-              type="button"
-              onMouseDown={() => {
-                onSelect(drug);
-                setOpen(false);
-              }}
-              className="w-full flex items-center justify-between px-3.5 py-2.5 text-left hover:bg-cyan-50 transition-colors border-b border-gray-50 last:border-0"
-            >
-              <div>
-                <p className="text-sm font-semibold text-gray-900">
-                  {drug.name}
-                </p>
-                <p className="text-xs text-gray-400">
-                  {drug.generic} · {drug.strength}
-                </p>
-              </div>
-              <span
-                className="text-[10px] font-bold px-2 py-0.5 rounded-full capitalize flex-shrink-0"
-                style={{
-                  background: FORM_COLOR[drug.form]?.bg ?? "#f3f4f6",
-                  color: FORM_COLOR[drug.form]?.color ?? "#6b7280",
+        <div
+          className="absolute z-50 left-0 right-0"
+          style={{
+            top: "calc(100% + 4px)",
+            background: "var(--surface-card)",
+            borderRadius: "var(--r-sm)",
+            border: "1px solid var(--hc-border)",
+            boxShadow: "var(--elev-3)",
+            overflow: "hidden",
+          }}
+        >
+          {filtered.map((drug, i) => {
+            const t = TONES[formTone(drug.form)];
+            return (
+              <button
+                key={i}
+                type="button"
+                onMouseDown={() => {
+                  onSelect(drug);
+                  setOpen(false);
                 }}
+                className="w-full flex items-center justify-between text-left"
+                style={{
+                  gap: 10,
+                  padding: "10px 14px",
+                  border: "none",
+                  borderBottom: "1px solid var(--border-faint)",
+                  background: "transparent",
+                  cursor: "pointer",
+                }}
+                {...hoverRow}
               >
-                {drug.form}
-              </span>
-            </button>
-          ))}
-          {/* Allow free text entry */}
+                <span className="min-w-0 flex flex-col" style={{ gap: 4 }}>
+                  <span
+                    className="truncate"
+                    style={{
+                      font: "600 13.5px/1 var(--font-sans)",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    {drug.name}
+                  </span>
+                  <span
+                    className="truncate"
+                    style={{
+                      font: "400 11.5px/1 var(--font-sans)",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    {drug.generic} · {drug.strength}
+                  </span>
+                </span>
+                <span
+                  className="inline-flex items-center flex-shrink-0"
+                  style={{
+                    height: 18,
+                    padding: "0 8px",
+                    borderRadius: "var(--r-pill)",
+                    background: t.tint,
+                    color: t.ink,
+                    font: "700 10px/1 var(--font-sans)",
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {drug.form}
+                </span>
+              </button>
+            );
+          })}
+
+          {/* The formulary is a convenience, not a constraint — free text wins. */}
           {value.length >= 2 && (
             <button
               type="button"
               onMouseDown={() => {
-                onSelect({
-                  name: value,
-                  generic: "",
-                  strength: "",
-                  form: "tablet",
-                });
+                onSelect({ name: value, generic: "", strength: "", form: "tablet" });
                 setOpen(false);
               }}
-              className="w-full flex items-center gap-2 px-3.5 py-2.5 text-left hover:bg-gray-50 transition-colors border-t border-gray-100"
+              className="w-full flex items-center text-left"
+              style={{
+                gap: 9,
+                padding: "10px 14px",
+                border: "none",
+                borderTop: "1px solid var(--border-faint)",
+                background: "transparent",
+                cursor: "pointer",
+              }}
+              {...hoverRow}
             >
-              <PlusCircle className="w-3.5 h-3.5 text-gray-400" />
-              <p className="text-sm text-gray-500">
-                Use "
-                <span className="font-semibold text-gray-700">{value}</span>" as
+              <PlusCircle
+                className="w-3.5 h-3.5 flex-shrink-0"
+                style={{ color: "var(--text-muted)" }}
+              />
+              <span
+                style={{
+                  font: "400 13px/1 var(--font-sans)",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                Use “
+                <strong style={{ color: "var(--text-primary)" }}>{value}</strong>” as
                 entered
-              </p>
+              </span>
             </button>
           )}
         </div>
@@ -699,144 +790,205 @@ function InteractionPanel({
 }) {
   if (checking) {
     return (
-      <div className="flex items-center gap-3 p-3.5 rounded-xl bg-blue-50 border border-blue-100">
-        <RefreshCw className="w-4 h-4 text-blue-500 animate-spin flex-shrink-0" />
-        <p className="text-sm font-semibold text-blue-700">
-          Checking drug interactions via OpenFDA…
-        </p>
-      </div>
+      <Banner tone="info" icon={RefreshCw}>
+        Checking drug interactions via OpenFDA…
+      </Banner>
     );
   }
 
   if (!interactions.length) {
     return (
-      <div className="flex items-center gap-3 p-3.5 rounded-xl bg-green-50 border border-green-100">
-        <ShieldCheck className="w-4 h-4 text-green-500 flex-shrink-0" />
-        <p className="text-sm font-semibold text-green-700">
-          No known interactions found between these medications
-        </p>
-      </div>
+      <Banner tone="success" icon={ShieldCheck}>
+        No known interactions found between these medications.
+      </Banner>
     );
   }
 
+  /* A single major interaction sets the tone for the whole panel — the worst
+     finding is what the prescriber needs to register first. */
   const hasMajor = interactions.some((i) => i.severity === "major");
+  const t = TONES[hasMajor ? "critical" : "urgent"];
 
   return (
     <div
-      className={`rounded-2xl border overflow-hidden ${hasMajor ? "border-red-200" : "border-amber-200"}`}
+      style={{
+        borderRadius: "var(--r-md)",
+        border: `1px solid ${hasMajor ? "var(--coral-100)" : "var(--amber-100)"}`,
+        overflow: "hidden",
+      }}
     >
-      {/* Header */}
       <div
-        className="flex items-center justify-between px-4 py-3"
-        style={{ background: hasMajor ? "#fef2f2" : "#fffbeb" }}
+        className="flex items-center justify-between"
+        style={{ gap: 10, padding: "12px 16px", background: t.tint }}
       >
-        <div className="flex items-center gap-2.5">
-          <ShieldAlert
-            className={`w-4 h-4 flex-shrink-0 ${hasMajor ? "text-red-500" : "text-amber-500"}`}
-          />
-          <p
-            className={`text-sm font-bold ${hasMajor ? "text-red-800" : "text-amber-800"}`}
+        <span className="inline-flex items-center min-w-0" style={{ gap: 10 }}>
+          <ShieldAlert className="w-4 h-4 flex-shrink-0" style={{ color: t.ink }} />
+          <span
+            style={{ font: "700 13.5px/1 var(--font-sans)", color: t.ink }}
           >
-            {interactions.length} Interaction
-            {interactions.length !== 1 ? "s" : ""} Found
-          </p>
-          {hasMajor && (
-            <span className="text-[10px] font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-full border border-red-200">
-              MAJOR
-            </span>
-          )}
-        </div>
-        <button
+            {interactions.length} potential interaction
+            {interactions.length !== 1 ? "s" : ""} found
+          </span>
+        </span>
+        <Button
+          variant="ghost"
+          size="sm"
+          icon={X}
           onClick={onDismiss}
-          className="text-gray-400 hover:text-gray-600"
-        >
-          <X className="w-4 h-4" />
-        </button>
+          style={{ width: 26, color: t.ink }}
+        />
       </div>
 
-      {/* Interaction list */}
-      <div className="divide-y divide-gray-50 bg-white">
-        {interactions.map((interaction, i) => {
-          const cfg = SEVERITY_CONFIG[interaction.severity];
-          const SeverityIcon = cfg.icon;
+      <div
+        style={{
+          background: "var(--surface-card)",
+          display: "flex",
+          flexDirection: "column",
+        }}
+      >
+        {interactions.map((ix, i) => {
+          const cfg = SEVERITY_CONFIG[ix.severity] ?? SEVERITY_CONFIG.unknown;
+          const it = TONES[cfg.tone];
+          const Icon = cfg.icon;
           return (
-            <div key={i} className="px-4 py-3.5">
-              <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                <span
-                  className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded-full border"
+            <div
+              key={i}
+              className="flex"
+              style={{
+                gap: 12,
+                padding: 16,
+                borderBottom: "1px solid var(--border-faint)",
+              }}
+            >
+              <span
+                className="inline-flex items-center justify-center flex-shrink-0"
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: "var(--r-xs)",
+                  background: it.tint,
+                  color: it.ink,
+                }}
+              >
+                <Icon className="w-3.5 h-3.5" />
+              </span>
+
+              <div className="flex-1 min-w-0 flex flex-col" style={{ gap: 6 }}>
+                <div className="flex items-center flex-wrap" style={{ gap: 8 }}>
+                  <span
+                    style={{
+                      font: "700 13px/1 var(--font-sans)",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    {ix.drugs[0]} + {ix.drugs[1]}
+                  </span>
+                  <Badge tone={cfg.tone} style={{ height: 18, fontSize: 10 }}>
+                    {cfg.label}
+                  </Badge>
+                </div>
+                <p
                   style={{
-                    color: cfg.color,
-                    background: cfg.bg,
-                    borderColor: cfg.border,
+                    margin: 0,
+                    font: "400 12.5px/1.6 var(--font-sans)",
+                    color: "var(--text-secondary)",
                   }}
                 >
-                  <SeverityIcon className="w-3 h-3" />
-                  {cfg.label}
-                </span>
-                <span className="text-xs font-bold text-gray-700">
-                  {interaction.drugs[0]}
-                </span>
-                <span className="text-xs text-gray-400">+</span>
-                <span className="text-xs font-bold text-gray-700">
-                  {interaction.drugs[1]}
-                </span>
+                  {ix.description}
+                </p>
               </div>
-              <p className="text-xs text-gray-600 leading-relaxed">
-                {interaction.description}
-              </p>
             </div>
           );
         })}
       </div>
 
-      {/* Footer disclaimer */}
-      <div className="px-4 py-2.5 bg-gray-50 border-t border-gray-100">
-        <p className="text-[10px] text-gray-400">
-          Source: OpenFDA drug labels. Clinical judgement takes precedence.
-          Always verify with current prescribing information.
-        </p>
-      </div>
+      <p
+        style={{
+          margin: 0,
+          padding: "10px 16px",
+          background: "var(--surface-sunken)",
+          font: "400 11px/1.4 var(--font-sans)",
+          color: "var(--text-muted)",
+        }}
+      >
+        Source: OpenFDA drug labels. Advisory only — always apply your own clinical
+        judgement.
+      </p>
     </div>
   );
 }
 
-// ── Medication item row (inside expanded prescription) ────────────────────────
+/**
+ * One medication line inside a prescription. Field names are read both ways —
+ * the detail endpoint returns snake_case, the list endpoint camelCase.
+ */
 function MedicationItem({ item }: { item: any }) {
-  const fc = FORM_COLOR[item.dosageForm] ?? { color: "#6b7280", bg: "#f9fafb" };
+  const t = TONES[formTone(item.dosageForm)];
+  const dispensed = item.isDispensed ?? item.is_dispensed;
+  const refills = item.refillsAllowed ?? item.refills_allowed;
+
   return (
-    <div className="flex items-start gap-3 px-4 py-3.5">
-      <div
-        className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5 text-[10px] font-bold uppercase"
-        style={{ background: fc.bg, color: fc.color }}
+    <div className="flex items-start" style={{ gap: 12, padding: "14px 16px" }}>
+      <span
+        className="inline-flex items-center justify-center flex-shrink-0"
+        style={{
+          width: 32,
+          height: 32,
+          marginTop: 2,
+          borderRadius: "var(--r-sm)",
+          background: t.tint,
+          color: t.ink,
+          font: "700 10px/1 var(--font-sans)",
+          textTransform: "uppercase",
+        }}
       >
         {item.dosageForm?.slice(0, 3)}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-start justify-between gap-2">
-          <div>
-            <p className="text-sm font-bold text-gray-900">
+      </span>
+
+      <div className="flex-1 min-w-0 flex flex-col" style={{ gap: 8 }}>
+        <div className="flex items-start justify-between" style={{ gap: 10 }}>
+          <div className="min-w-0 flex flex-col" style={{ gap: 4 }}>
+            <p
+              style={{
+                margin: 0,
+                font: "700 13.5px/1.3 var(--font-sans)",
+                color: "var(--text-primary)",
+              }}
+            >
               {item.medicationName || item.medication_name}{" "}
-              <span className="font-semibold text-gray-500">
+              <span style={{ fontWeight: 600, color: "var(--text-secondary)" }}>
                 {item.strength}
               </span>
             </p>
             {(item.genericName || item.generic_name) && (
-              <p className="text-xs text-gray-400 italic">
+              <p
+                style={{
+                  margin: 0,
+                  font: "400 11.5px/1 var(--font-sans)",
+                  color: "var(--text-muted)",
+                  fontStyle: "italic",
+                }}
+              >
                 {item.genericName ?? item.generic_name}
               </p>
             )}
           </div>
-          {(item.isDispensed ?? item.is_dispensed) ? (
-            <span className="flex items-center gap-1 text-xs font-semibold text-green-600 flex-shrink-0">
-              <CheckCircle2 className="w-3 h-3" /> Dispensed
-            </span>
-          ) : (
-            <span className="flex items-center gap-1 text-xs font-semibold text-amber-600 flex-shrink-0">
-              <Clock className="w-3 h-3" /> Pending
-            </span>
-          )}
+
+          <span className="flex-shrink-0">
+            {dispensed ? (
+              <Badge tone="success" icon={CheckCircle2} style={{ height: 18, fontSize: 10 }}>
+                Dispensed
+              </Badge>
+            ) : (
+              <Badge tone="urgent" icon={Clock} style={{ height: 18, fontSize: 10 }}>
+                Pending
+              </Badge>
+            )}
+          </span>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+
+        {/* Dose → frequency → route → duration, read as a sequence. */}
+        <div className="flex flex-wrap items-center" style={{ gap: 6 }}>
           {[
             item.dose,
             (item.frequency ?? "").replace(/_/g, " "),
@@ -845,31 +997,68 @@ function MedicationItem({ item }: { item: any }) {
           ]
             .filter(Boolean)
             .map((val, i, arr) => (
-              <span key={i} className="flex items-center gap-1.5">
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 capitalize">
+              <span key={i} className="inline-flex items-center" style={{ gap: 6 }}>
+                <span
+                  className="inline-flex items-center"
+                  style={{
+                    height: 19,
+                    padding: "0 8px",
+                    borderRadius: "var(--r-pill)",
+                    background: "var(--surface-sunken)",
+                    color: "var(--text-secondary)",
+                    font: "600 11px/1 var(--font-sans)",
+                    textTransform: "capitalize",
+                  }}
+                >
                   {val}
                 </span>
                 {i < arr.length - 1 && (
-                  <ArrowRight className="w-3 h-3 text-gray-300" />
+                  <ArrowRight
+                    className="w-3 h-3"
+                    style={{ color: "var(--text-disabled)" }}
+                  />
                 )}
               </span>
             ))}
         </div>
-        <div className="flex items-center gap-3 mt-1.5">
-          <span className="flex items-center gap-1 text-xs text-gray-400">
-            <Package className="w-3 h-3" /> Qty: {item.quantity}
+
+        <div className="flex items-center flex-wrap" style={{ gap: 12 }}>
+          <span
+            className="inline-flex items-center"
+            style={{
+              gap: 5,
+              font: "400 11.5px/1 var(--font-sans)",
+              color: "var(--text-muted)",
+            }}
+          >
+            <Package className="w-3 h-3" />
+            Qty {item.quantity}
           </span>
-          {(item.refillsAllowed ?? item.refills_allowed) > 0 && (
-            <span className="flex items-center gap-1 text-xs text-gray-400">
+          {refills > 0 && (
+            <span
+              className="inline-flex items-center"
+              style={{
+                gap: 5,
+                font: "400 11.5px/1 var(--font-sans)",
+                color: "var(--text-muted)",
+              }}
+            >
               <Repeat className="w-3 h-3" />
-              {item.refillsAllowed ?? item.refills_allowed} refill
-              {(item.refillsAllowed ?? item.refills_allowed) !== 1 ? "s" : ""}
+              {refills} refill{refills !== 1 ? "s" : ""}
             </span>
           )}
         </div>
+
         {item.instructions && (
-          <p className="text-xs text-gray-500 mt-1.5 italic">
-            "{item.instructions}"
+          <p
+            style={{
+              margin: 0,
+              font: "400 12px/1.5 var(--font-sans)",
+              color: "var(--text-secondary)",
+              fontStyle: "italic",
+            }}
+          >
+            “{item.instructions}”
           </p>
         )}
       </div>
@@ -884,7 +1073,8 @@ function PrescriptionRecord({ rx, index }: { rx: any; index: number }) {
   const [fetching, setFetching] = useState(false);
   const [fetchErr, setFetchErr] = useState<string | null>(null);
 
-  const sc = RX_STATUS[rx.status] ?? RX_STATUS.prescribed;
+  const sc = rxStatus(rx.status);
+  const scTone = TONES[sc.tone];
   const StatusIcon = sc.icon;
 
   const handleToggle = useCallback(async () => {
@@ -915,78 +1105,130 @@ function PrescriptionRecord({ rx, index }: { rx: any; index: number }) {
   const totalCount = items?.length ?? "…";
 
   return (
-    <div className="rounded-2xl border border-gray-100 overflow-hidden">
+    <div
+      style={{
+        border: "1px solid var(--hc-border)",
+        borderRadius: "var(--r-md)",
+        overflow: "hidden",
+      }}
+    >
       <button
         onClick={handleToggle}
-        className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-gray-50/60 transition-colors"
+        className="w-full flex items-center text-left"
+        style={{
+          gap: 12,
+          padding: "12px 16px",
+          border: "none",
+          background: "transparent",
+          cursor: "pointer",
+          transition: "background var(--dur-fast) var(--ease-standard)",
+        }}
+        {...hoverRow}
       >
-        <div className="w-9 h-9 rounded-xl bg-cyan-50 flex items-center justify-center flex-shrink-0">
-          <Pill className="w-4 h-4 text-cyan-600" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="text-sm font-bold text-gray-800 font-mono">
-              {rx.prescriptionNumber ?? rx.prescription_number}
-            </p>
+        <span
+          className="inline-flex items-center justify-center flex-shrink-0"
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: "var(--r-sm)",
+            background: "var(--brand-tint)",
+            color: "var(--green-700)",
+          }}
+        >
+          <Pill className="w-4 h-4" />
+        </span>
+
+        <span className="flex-1 min-w-0 flex flex-col" style={{ gap: 5 }}>
+          <span className="flex items-center flex-wrap" style={{ gap: 8 }}>
             <span
-              className="inline-flex items-center gap-1 text-xs font-semibold px-2 py-0.5 rounded-full capitalize"
-              style={{ background: sc.bg, color: sc.text }}
+              style={{
+                font: "700 13px/1 var(--font-mono)",
+                color: "var(--text-primary)",
+              }}
             >
-              <StatusIcon className="w-3 h-3" />
+              {rx.prescriptionNumber ?? rx.prescription_number}
+            </span>
+            <Badge tone={sc.tone} icon={StatusIcon} style={{ height: 18, fontSize: 10 }}>
               {rx.status}
-            </span>
-          </div>
-          <div className="flex items-center gap-2 mt-0.5">
-            <Clock className="w-3 h-3 text-gray-400" />
-            <span className="text-xs text-gray-400">
-              {safeFormatDate(
-                rx.prescribedAt ?? rx.prescribed_at ?? rx.createdAt,
-                "dd MMM yyyy, HH:mm",
-              )}
-            </span>
+            </Badge>
+          </span>
+
+          <span
+            className="inline-flex items-center flex-wrap"
+            style={{
+              gap: 7,
+              font: "400 11.5px/1 var(--font-sans)",
+              color: "var(--text-muted)",
+            }}
+          >
+            <Clock className="w-3 h-3" />
+            {safeFormatDate(
+              rx.prescribedAt ?? rx.prescribed_at ?? rx.createdAt,
+              "dd MMM yyyy, HH:mm",
+            )}
             {items !== null && (
               <>
-                <span className="text-gray-300">·</span>
-                <span className="text-xs text-gray-400">
-                  {dispensedCount}/{totalCount} dispensed
-                </span>
+                <span style={{ color: "var(--text-disabled)" }}>·</span>
+                {dispensedCount}/{totalCount} dispensed
               </>
             )}
-          </div>
-        </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+          </span>
+        </span>
+
+        <span className="flex items-center flex-shrink-0" style={{ gap: 8 }}>
           {fetching && (
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />
+            <Loader2
+              className="w-3.5 h-3.5 animate-spin"
+              style={{ color: "var(--text-muted)" }}
+            />
           )}
           {open ? (
-            <ChevronUp className="w-4 h-4 text-gray-400" />
+            <ChevronUp className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
           ) : (
-            <ChevronDown className="w-4 h-4 text-gray-400" />
+            <ChevronDown className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
           )}
-        </div>
+        </span>
       </button>
+
       {open && (
-        <div className="border-t border-gray-100">
+        <div style={{ borderTop: "1px solid var(--border-faint)" }}>
           {fetching ? (
-            <div className="flex items-center gap-2 px-4 py-5 text-sm text-gray-400">
-              <Loader2 className="w-4 h-4 animate-spin" /> Loading prescription
-              items…
-            </div>
+            <span
+              className="inline-flex items-center"
+              style={{
+                gap: 8,
+                padding: "20px 16px",
+                font: "400 13px/1 var(--font-sans)",
+                color: "var(--text-muted)",
+              }}
+            >
+              <Loader2 className="w-4 h-4 animate-spin" />
+              Loading prescription items…
+            </span>
           ) : fetchErr ? (
-            <div className="flex items-center gap-2 px-4 py-4 bg-red-50 text-sm text-red-600">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              {fetchErr}
+            <div style={{ padding: 16 }}>
+              <Banner tone="critical" icon={AlertCircle}>
+                {fetchErr}
+              </Banner>
             </div>
           ) : items && items.length > 0 ? (
-            <div className="divide-y divide-gray-50">
+            <div className="[&>*:not(:last-child)]:border-b [&>*]:border-[var(--border-faint)]">
               {items.map((item: any, i: number) => (
                 <MedicationItem key={item.id ?? i} item={item} />
               ))}
             </div>
           ) : (
-            <div className="px-4 py-5 text-sm text-gray-400 italic">
+            <p
+              style={{
+                margin: 0,
+                padding: "20px 16px",
+                font: "400 13px/1 var(--font-sans)",
+                color: "var(--text-muted)",
+                fontStyle: "italic",
+              }}
+            >
               No medication items found.
-            </div>
+            </p>
           )}
         </div>
       )}
@@ -994,7 +1236,6 @@ function PrescriptionRecord({ rx, index }: { rx: any; index: number }) {
   );
 }
 
-// ── Medication form row ───────────────────────────────────────────────────────
 function MedRow({
   med,
   index,
@@ -1008,44 +1249,83 @@ function MedRow({
   onChange: (field: keyof Medication, v: string) => void;
   onRemove: () => void;
 }) {
-  const fc = FORM_COLOR[med.dosageForm] ?? { color: "#6b7280", bg: "#f9fafb" };
+  const t = TONES[formTone(med.dosageForm)];
+  /* The form chip only takes its colour once a drug is actually named —
+     an empty row should read as empty. */
+  const named = !!med.medicationName;
 
   return (
-    <div className="rounded-2xl border border-gray-100 overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center gap-3 px-4 py-3 bg-gray-50/60 border-b border-gray-100">
-        <div
-          className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 text-[10px] font-bold uppercase transition-all"
+    <div
+      style={{
+        border: "1px solid var(--hc-border)",
+        borderRadius: "var(--r-md)",
+        overflow: "hidden",
+      }}
+    >
+      <div
+        className="flex items-center"
+        style={{
+          gap: 12,
+          padding: "10px 16px",
+          background: "var(--surface-sunken)",
+          borderBottom: "1px solid var(--border-faint)",
+        }}
+      >
+        <span
+          className="inline-flex items-center justify-center flex-shrink-0"
           style={{
-            background: med.medicationName ? fc.bg : "#f3f4f6",
-            color: med.medicationName ? fc.color : "#9ca3af",
+            width: 32,
+            height: 32,
+            borderRadius: "var(--r-sm)",
+            background: named ? t.tint : "var(--surface-card)",
+            color: named ? t.ink : "var(--text-muted)",
+            font: "700 10px/1 var(--font-sans)",
+            textTransform: "uppercase",
+            transition: "all var(--dur-fast) var(--ease-standard)",
           }}
         >
           {med.dosageForm?.slice(0, 3)}
-        </div>
-        <p className="text-xs font-bold text-gray-500 flex-1">
+        </span>
+
+        <p
+          className="flex-1 min-w-0 truncate"
+          style={{
+            margin: 0,
+            font: "700 12.5px/1 var(--font-sans)",
+            color: "var(--text-secondary)",
+          }}
+        >
           {med.medicationName || `Medication ${index + 1}`}
           {med.strength && (
-            <span className="font-normal text-gray-400 ml-1">
+            <span style={{ fontWeight: 400, color: "var(--text-muted)" }}>
+              {" "}
               {med.strength}
             </span>
           )}
         </p>
+
         {total > 1 && (
-          <button
+          <Button
+            variant="ghost"
+            size="sm"
+            icon={Trash2}
             onClick={onRemove}
-            className="text-red-400 hover:text-red-600 transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-          </button>
+            style={{ width: 26, color: "var(--critical-ink)" }}
+          />
         )}
       </div>
 
-      <div className="p-4 space-y-3 bg-white">
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
         {/* Drug name autocomplete + strength */}
-        <div className="grid grid-cols-3 gap-3">
-          <div className="col-span-2">
-            <FieldGroup label="Drug Name *">
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "2fr 1fr",
+            gap: 14,
+          }}
+        >
+          <div>
+            <FieldGroup label="Drug name *">
               <DrugAutocomplete
                 value={med.medicationName}
                 onChange={(v) => onChange("medicationName", v)}
@@ -1068,15 +1348,21 @@ function MedRow({
           </FieldGroup>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
-          <FieldGroup label="Generic Name">
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+            gap: 14,
+          }}
+        >
+          <FieldGroup label="Generic name">
             <InputField
               value={med.genericName}
               onChange={(v: string) => onChange("genericName", v)}
               placeholder="Optional"
             />
           </FieldGroup>
-          <FieldGroup label="Dosage Form">
+          <FieldGroup label="Dosage form">
             <SelectField
               value={med.dosageForm}
               onChange={(v: string) => onChange("dosageForm", v)}
@@ -1088,12 +1374,23 @@ function MedRow({
           </FieldGroup>
         </div>
 
-        {/* Dosing */}
-        <div className="p-3 rounded-xl bg-gray-50 border border-gray-100">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2.5">
-            Dosing
-          </p>
-          <div className="grid grid-cols-2 gap-3">
+        {/* Dosing — grouped on its own surface; these four fields are the
+            prescription proper, the rest is metadata. */}
+        <div
+          style={{
+            padding: 14,
+            borderRadius: "var(--r-sm)",
+            background: "var(--surface-sunken)",
+          }}
+        >
+          <SectionLabel style={{ marginBottom: 12 }}>Dosing</SectionLabel>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+              gap: 14,
+            }}
+          >
             <FieldGroup label="Dose *">
               <InputField
                 value={med.dose}
@@ -1126,7 +1423,13 @@ function MedRow({
         </div>
 
         {/* Dispensing */}
-        <div className="grid grid-cols-2 gap-3">
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
+            gap: 14,
+          }}
+        >
           <FieldGroup label="Quantity">
             <InputField
               value={med.quantity}
@@ -1135,7 +1438,7 @@ function MedRow({
               type="number"
             />
           </FieldGroup>
-          <FieldGroup label="Refills Allowed">
+          <FieldGroup label="Refills allowed">
             <InputField
               value={med.refillsAllowed}
               onChange={(v: string) => onChange("refillsAllowed", v)}
@@ -1145,7 +1448,7 @@ function MedRow({
           </FieldGroup>
         </div>
 
-        <FieldGroup label="Patient Instructions">
+        <FieldGroup label="Patient instructions">
           <InputField
             value={med.instructions}
             onChange={(v: string) => onChange("instructions", v)}
@@ -1262,21 +1565,14 @@ export function PrescriptionsTab({
     interactions?.some((i) => i.severity === "major") ?? false;
 
   return (
-    <div
-      className="p-5 space-y-4"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
-    >
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* ── Past prescriptions ─────────────────────────────────────────── */}
       {prescriptions.length > 0 && (
-        <div>
-          <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2.5 px-0.5">
-            Prescriptions ({prescriptions.length})
-          </p>
-          <div className="space-y-2.5">
-            {prescriptions.map((rx: any, i: number) => (
-              <PrescriptionRecord key={rx.id} rx={rx} index={i} />
-            ))}
-          </div>
+        <div className="flex flex-col" style={{ gap: 10 }}>
+          <SectionLabel>Prescriptions ({prescriptions.length})</SectionLabel>
+          {prescriptions.map((rx: any, i: number) => (
+            <PrescriptionRecord key={rx.id} rx={rx} index={i} />
+          ))}
         </div>
       )}
 
@@ -1285,42 +1581,60 @@ export function PrescriptionsTab({
         (!showForm ? (
           <button
             onClick={() => setShowForm(true)}
-            className="w-full flex items-center justify-center gap-2 py-3 rounded-2xl border border-dashed border-gray-200 text-sm font-semibold text-gray-400 hover:border-cyan-300 hover:text-cyan-600 hover:bg-cyan-50/40 transition-all"
+            className="w-full inline-flex items-center justify-center"
+            style={{
+              gap: 8,
+              padding: 14,
+              borderRadius: "var(--r-md)",
+              border: "1.5px dashed var(--hc-border)",
+              background: "transparent",
+              font: "600 13.5px/1 var(--font-sans)",
+              color: "var(--text-muted)",
+              cursor: "pointer",
+              transition: "all var(--dur-fast) var(--ease-standard)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "var(--brand)";
+              e.currentTarget.style.color = "var(--green-700)";
+              e.currentTarget.style.background = "var(--green-050)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = "var(--hc-border)";
+              e.currentTarget.style.color = "var(--text-muted)";
+              e.currentTarget.style.background = "transparent";
+            }}
           >
-            <PlusCircle className="w-4 h-4" /> New Prescription
+            <PlusCircle className="w-4 h-4" />
+            New prescription
           </button>
         ) : (
-          <div className="rounded-2xl border border-cyan-100 overflow-hidden">
-            {/* Form header */}
-            <div className="flex items-center gap-3 px-5 py-4 bg-gradient-to-r from-cyan-50 to-white border-b border-cyan-100">
-              <div className="w-9 h-9 rounded-xl bg-cyan-100 flex items-center justify-center flex-shrink-0">
-                <Pill className="w-4 h-4 text-cyan-700" />
-              </div>
-              <div>
-                <p className="text-sm font-bold text-gray-800">
-                  New Prescription
-                </p>
-                <p className="text-xs text-gray-400 mt-0.5">
-                  {filledCount > 0
-                    ? `${filledCount} medication${filledCount !== 1 ? "s" : ""} added`
-                    : "Search or type drug names below"}
-                </p>
-              </div>
-              {prescriptions.length > 0 && (
-                <button
-                  onClick={() => {
-                    setShowForm(false);
-                    setMeds([{ ...BLANK_MED }]);
-                    setInteractions(null);
-                  }}
-                  className="ml-auto text-xs text-gray-400 hover:text-gray-600 font-medium"
-                >
-                  Cancel
-                </button>
-              )}
-            </div>
+          <Card>
+            <CardHeader
+              icon={Pill}
+              title="New prescription"
+              subtitle={
+                filledCount > 0
+                  ? `${filledCount} medication${filledCount !== 1 ? "s" : ""} added`
+                  : "Search or type drug names below"
+              }
+              right={
+                prescriptions.length > 0 ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setShowForm(false);
+                      setMeds([{ ...BLANK_MED }]);
+                      setInteractions(null);
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                ) : undefined
+              }
+            />
 
-            <div className="p-5 space-y-3 bg-white">
+            <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 14 }}>
               {meds.map((med, i) => (
                 <MedRow
                   key={i}
@@ -1334,41 +1648,41 @@ export function PrescriptionsTab({
 
               <button
                 onClick={addMed}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl border border-dashed border-gray-200 text-sm text-gray-400 hover:border-cyan-400 hover:text-cyan-600 hover:bg-cyan-50/40 transition-all"
+                className="w-full inline-flex items-center justify-center"
+                style={{
+                  gap: 8,
+                  padding: 11,
+                  borderRadius: "var(--r-sm)",
+                  border: "1.5px dashed var(--hc-border)",
+                  background: "transparent",
+                  font: "500 13px/1 var(--font-sans)",
+                  color: "var(--text-muted)",
+                  cursor: "pointer",
+                }}
               >
-                <PlusCircle className="w-4 h-4" /> Add another medication
+                <PlusCircle className="w-4 h-4" />
+                Add another medication
               </button>
 
               {/* ── Interaction checker ──────────────────────────────────── */}
-              {filledCount >= 1 && (
-                <div className="space-y-2 pt-1">
-                  {/* Manual check button — always shown when 2+ drugs */}
-                  {filledCount >= 2 && (
-                    <button
-                      onClick={() => runInteractionCheck(filledDrugNames)}
-                      disabled={checking}
-                      className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors disabled:opacity-50"
-                      style={{
-                        background: "#f0fdf4",
-                        borderColor: "#bbf7d0",
-                        color: "#166534",
-                      }}
-                    >
-                      {checking ? (
-                        <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />{" "}
-                          Checking…
-                        </>
-                      ) : (
-                        <>
-                          <ShieldAlert className="w-3.5 h-3.5" /> Check Drug
-                          Interactions
-                        </>
-                      )}
-                    </button>
-                  )}
+              {filledCount >= 2 && (
+                <div className="flex flex-col" style={{ gap: 10 }}>
+                  <Button
+                    size="sm"
+                    icon={checking ? RefreshCw : ShieldAlert}
+                    loading={checking}
+                    onClick={() => runInteractionCheck(filledDrugNames)}
+                    style={{
+                      alignSelf: "flex-start",
+                      background: "var(--brand-tint)",
+                      borderColor: "var(--green-100)",
+                      color: "var(--green-800)",
+                      boxShadow: "none",
+                    }}
+                  >
+                    {checking ? "Checking…" : "Check drug interactions"}
+                  </Button>
 
-                  {/* Results panel */}
                   {(checking || interactions !== null) && (
                     <InteractionPanel
                       interactions={interactions ?? []}
@@ -1379,46 +1693,52 @@ export function PrescriptionsTab({
                 </div>
               )}
 
-              {/* Major interaction warning on submit */}
+              {/* Advisory, never blocking — the prescriber decides. */}
               {hasMajorInteraction && (
-                <div className="flex items-start gap-3 p-3.5 rounded-xl bg-red-50 border border-red-200">
-                  <ShieldAlert className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                  <div>
-                    <p className="text-sm font-bold text-red-800">
-                      Major interaction detected
-                    </p>
-                    <p className="text-xs text-red-600 mt-0.5">
-                      Review the interaction above before prescribing. You can
-                      still proceed if clinically indicated.
-                    </p>
-                  </div>
-                </div>
+                <Banner
+                  tone="critical"
+                  icon={ShieldAlert}
+                  title="Major interaction detected"
+                >
+                  Review the interaction above before prescribing. You can still
+                  proceed if clinically indicated.
+                </Banner>
               )}
 
-              <div className="flex justify-end pt-3 border-t border-gray-100">
+              <div
+                className="flex justify-end"
+                style={{ paddingTop: 14, borderTop: "1px solid var(--border-faint)" }}
+              >
                 <SubmitBtn
                   onClick={handleSubmit}
                   loading={loading}
                   label={
                     filledCount > 0
-                      ? `Create Prescription (${filledCount} item${filledCount !== 1 ? "s" : ""})`
-                      : "Create Prescription"
+                      ? `Create prescription (${filledCount} item${filledCount !== 1 ? "s" : ""})`
+                      : "Create prescription"
                   }
                 />
               </div>
             </div>
-          </div>
+          </Card>
         ))}
 
       {/* ── Empty state ────────────────────────────────────────────────── */}
       {prescriptions.length === 0 && isCompleted && (
-        <div className="flex flex-col items-center gap-2 py-10 rounded-2xl border border-dashed border-gray-200 bg-gray-50/60">
-          <div className="w-10 h-10 rounded-xl bg-gray-100 flex items-center justify-center">
-            <Pill className="w-5 h-5 text-gray-300" />
-          </div>
-          <p className="text-sm font-semibold text-gray-400">
-            No prescriptions recorded
-          </p>
+        <div
+          style={{
+            borderRadius: "var(--r-md)",
+            border: "1.5px dashed var(--hc-border)",
+            background: "var(--surface-sunken)",
+          }}
+        >
+          <EmptyState
+            icon={Pill}
+            title="No prescriptions recorded"
+            message="Nothing was prescribed during this visit."
+            tone="neutral"
+            pad={32}
+          />
         </div>
       )}
     </div>

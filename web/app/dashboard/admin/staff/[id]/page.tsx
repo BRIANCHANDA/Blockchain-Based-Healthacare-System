@@ -7,15 +7,10 @@ import {
   CheckCircle2,
   AlertTriangle,
   KeyRound,
-  Shield,
-  ShieldOff,
-  UserCog,
   Building2,
   Phone,
   Mail,
-  Stethoscope,
   BadgeCheck,
-  Clock,
   ToggleLeft,
   ToggleRight,
 } from "lucide-react";
@@ -23,17 +18,17 @@ import { format } from "date-fns";
 
 const ROLE_META: Record<string, { label: string; color: string; bg: string }> =
   {
-    practitioner: { label: "Doctor", color: "#2563eb", bg: "#eff6ff" },
-    nurse: { label: "Nurse", color: "#0e7490", bg: "#ecfeff" },
+    practitioner: { label: "Doctor", color: "var(--blue-600)", bg: "var(--info-tint)" },
+    nurse: { label: "Nurse", color: "var(--info-ink)", bg: "var(--info-tint)" },
     lab_technician: {
       label: "Lab Technician",
-      color: "#d97706",
-      bg: "#fffbeb",
+      color: "var(--urgent-ink)",
+      bg: "var(--amber-050)",
     },
-    radiologist: { label: "Radiologist", color: "#7c3aed", bg: "#faf5ff" },
-    pharmacist: { label: "Pharmacist", color: "#166534", bg: "#f0fdf4" },
-    receptionist: { label: "Receptionist", color: "#0369a1", bg: "#f0f9ff" },
-    admin: { label: "Admin", color: "#dc2626", bg: "#fef2f2" },
+    radiologist: { label: "Radiologist", color: "var(--accent-ink)", bg: "var(--violet-050)" },
+    pharmacist: { label: "Pharmacist", color: "var(--green-800)", bg: "var(--brand-tint)" },
+    receptionist: { label: "Receptionist", color: "var(--info-ink)", bg: "var(--info-tint)" },
+    admin: { label: "Admin", color: "var(--critical-ink)", bg: "var(--coral-050)" },
   };
 
 function InfoRow({
@@ -46,12 +41,12 @@ function InfoRow({
   mono?: boolean;
 }) {
   return (
-    <div className="flex items-start justify-between py-3 border-b border-gray-50 last:border-0">
-      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide w-36 flex-shrink-0">
+    <div className="flex items-start justify-between py-3 border-b border-[var(--border-faint)] last:border-0">
+      <p className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wide w-36 flex-shrink-0">
         {label}
       </p>
       <p
-        className={`text-sm text-gray-800 text-right ${mono ? "font-mono" : "font-medium"}`}
+        className={`text-sm text-[var(--text-primary)] text-right ${mono ? "font-mono" : "font-medium"}`}
       >
         {value ?? "—"}
       </p>
@@ -159,7 +154,7 @@ export default function StaffDetailPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
-        <div className="w-8 h-8 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-[var(--green-600)] border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -167,13 +162,13 @@ export default function StaffDetailPage() {
   if (error || !staff) {
     return (
       <div className="max-w-lg mx-auto py-20 text-center">
-        <AlertTriangle className="w-10 h-10 text-red-400 mx-auto mb-3" />
-        <p className="text-gray-600 font-semibold">
+        <AlertTriangle className="w-10 h-10 text-[var(--coral-500)] mx-auto mb-3" />
+        <p className="text-[var(--text-secondary)] font-semibold">
           {error || "Staff member not found"}
         </p>
         <button
           onClick={() => router.back()}
-          className="mt-4 text-sm text-green-700 hover:underline"
+          className="mt-4 text-sm text-[var(--green-700)] hover:underline"
         >
           Go back
         </button>
@@ -186,44 +181,40 @@ export default function StaffDetailPage() {
   return (
     <div
       className="max-w-2xl mx-auto"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
     >
       {/* Header */}
       <div className="flex items-center gap-3 mb-6">
         <button
           onClick={() => router.back()}
-          className="w-9 h-9 rounded-xl border border-gray-200 flex items-center justify-center text-gray-500 hover:bg-gray-50 transition-colors"
+          className="w-9 h-9 rounded-[var(--r-sm)] border border-[var(--hc-border)] flex items-center justify-center text-[var(--text-secondary)] hover:bg-[var(--surface-sunken)] transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
         <div>
-          <h1
-            className="text-2xl font-bold text-gray-900"
-            style={{ fontFamily: "'Playfair Display', serif" }}
-          >
+          <h1 style={{ margin: 0, font: "700 27px/1.1 var(--font-sans)", letterSpacing: "var(--ls-tight)", color: "var(--text-primary)" }}>
             Staff Profile
           </h1>
-          <p className="text-sm text-gray-400 mt-0.5">
+          <p className="text-sm text-[var(--text-muted)] mt-0.5">
             View and manage staff account
           </p>
         </div>
       </div>
 
       {/* Profile card */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden mb-4">
+      <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] overflow-hidden mb-4">
         <div
-          className="px-6 py-5 border-b border-gray-100 flex items-center gap-4"
-          style={{ background: "linear-gradient(135deg, #f8fafc, #f1f5f9)" }}
+          className="px-6 py-5 border-b border-[var(--border-faint)] flex items-center gap-4"
+          style={{ background: "var(--surface-sunken)" }}
         >
           <div
-            className="w-14 h-14 rounded-2xl flex items-center justify-center text-xl font-bold text-white flex-shrink-0"
-            style={{ background: "linear-gradient(135deg, #1e293b, #334155)" }}
+            className="w-14 h-14 rounded-[var(--r-lg)] flex items-center justify-center text-xl font-bold text-[var(--white)] flex-shrink-0"
+            style={{ background: "var(--sidebar-bg)" }}
           >
             {staff.firstName?.[0]}
             {staff.lastName?.[0]}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-lg font-bold text-gray-900">
+            <p className="text-lg font-bold text-[var(--text-primary)]">
               {staff.firstName} {staff.lastName}
             </p>
             <div className="flex items-center gap-2 mt-1 flex-wrap">
@@ -234,16 +225,16 @@ export default function StaffDetailPage() {
                 {meta.label}
               </span>
               {staff.isVerified ? (
-                <span className="flex items-center gap-1 text-xs font-semibold text-green-700 bg-green-50 px-2.5 py-0.5 rounded-full">
+                <span className="flex items-center gap-1 text-xs font-semibold text-[var(--green-700)] bg-[var(--brand-tint)] px-2.5 py-0.5 rounded-full">
                   <CheckCircle2 className="w-3 h-3" /> Verified
                 </span>
               ) : (
-                <span className="flex items-center gap-1 text-xs font-semibold text-red-600 bg-red-50 px-2.5 py-0.5 rounded-full">
+                <span className="flex items-center gap-1 text-xs font-semibold text-[var(--critical-ink)] bg-[var(--coral-050)] px-2.5 py-0.5 rounded-full">
                   <AlertTriangle className="w-3 h-3" /> Unverified
                 </span>
               )}
               <span
-                className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${staff.isActive ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}`}
+                className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${staff.isActive ? "bg-[var(--brand-tint)] text-[var(--green-700)]" : "bg-[var(--surface-sunken)] text-[var(--text-secondary)]"}`}
               >
                 {staff.isActive ? "Active" : "Inactive"}
               </span>
@@ -297,35 +288,35 @@ export default function StaffDetailPage() {
       </div>
 
       {/* Contact */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-4">
-        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-4">
+      <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-6 mb-4">
+        <h2 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wide mb-4">
           Contact
         </h2>
         <div className="space-y-3">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0">
-              <Mail className="w-4 h-4 text-gray-400" />
+            <div className="w-8 h-8 rounded-[var(--r-xs)] bg-[var(--surface-sunken)] flex items-center justify-center flex-shrink-0">
+              <Mail className="w-4 h-4 text-[var(--text-muted)]" />
             </div>
-            <p className="text-sm text-gray-700">{staff.email ?? "—"}</p>
+            <p className="text-sm text-[var(--text-secondary)]">{staff.email ?? "—"}</p>
           </div>
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0">
-              <Phone className="w-4 h-4 text-gray-400" />
+            <div className="w-8 h-8 rounded-[var(--r-xs)] bg-[var(--surface-sunken)] flex items-center justify-center flex-shrink-0">
+              <Phone className="w-4 h-4 text-[var(--text-muted)]" />
             </div>
-            <p className="text-sm text-gray-700">{staff.phoneNumber ?? "—"}</p>
+            <p className="text-sm text-[var(--text-secondary)]">{staff.phoneNumber ?? "—"}</p>
           </div>
           {/* FIXED: Show institution info from backend data */}
           {staff.institutionName && (
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-gray-50 flex items-center justify-center flex-shrink-0">
-                <Building2 className="w-4 h-4 text-gray-400" />
+              <div className="w-8 h-8 rounded-[var(--r-xs)] bg-[var(--surface-sunken)] flex items-center justify-center flex-shrink-0">
+                <Building2 className="w-4 h-4 text-[var(--text-muted)]" />
               </div>
               <div>
-                <p className="text-sm text-gray-700 font-medium">
+                <p className="text-sm text-[var(--text-secondary)] font-medium">
                   {staff.institutionName}
                 </p>
                 {staff.institutionCode && (
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-[var(--text-secondary)]">
                     Code: {staff.institutionCode}
                   </p>
                 )}
@@ -336,28 +327,28 @@ export default function StaffDetailPage() {
       </div>
 
       {/* Actions */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-4">
-        <h2 className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-4">
+      <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-6 mb-4">
+        <h2 className="text-xs font-bold text-[var(--text-muted)] uppercase tracking-wide mb-4">
           Account Actions
         </h2>
         <div className="space-y-3">
           {/* Verify */}
           {!staff.isVerified && (
-            <div className="flex items-center justify-between p-4 rounded-xl bg-amber-50 border border-amber-100">
+            <div className="flex items-center justify-between p-4 rounded-[var(--r-sm)] bg-[var(--amber-050)] border border-[var(--amber-100)]">
               <div>
-                <p className="text-sm font-semibold text-amber-900">
+                <p className="text-sm font-semibold text-[var(--urgent-ink)]">
                   Verify Account
                 </p>
-                <p className="text-xs text-amber-700 mt-0.5">
+                <p className="text-xs text-[var(--urgent-ink)] mt-0.5">
                   Allow this staff member to access the system
                 </p>
               </div>
               <button
                 onClick={handleVerify}
                 disabled={verifying}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50 transition-all hover:shadow-md"
+                className="flex items-center gap-2 px-4 py-2 rounded-[var(--r-sm)] text-sm font-semibold text-[var(--white)] disabled:opacity-50 transition-all hover:shadow-[var(--elev-2)]"
                 style={{
-                  background: "linear-gradient(135deg, #166534, #15803d)",
+                  background: "var(--brand)",
                 }}
               >
                 <BadgeCheck className="w-4 h-4" />
@@ -367,12 +358,12 @@ export default function StaffDetailPage() {
           )}
 
           {/* Toggle active */}
-          <div className="flex items-center justify-between p-4 rounded-xl bg-gray-50 border border-gray-100">
+          <div className="flex items-center justify-between p-4 rounded-[var(--r-sm)] bg-[var(--surface-sunken)] border border-[var(--border-faint)]">
             <div>
-              <p className="text-sm font-semibold text-gray-800">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">
                 {staff.isActive ? "Deactivate Account" : "Activate Account"}
               </p>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <p className="text-xs text-[var(--text-secondary)] mt-0.5">
                 {staff.isActive
                   ? "Prevent this staff member from logging in"
                   : "Allow this staff member to log in"}
@@ -381,7 +372,7 @@ export default function StaffDetailPage() {
             <button
               onClick={handleToggleActive}
               disabled={toggling}
-              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold disabled:opacity-50 transition-all ${staff.isActive ? "bg-red-50 text-red-600 border border-red-100 hover:bg-red-100" : "bg-green-50 text-green-700 border border-green-100 hover:bg-green-100"}`}
+              className={`flex items-center gap-2 px-4 py-2 rounded-[var(--r-sm)] text-sm font-semibold disabled:opacity-50 transition-all ${staff.isActive ? "bg-[var(--coral-050)] text-[var(--critical-ink)] border border-[var(--coral-100)] hover:bg-[var(--coral-100)]" : "bg-[var(--brand-tint)] text-[var(--green-700)] border border-[var(--green-100)] hover:bg-[var(--green-100)]"}`}
             >
               {staff.isActive ? (
                 <ToggleLeft className="w-4 h-4" />
@@ -397,13 +388,13 @@ export default function StaffDetailPage() {
           </div>
 
           {/* Reset password */}
-          <div className="p-4 rounded-xl bg-gray-50 border border-gray-100">
+          <div className="p-4 rounded-[var(--r-sm)] bg-[var(--surface-sunken)] border border-[var(--border-faint)]">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-semibold text-gray-800">
+                <p className="text-sm font-semibold text-[var(--text-primary)]">
                   Reset Password
                 </p>
-                <p className="text-xs text-gray-500 mt-0.5">
+                <p className="text-xs text-[var(--text-secondary)] mt-0.5">
                   Set a new password for this account
                 </p>
               </div>
@@ -413,7 +404,7 @@ export default function StaffDetailPage() {
                   setResetError("");
                   setResetSuccess(false);
                 }}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-white border border-gray-200 text-gray-600 hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 rounded-[var(--r-sm)] text-sm font-semibold bg-[var(--surface-card)] border border-[var(--hc-border)] text-[var(--text-secondary)] hover:bg-[var(--surface-sunken)] transition-colors"
               >
                 <KeyRound className="w-4 h-4" /> Reset
               </button>
@@ -422,19 +413,19 @@ export default function StaffDetailPage() {
             {showResetForm && (
               <div className="mt-4 space-y-3">
                 {resetSuccess && (
-                  <div className="flex items-center gap-2 p-3 rounded-xl bg-green-50 border border-green-200">
-                    <CheckCircle2 className="w-4 h-4 text-green-600 flex-shrink-0" />
-                    <p className="text-sm text-green-700">
+                  <div className="flex items-center gap-2 p-3 rounded-[var(--r-sm)] bg-[var(--brand-tint)] border border-[var(--green-200)]">
+                    <CheckCircle2 className="w-4 h-4 text-[var(--green-700)] flex-shrink-0" />
+                    <p className="text-sm text-[var(--green-700)]">
                       Password reset successfully.
                     </p>
                   </div>
                 )}
                 {resetError && (
-                  <p className="text-sm text-red-600">{resetError}</p>
+                  <p className="text-sm text-[var(--critical-ink)]">{resetError}</p>
                 )}
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1.5">
+                    <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5">
                       New Password
                     </label>
                     <input
@@ -442,11 +433,11 @@ export default function StaffDetailPage() {
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
                       placeholder="Min. 8 characters"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white text-sm outline-none focus:border-green-600 focus:ring-2 focus:ring-green-600/10 transition-all"
+                      className="w-full px-3.5 py-2.5 rounded-[var(--r-sm)] border border-[var(--hc-border)] bg-[var(--surface-card)] text-sm outline-none focus:border-[var(--green-600)] focus:ring-2 focus:ring-[var(--green-600)] transition-all"
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-semibold text-gray-500 mb-1.5">
+                    <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5">
                       Confirm Password
                     </label>
                     <input
@@ -454,23 +445,23 @@ export default function StaffDetailPage() {
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder="Repeat password"
-                      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-white text-sm outline-none focus:border-green-600 focus:ring-2 focus:ring-green-600/10 transition-all"
+                      className="w-full px-3.5 py-2.5 rounded-[var(--r-sm)] border border-[var(--hc-border)] bg-[var(--surface-card)] text-sm outline-none focus:border-[var(--green-600)] focus:ring-2 focus:ring-[var(--green-600)] transition-all"
                     />
                   </div>
                 </div>
                 <div className="flex gap-2 justify-end">
                   <button
                     onClick={() => setShowResetForm(false)}
-                    className="px-4 py-2 rounded-xl text-sm font-semibold border border-gray-200 text-gray-600 hover:bg-gray-50"
+                    className="px-4 py-2 rounded-[var(--r-sm)] text-sm font-semibold border border-[var(--hc-border)] text-[var(--text-secondary)] hover:bg-[var(--surface-sunken)]"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleResetPassword}
                     disabled={resetLoading}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+                    className="flex items-center gap-2 px-4 py-2 rounded-[var(--r-sm)] text-sm font-semibold text-[var(--white)] disabled:opacity-50"
                     style={{
-                      background: "linear-gradient(135deg, #166534, #15803d)",
+                      background: "var(--brand)",
                     }}
                   >
                     <KeyRound className="w-3.5 h-3.5" />

@@ -2,7 +2,6 @@ import { FieldGroup } from "../shared/FieldGroup";
 import { InputField } from "../shared/InputField";
 import { TextArea } from "../shared/TextArea";
 import { SubmitBtn } from "../shared/SubmitBtn";
-import { SectionCard } from "../shared/SectionCard";
 import {
   CheckCircle2,
   Loader2,
@@ -17,6 +16,25 @@ import { useState, useEffect } from "react";
 import { visitApi } from "@/lib/api";
 import { safeFormatDate } from "../utils/dateHelpers";
 import { askClaude } from "@/lib/ai";
+import {
+  Card,
+  Button,
+  Pill as Badge,
+  Banner,
+  SectionLabel,
+  hoverRow,
+} from "@/components/dashboard/ui";
+
+/* ==========================================================================
+   Discharge tab.
+
+   Discharging closes the visit and auto-revokes every permission granted for
+   it — irreversible, so the warning sits above the form rather than in a
+   confirm dialog the doctor would click through.
+
+   The AI assistant only DRAFTS: it fills the three text fields from the
+   visit's own data and the doctor still has to review and submit.
+   ========================================================================== */
 
 export function DischargeTab({ visitId, visit, onSaved, onError }: any) {
   const [loading, setLoading] = useState(false);
@@ -208,178 +226,235 @@ Respond with ONLY valid JSON, no extra text, no markdown:
 
   if (isCompleted) {
     return (
-      <div className="p-5">
-        <div className="text-center py-12">
-          <div className="w-16 h-16 rounded-full bg-green-100 flex items-center justify-center mx-auto mb-4">
-            <CheckCircle2 size={32} className="text-green-600" />
-          </div>
-          <h3 className="text-lg font-bold text-gray-900 mb-2">
-            Patient Discharged
-          </h3>
-          <p className="text-gray-500 text-sm mb-4">
-            Closed on{" "}
-            {safeFormatDate(
-              visit.dischargeDate ?? visit.updatedAt,
-              "dd MMM yyyy, HH:mm",
-            )}
-          </p>
-          {visit.dischargeDiagnosis && (
-            <div className="max-w-md mx-auto text-left p-4 rounded-xl bg-gray-50 border border-gray-100 space-y-3">
-              {[
-                ["Discharge Diagnosis", visit.dischargeDiagnosis],
-                ["Summary", visit.dischargeSummary],
-                ["Instructions", visit.dischargeInstructions],
-              ]
-                .filter(([, v]) => v)
-                .map(([label, value]) => (
-                  <div key={String(label)}>
-                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
-                      {label}
-                    </p>
-                    <p className="text-sm text-gray-800 mt-0.5 whitespace-pre-wrap">
-                      {value}
-                    </p>
-                  </div>
-                ))}
-            </div>
+      <div
+        className="flex flex-col items-center text-center"
+        style={{ padding: "48px 20px", gap: 14 }}
+      >
+        <span
+          className="inline-flex items-center justify-center"
+          style={{
+            width: 60,
+            height: 60,
+            borderRadius: "50%",
+            background: "var(--brand-tint)",
+            color: "var(--green-700)",
+          }}
+        >
+          <CheckCircle2 className="w-7 h-7" />
+        </span>
+
+        <h3
+          style={{
+            margin: 0,
+            font: "700 18px/1.2 var(--font-sans)",
+            letterSpacing: "var(--ls-tight)",
+            color: "var(--text-primary)",
+          }}
+        >
+          Patient discharged
+        </h3>
+
+        <p
+          style={{
+            margin: 0,
+            font: "400 13px/1 var(--font-sans)",
+            color: "var(--text-muted)",
+          }}
+        >
+          Closed on{" "}
+          {safeFormatDate(
+            visit.dischargeDate ?? visit.updatedAt,
+            "dd MMM yyyy, HH:mm",
           )}
-        </div>
+        </p>
+
+        {visit.dischargeDiagnosis && (
+          <div className="w-full text-left" style={{ maxWidth: 480, marginTop: 6 }}>
+            <Card pad={18}>
+              <div className="flex flex-col" style={{ gap: 14 }}>
+                {(
+                  [
+                    ["Discharge diagnosis", visit.dischargeDiagnosis],
+                    ["Summary", visit.dischargeSummary],
+                    ["Instructions", visit.dischargeInstructions],
+                  ] as [string, string][]
+                )
+                  .filter(([, v]) => v)
+                  .map(([label, value]) => (
+                    <div key={label} className="flex flex-col" style={{ gap: 5 }}>
+                      <SectionLabel>{label}</SectionLabel>
+                      <p
+                        style={{
+                          margin: 0,
+                          font: "400 13px/1.6 var(--font-sans)",
+                          color: "var(--text-secondary)",
+                          whiteSpace: "pre-wrap",
+                        }}
+                      >
+                        {value}
+                      </p>
+                    </div>
+                  ))}
+              </div>
+            </Card>
+          </div>
+        )}
       </div>
     );
   }
 
   return (
-    <div
-      className="p-5 space-y-5"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
-    >
-      <div className="flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-200">
-        <TriangleAlert
-          size={18}
-          className="text-amber-500 mt-0.5 flex-shrink-0"
-        />
-        <div>
-          <p className="text-sm font-bold text-amber-800">
-            This will close the visit
-          </p>
-          <p className="text-sm text-amber-700 mt-0.5">
-            All permissions will be auto-revoked. This cannot be undone.
-          </p>
-        </div>
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+      <Banner tone="urgent" icon={TriangleAlert} title="This will close the visit">
+        All permissions granted for this visit are auto-revoked on discharge. This
+        cannot be undone.
+      </Banner>
 
-      <div className="rounded-2xl border border-green-100 overflow-hidden">
+      {/* ── AI draft assistant ──────────────────────────────────────────── */}
+      <Card>
         <button
           onClick={() => setShowAI((v) => !v)}
-          className="w-full flex items-center justify-between px-5 py-3.5 text-left hover:bg-green-50/40 transition-colors"
-          style={{ background: showAI ? "rgba(240,253,244,0.6)" : "#fff" }}
+          className="w-full flex items-center justify-between text-left"
+          style={{
+            gap: 12,
+            padding: "14px 20px",
+            border: "none",
+            background: showAI ? "var(--green-050)" : "transparent",
+            cursor: "pointer",
+            transition: "background var(--dur-fast) var(--ease-standard)",
+          }}
+          {...(showAI ? {} : hoverRow)}
         >
-          <div className="flex items-center gap-2.5">
-            <div
-              className="w-7 h-7 rounded-lg flex items-center justify-center"
-              style={{ background: "linear-gradient(135deg,#052e16,#166534)" }}
+          <span className="flex items-center min-w-0" style={{ gap: 11 }}>
+            <span
+              className="inline-flex items-center justify-center flex-shrink-0"
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: "var(--r-xs)",
+                background: "var(--sidebar-bg)",
+                color: "var(--green-300)",
+              }}
             >
-              <Wand2 className="w-3.5 h-3.5 text-green-300" />
-            </div>
-            <div>
-              <p className="text-sm font-bold text-gray-800">
-                AI Draft Assistant
-              </p>
-              <p className="text-xs text-gray-400">
+              <Wand2 className="w-3.5 h-3.5" />
+            </span>
+            <span className="min-w-0 flex flex-col" style={{ gap: 4 }}>
+              <span
+                style={{
+                  font: "700 13.5px/1 var(--font-sans)",
+                  color: "var(--text-primary)",
+                }}
+              >
+                AI draft assistant
+              </span>
+              <span
+                style={{
+                  font: "400 11.5px/1 var(--font-sans)",
+                  color: "var(--text-muted)",
+                }}
+              >
                 {form.dischargeSummary
                   ? "Fields pre-filled — review before discharging"
-                  : "Generate discharge summary from visit data"}
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            {form.dischargeSummary && (
-              <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-100">
-                Filled ✓
+                  : "Generate a discharge summary from this visit's data"}
               </span>
+            </span>
+          </span>
+
+          <span className="flex items-center flex-shrink-0" style={{ gap: 8 }}>
+            {form.dischargeSummary && (
+              <Badge tone="success" icon={CheckCircle2} style={{ height: 18, fontSize: 10 }}>
+                Filled
+              </Badge>
             )}
             {showAI ? (
-              <ChevronUp className="w-4 h-4 text-gray-400" />
+              <ChevronUp className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
             ) : (
-              <ChevronDown className="w-4 h-4 text-gray-400" />
+              <ChevronDown className="w-4 h-4" style={{ color: "var(--text-muted)" }} />
             )}
-          </div>
+          </span>
         </button>
 
         {showAI && (
-          <div className="border-t border-green-100 px-5 py-4 bg-green-50/20 space-y-3">
+          <div
+            style={{
+              padding: 20,
+              borderTop: "1px solid var(--border-faint)",
+              background: "var(--green-050)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 12,
+            }}
+          >
             {dataLoading && (
-              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-blue-50 border border-blue-100">
-                <Loader2 className="w-4 h-4 text-blue-500 animate-spin flex-shrink-0" />
-                <p className="text-xs text-blue-700 font-medium">
-                  Loading visit data…
-                </p>
-              </div>
+              <Banner tone="info" icon={Loader2}>
+                Loading visit data…
+              </Banner>
             )}
+
             {aiError && (
-              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-red-50 border border-red-100">
-                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-red-700 break-all">{aiError}</p>
-              </div>
+              <Banner tone="critical" icon={AlertCircle}>
+                {aiError}
+              </Banner>
             )}
+
             {!dataLoading && (
-              <p className="text-xs text-gray-500 leading-relaxed">
-                Generates discharge diagnosis, summary and instructions from
-                this visit's data. Review and edit before clicking Discharge
-                Patient.
+              <p
+                style={{
+                  margin: 0,
+                  font: "400 12.5px/1.6 var(--font-sans)",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                Generates a discharge diagnosis, summary, and instructions from this
+                visit's records. Review and edit before discharging — nothing is
+                submitted automatically.
               </p>
             )}
-            <button
+
+            <Button
+              variant="primary"
+              icon={Sparkles}
+              loading={generating}
+              disabled={dataLoading}
               onClick={handleGenerate}
-              disabled={generating || dataLoading}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-60"
-              style={{ background: "linear-gradient(135deg,#052e16,#166534)" }}
+              style={{
+                alignSelf: "flex-start",
+                background: "var(--sidebar-bg)",
+                boxShadow: "none",
+              }}
             >
-              {generating ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" /> Generating…
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />{" "}
-                  {form.dischargeSummary ? "Re-generate" : "Generate Summary"}
-                </>
-              )}
-            </button>
+              {generating
+                ? "Generating…"
+                : form.dischargeSummary
+                  ? "Re-generate"
+                  : "Generate summary"}
+            </Button>
           </div>
         )}
-      </div>
+      </Card>
 
-      <SectionCard title="Discharge Summary">
-        <div className="space-y-4">
-          <FieldGroup label="Discharge Diagnosis *">
-            <div className="relative">
-              <InputField
-                value={form.dischargeDiagnosis}
-                onChange={f("dischargeDiagnosis")}
-                placeholder="Final confirmed diagnosis"
-              />
-              {form.dischargeDiagnosis && (
-                <Sparkles className="absolute right-3 top-1/2 -translate-y-1/2 w-3 h-3 text-green-400 pointer-events-none" />
-              )}
-            </div>
+      <Card>
+        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 18 }}>
+          <SectionLabel>Discharge summary</SectionLabel>
+
+          <FieldGroup label="Discharge diagnosis *">
+            <InputField
+              value={form.dischargeDiagnosis}
+              onChange={f("dischargeDiagnosis")}
+              placeholder="Final confirmed diagnosis"
+            />
           </FieldGroup>
 
-          <FieldGroup label="Discharge Summary *">
+          <FieldGroup label="Discharge summary *">
             <TextArea
               value={form.dischargeSummary}
               onChange={f("dischargeSummary")}
               placeholder="Summary of admission, treatment, response, condition at discharge…"
               rows={5}
             />
-            {form.dischargeSummary && (
-              <p className="text-[10px] text-green-600 font-semibold mt-1 flex items-center gap-1">
-                <Sparkles className="w-3 h-3" /> Review before saving
-              </p>
-            )}
           </FieldGroup>
 
-          <FieldGroup label="Discharge Instructions *">
+          <FieldGroup label="Discharge instructions *">
             <TextArea
               value={form.dischargeInstructions}
               onChange={f("dischargeInstructions")}
@@ -388,7 +463,7 @@ Respond with ONLY valid JSON, no extra text, no markdown:
             />
           </FieldGroup>
 
-          <FieldGroup label="Follow-up Date">
+          <FieldGroup label="Follow-up date">
             <InputField
               value={form.followUpDate}
               onChange={f("followUpDate")}
@@ -396,16 +471,19 @@ Respond with ONLY valid JSON, no extra text, no markdown:
             />
           </FieldGroup>
 
-          <div className="flex justify-end pt-2 border-t border-gray-100">
+          <div
+            className="flex justify-end"
+            style={{ paddingTop: 14, borderTop: "1px solid var(--border-faint)" }}
+          >
             <SubmitBtn
               onClick={handleSubmit}
               loading={loading}
-              label="Discharge Patient"
+              label="Discharge patient"
               danger
             />
           </div>
         </div>
-      </SectionCard>
+      </Card>
     </div>
   );
 }

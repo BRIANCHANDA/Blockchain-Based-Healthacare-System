@@ -56,18 +56,20 @@ export function PhoneInput({ value, onChange, error }: PhoneInputProps) {
   };
 
   const ringClass = error
-    ? "border-red-300 focus:border-red-500 focus:ring-red-500/10"
-    : "border-gray-200 focus:border-green-600 focus:ring-green-600/10";
+    ? "border-[var(--coral-100)] focus:border-[var(--critical)] focus:ring-[var(--critical-tint)]"
+    : "border-[var(--hc-border)] focus:border-[var(--brand)] focus:ring-[var(--focus-ring)]";
 
   return (
     <div className="flex">
+      {/* The dialling code sits on the inset surface so it reads as a fixed
+          prefix rather than a second thing to fill in. */}
       <input
         type="text"
         value={code}
         onChange={(e) => handleCodeChange(e.target.value)}
         maxLength={5}
         placeholder="+260"
-        className={`w-[4.5rem] shrink-0 px-2.5 py-2.5 rounded-l-xl border border-r-0 bg-gray-100 text-sm text-center font-mono outline-none focus:ring-2 transition-all ${ringClass}`}
+        className={`w-[4.5rem] shrink-0 px-2.5 py-2.5 rounded-l-[var(--r-sm)] border border-r-0 bg-[var(--surface-inset)] text-sm text-center font-[family-name:var(--font-mono)] outline-none focus:ring-2 transition-all ${ringClass}`}
       />
       <input
         type="text"
@@ -75,7 +77,7 @@ export function PhoneInput({ value, onChange, error }: PhoneInputProps) {
         onChange={(e) => handleDigitsChange(e.target.value)}
         placeholder="977 123 456"
         maxLength={9}
-        className={`flex-1 px-3.5 py-2.5 rounded-r-xl border bg-gray-50 text-sm outline-none focus:bg-white focus:ring-2 transition-all ${ringClass}`}
+        className={`flex-1 px-3.5 py-2.5 rounded-r-[var(--r-sm)] border bg-[var(--surface-inset)] text-sm outline-none focus:bg-[var(--surface-card)] focus:ring-2 transition-all ${ringClass}`}
       />
     </div>
   );

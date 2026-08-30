@@ -124,26 +124,26 @@ export default function PatientQRScanner({
   const retry = () => window.location.reload();
 
   return (
-    <div className="space-y-4" style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+    <div className="space-y-4" style={{ fontFamily: "var(--font-sans)" }}>
+      <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] overflow-hidden">
         {/* Camera viewport */}
-        <div className="relative bg-gray-950" style={{ minHeight: 320 }}>
+        <div className="relative" style={{ minHeight: 320, background: "var(--ink-900)" }}>
           <div id="qr-reader" className="w-full" />
 
           {status === "starting" && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-white">
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-[var(--white)]">
               <Loader2 size={28} className="animate-spin" />
               <p className="text-sm">Starting camera…</p>
             </div>
           )}
 
           {status === "found" && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-green-950/90 text-white">
-              <CheckCircle2 size={40} className="text-green-400" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-[var(--white)]" style={{ background: "color-mix(in srgb, var(--green-900) 92%, transparent)" }}>
+              <CheckCircle2 size={40} style={{ color: "var(--green-300)" }} />
               <p className="text-base font-bold">
                 {foundName ?? "Patient found!"}
               </p>
-              <p className="text-sm text-green-200">Continuing…</p>
+              <p className="text-sm text-[var(--green-200)]">Continuing…</p>
             </div>
           )}
         </div>
@@ -151,10 +151,10 @@ export default function PatientQRScanner({
         {/* Footer */}
         <div className="px-5 py-4">
           {status === "scanning" && (
-            <div className="flex items-center gap-2.5 text-sm text-gray-500">
+            <div className="flex items-center gap-2.5 text-sm text-[var(--text-secondary)]">
               <span className="relative flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-60" />
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-green-500" />
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-60" style={{ background: "var(--green-300)" }} />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5" style={{ background: "var(--brand)" }} />
               </span>
               Scanning — hold the phone's QR steady in the frame
             </div>
@@ -162,16 +162,14 @@ export default function PatientQRScanner({
 
           {(status === "error" || error) && (
             <div className="space-y-3">
-              <div className="flex items-center gap-2.5 p-3 rounded-xl bg-red-50 border border-red-100 text-sm text-red-700">
+              <div className="flex items-center gap-2.5 p-3 rounded-[var(--r-sm)] bg-[var(--coral-050)] border border-[var(--coral-100)] text-sm text-[var(--critical-ink)]">
                 <AlertTriangle size={15} className="flex-shrink-0" />
                 {error || "Something went wrong."}
               </div>
               <button
                 onClick={retry}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white"
-                style={{
-                  background: "linear-gradient(135deg,#166534,#15803d)",
-                }}
+                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-[var(--r-sm)] text-sm font-bold"
+                style={{ background: "var(--brand)", color: "var(--on-brand)" }}
               >
                 <RefreshCw size={14} /> Retry
               </button>
@@ -180,9 +178,9 @@ export default function PatientQRScanner({
         </div>
       </div>
 
-      <div className="flex items-start gap-2.5 p-4 rounded-2xl bg-blue-50 border border-blue-100">
-        <QrCode size={15} className="text-blue-600 flex-shrink-0 mt-0.5" />
-        <p className="text-xs text-blue-800 leading-relaxed">
+      <div className="flex items-start gap-2.5 p-4 rounded-[var(--r-lg)] bg-[var(--blue-050)] border border-[var(--info-tint)]">
+        <QrCode size={15} className="flex-shrink-0 mt-0.5" style={{ color: "var(--info-ink)" }} />
+        <p className="text-xs text-[var(--info-ink)] leading-relaxed">
           {hint ??
             "Patients find their QR under Records → My Hospital ID in the HealthChain app. Scanning identifies the patient only — record access still follows normal permissions."}
         </p>

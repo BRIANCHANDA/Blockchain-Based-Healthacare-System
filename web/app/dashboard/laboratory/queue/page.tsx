@@ -11,65 +11,31 @@ import {
   RefreshCw,
   CheckCircle2,
   Search,
+  X,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import {
+  Page,
+  PageHeader,
+  Card,
+  Pill as Badge,
+  MonoTag,
+  Button,
+  Banner,
+  EmptyState,
+  SearchInput,
+  SegmentedControl,
+  TONES,
+} from "@/components/dashboard/ui";
+import { getUrgency, getStatus, normalizeOrder } from "../vocab";
 
-const URGENCY_CONFIG: Record<
-  string,
-  { color: string; bg: string; border: string; label: string; order: number }
-> = {
-  critical: {
-    color: "#6D28D9",
-    bg: "#EDE9FE",
-    border: "#C4B5FD",
-    label: "Critical",
-    order: 1,
-  },
-  emergency: {
-    color: "#C0392B",
-    bg: "#FDECEA",
-    border: "#F5C6C6",
-    label: "Emergency",
-    order: 2,
-  },
-  urgent: {
-    color: "#C9952A",
-    bg: "#FDF3DC",
-    border: "#F0D080",
-    label: "Urgent",
-    order: 3,
-  },
-  routine: {
-    color: "#0A6640",
-    bg: "#E6F4EE",
-    border: "#B3D9C8",
-    label: "Routine",
-    order: 4,
-  },
-};
+/* ==========================================================================
+   Lab queue — every order awaiting the laboratory.
 
-const STATUS_CONFIG: Record<
-  string,
-  { color: string; bg: string; label: string }
-> = {
-  ordered: { color: "#C9952A", bg: "#FDF3DC", label: "Ordered" },
-  collected: { color: "#1A6B8A", bg: "#E3F2F8", label: "Collected" },
-  processing: { color: "#6D28D9", bg: "#EDE9FE", label: "Processing" },
-};
-
-// Normalize an order from either camelCase (Drizzle) or snake_case (raw SQL)
-function normalizeOrder(o: any) {
-  return {
-    ...o,
-    orderedAt: o.orderedAt ?? o.ordered_at ?? null,
-    specimenType: o.specimenType ?? o.specimen_type ?? "",
-    visitNumber: o.visitNumber ?? o.visit_number ?? "",
-    testName: o.testName ?? o.test_name ?? "",
-    testCode: o.testCode ?? o.test_code ?? "",
-    orderNumber: o.orderNumber ?? o.order_number ?? "",
-    chiefComplaint: o.chiefComplaint ?? o.chief_complaint ?? "",
-  };
-}
+   Urgency drives the whole visual hierarchy: the left edge, the icon tint and
+   the pill all come from one decision, so a critical order cannot look
+   routine in one place and urgent in another.
+   ========================================================================== */
 
 function safeDistance(dateStr: string | null | undefined): string {
   if (!dateStr) return "—";
@@ -78,15 +44,15 @@ function safeDistance(dateStr: string | null | undefined): string {
   return formatDistanceToNow(d, { addSuffix: true });
 }
 
+type FilterKey = "all" | "critical" | "emergency" | "urgent" | "routine";
+
 export default function LabQueuePage() {
   const router = useRouter();
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<
-    "all" | "critical" | "emergency" | "urgent" | "routine"
-  >("all");
+  const [filter, setFilter] = useState<FilterKey>("all");
 
   const fetchOrders = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -122,207 +88,209 @@ export default function LabQueuePage() {
     ["critical", "emergency"].includes(o.urgency),
   ).length;
 
+  const countFor = (f: FilterKey) =>
+    f === "all" ? orders.length : orders.filter((o) => o.urgency === f).length;
+
+  const isFiltered = !!search || filter !== "all";
+
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-64 gap-3">
-        <Loader2 size={28} className="animate-spin text-green-700" />
-        <p className="text-sm text-gray-400">Loading queue…</p>
+      <div
+        className="flex flex-col items-center justify-center"
+        style={{ minHeight: 256, gap: 12 }}
+      >
+        <Loader2 className="w-7 h-7 animate-spin" style={{ color: "var(--brand)" }} />
+        <p
+          style={{
+            margin: 0,
+            font: "400 13px/1 var(--font-sans)",
+            color: "var(--text-muted)",
+          }}
+        >
+          Loading queue…
+        </p>
       </div>
     );
   }
 
   return (
-    <div
-      className="max-w-4xl mx-auto space-y-5"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
-    >
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1
-            className="text-2xl font-bold text-gray-900"
-            style={{ fontFamily: "'Playfair Display', serif" }}
-          >
-            Lab Queue
-          </h1>
-          <p className="text-gray-500 text-sm mt-0.5">
-            {orders.length} pending order{orders.length !== 1 ? "s" : ""} ·
-            auto-refreshes every 60s
-          </p>
-        </div>
-        <button
-          onClick={() => fetchOrders(true)}
-          disabled={refreshing}
-          className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 disabled:opacity-50 transition-colors"
-        >
-          <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />{" "}
-          Refresh
-        </button>
-      </div>
+    <Page maxWidth={1000}>
+      <PageHeader
+        eyebrow="Laboratory"
+        title="Sample queue"
+        subtitle={`${orders.length} pending order${
+          orders.length !== 1 ? "s" : ""
+        } · auto-refreshes every 60 seconds`}
+        actions={
+          <Button icon={RefreshCw} onClick={() => fetchOrders(true)} disabled={refreshing}>
+            Refresh
+          </Button>
+        }
+      />
 
-      {/* Critical banner */}
       {criticalCount > 0 && (
-        <div className="flex items-center gap-3 p-3.5 rounded-xl bg-red-50 border border-red-200">
-          <TriangleAlert size={18} className="text-red-500 flex-shrink-0" />
-          <p className="text-sm font-semibold text-red-800">
-            {criticalCount} critical/emergency order
-            {criticalCount > 1 ? "s" : ""} — process immediately
-          </p>
-        </div>
+        <Banner tone="critical" icon={TriangleAlert}>
+          {criticalCount} critical or emergency order
+          {criticalCount > 1 ? "s" : ""} — process immediately.
+        </Banner>
       )}
 
       {/* Search + filter */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search
-            size={15}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-          />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by test, visit number, order no…"
-            className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 bg-white text-sm outline-none
-              focus:border-green-500 focus:ring-2 focus:ring-green-500/10 placeholder:text-gray-400"
-          />
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          {(["all", "critical", "emergency", "urgent", "routine"] as const).map(
-            (f) => {
-              const cfg = f === "all" ? null : URGENCY_CONFIG[f];
-              const count =
-                f === "all"
-                  ? orders.length
-                  : orders.filter((o) => o.urgency === f).length;
-              return (
-                <button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className="px-3 py-2 rounded-xl text-xs font-semibold transition-all border"
-                  style={
-                    filter === f
-                      ? {
-                          background: cfg?.color ?? "#374151",
-                          color: "#fff",
-                          borderColor: "transparent",
-                        }
-                      : {
-                          background: cfg?.bg ?? "#F3F4F6",
-                          color: cfg?.color ?? "#374151",
-                          borderColor: "transparent",
-                        }
-                  }
-                >
-                  {f.charAt(0).toUpperCase() + f.slice(1)} ({count})
-                </button>
-              );
-            },
-          )}
-        </div>
+      <div className="flex items-center justify-between flex-wrap" style={{ gap: 12 }}>
+        <SegmentedControl<FilterKey>
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: "all", label: "All", count: countFor("all") },
+            { value: "critical", label: "Critical", count: countFor("critical") },
+            { value: "emergency", label: "Emergency", count: countFor("emergency") },
+            { value: "urgent", label: "Urgent", count: countFor("urgent") },
+            { value: "routine", label: "Routine", count: countFor("routine") },
+          ]}
+        />
+        <SearchInput
+          value={search}
+          onChange={setSearch}
+          placeholder="Search test, visit number, order no…"
+          icon={Search}
+          clearIcon={X}
+          style={{ flex: "1 1 220px", maxWidth: 340 }}
+        />
       </div>
 
       {/* Orders list */}
       {filtered.length === 0 ? (
-        <div className="text-center py-20">
-          <div className="w-16 h-16 rounded-2xl bg-green-50 flex items-center justify-center mx-auto mb-4">
-            <CheckCircle2 size={28} className="text-green-600" />
-          </div>
-          <p className="text-gray-700 font-semibold">No orders found</p>
-          <p className="text-gray-400 text-sm mt-1">
-            {search
-              ? "Try a different search term"
-              : "All tests have been resulted"}
-          </p>
-        </div>
+        <Card>
+          <EmptyState
+            icon={CheckCircle2}
+            title="No orders found"
+            message={
+              isFiltered
+                ? "No orders match the current filters."
+                : "All tests have been resulted."
+            }
+            pad={64}
+          />
+        </Card>
       ) : (
-        <div className="space-y-3">
+        <div className="flex flex-col" style={{ gap: 12 }}>
           {filtered.map((order) => {
-            const urgency =
-              URGENCY_CONFIG[order.urgency] ?? URGENCY_CONFIG.routine;
-            const status = STATUS_CONFIG[order.status] ?? STATUS_CONFIG.ordered;
+            const u = getUrgency(order.urgency);
+            const st = getStatus(order.status);
+            const uTone = TONES[u.tone];
+
             return (
               <button
                 key={order.id}
-                onClick={() =>
-                  router.push(`/dashboard/laboratory/queue/${order.id}`)
-                }
-                className="w-full bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100 hover:shadow-md transition-all text-left group"
-                style={{ borderLeft: `4px solid ${urgency.color}` }}
+                onClick={() => router.push(`/dashboard/laboratory/queue/${order.id}`)}
+                className="w-full text-left"
+                style={{
+                  background: "var(--surface-card)",
+                  border: "1px solid var(--hc-border)",
+                  // The left edge carries urgency at a glance.
+                  borderLeft: `4px solid ${uTone.dot}`,
+                  borderRadius: "var(--r-md)",
+                  boxShadow: "var(--elev-1)",
+                  overflow: "hidden",
+                  cursor: "pointer",
+                  transition: "box-shadow var(--dur-base) var(--ease-standard)",
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.boxShadow = "var(--elev-2)")}
+                onMouseLeave={(e) => (e.currentTarget.style.boxShadow = "var(--elev-1)")}
               >
-                <div className="flex items-center gap-4 p-4">
-                  {/* Icon */}
-                  <div
-                    className="w-11 h-11 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ backgroundColor: urgency.bg }}
+                <div className="flex items-center" style={{ gap: 14, padding: 16 }}>
+                  <span
+                    className="inline-flex items-center justify-center flex-shrink-0"
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: "var(--r-sm)",
+                      background: uTone.tint,
+                      color: uTone.ink,
+                    }}
                   >
-                    <FlaskConical size={20} style={{ color: urgency.color }} />
-                  </div>
+                    <FlaskConical className="w-5 h-5" />
+                  </span>
 
-                  {/* Main */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap mb-1">
-                      <p className="text-sm font-bold text-gray-900">
-                        {order.testName}
-                      </p>
-                      <span className="text-xs font-mono font-semibold text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
-                        {order.testCode}
-                      </span>
+                  <span className="flex-1 min-w-0 flex flex-col" style={{ gap: 6 }}>
+                    <span className="flex items-center flex-wrap" style={{ gap: 8 }}>
                       <span
-                        className="text-xs font-semibold px-2 py-0.5 rounded-full"
                         style={{
-                          backgroundColor: urgency.bg,
-                          color: urgency.color,
+                          font: "700 13.5px/1 var(--font-sans)",
+                          color: "var(--text-primary)",
                         }}
                       >
-                        {urgency.label}
+                        {order.testName}
                       </span>
-                    </div>
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <span className="text-xs text-gray-500 font-medium">
-                        {order.visitNumber}
-                      </span>
-                      <span className="text-xs text-gray-300">·</span>
-                      <span className="text-xs text-gray-500 capitalize">
-                        {order.specimenType}
-                      </span>
-                      <span className="text-xs text-gray-300">·</span>
-                      <span className="text-xs text-gray-500">
-                        {order.orderNumber}
-                      </span>
-                    </div>
-                    {order.chiefComplaint && (
-                      <p className="text-xs text-gray-400 mt-1 truncate italic">
-                        "{order.chiefComplaint}"
-                      </p>
-                    )}
-                  </div>
+                      <MonoTag style={{ height: 18, fontSize: 10 }}>
+                        {order.testCode}
+                      </MonoTag>
+                      <Badge tone={u.tone} style={{ height: 18, fontSize: 10 }}>
+                        {u.label}
+                      </Badge>
+                    </span>
 
-                  {/* Right side */}
-                  <div className="flex flex-col items-end gap-2 flex-shrink-0">
                     <span
-                      className="text-xs font-semibold px-2 py-0.5 rounded-full"
+                      className="flex items-center flex-wrap"
                       style={{
-                        backgroundColor: status.bg,
-                        color: status.color,
+                        gap: 8,
+                        font: "400 12px/1 var(--font-sans)",
+                        color: "var(--text-secondary)",
                       }}
                     >
-                      {status.label}
+                      <span>{order.visitNumber}</span>
+                      <span style={{ color: "var(--text-disabled)" }}>·</span>
+                      <span style={{ textTransform: "capitalize" }}>
+                        {order.specimenType}
+                      </span>
+                      <span style={{ color: "var(--text-disabled)" }}>·</span>
+                      <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>
+                        {order.orderNumber}
+                      </span>
                     </span>
-                    <div className="flex items-center gap-1 text-xs text-gray-400">
-                      <Clock size={11} />
+
+                    {order.chiefComplaint && (
+                      <span
+                        className="truncate"
+                        style={{
+                          font: "400 12px/1.3 var(--font-sans)",
+                          color: "var(--text-muted)",
+                          fontStyle: "italic",
+                        }}
+                      >
+                        “{order.chiefComplaint}”
+                      </span>
+                    )}
+                  </span>
+
+                  <span
+                    className="flex flex-col items-end flex-shrink-0"
+                    style={{ gap: 7 }}
+                  >
+                    <Badge tone={st.tone}>{st.label}</Badge>
+                    <span
+                      className="inline-flex items-center"
+                      style={{
+                        gap: 5,
+                        font: "500 11.5px/1 var(--font-mono)",
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      <Clock className="w-3 h-3" />
                       {safeDistance(order.orderedAt)}
-                    </div>
-                    <ChevronRight
-                      size={16}
-                      className="text-gray-300 group-hover:text-gray-600 transition-colors"
-                    />
-                  </div>
+                    </span>
+                  </span>
+
+                  <ChevronRight
+                    className="w-4 h-4 flex-shrink-0"
+                    style={{ color: "var(--text-disabled)" }}
+                  />
                 </div>
               </button>
             );
           })}
         </div>
       )}
-    </div>
+    </Page>
   );
 }

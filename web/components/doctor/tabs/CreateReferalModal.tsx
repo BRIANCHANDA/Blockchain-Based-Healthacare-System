@@ -10,12 +10,32 @@ import {
   Zap,
   AlertTriangle,
   Send,
-  Loader2,
   ArrowRight,
   AlertCircle,
 } from "lucide-react";
+import {
+  Field,
+  Textarea,
+  Button,
+  Pill as Badge,
+  Banner,
+  Modal,
+  SectionLabel,
+  SkeletonBlock,
+  SearchInput,
+  TONES,
+  type Tone,
+} from "@/components/dashboard/ui";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+/* ==========================================================================
+   External referral.
+
+   Refers a patient to ANOTHER institution. Unlike the internal equivalent
+   this is a cross-institution record anchored on the blockchain, and the
+   patient carries the referral number to the receiving hospital — which is
+   why the success screen makes that number the largest thing on it.
+   ========================================================================== */
+
 interface Institution {
   id: string;
   institutionName: string;
@@ -34,68 +54,64 @@ interface CreateReferralModalProps {
 
 type UrgencyValue = "routine" | "urgent" | "emergency" | "critical";
 
-const URGENCY = [
+const URGENCY: {
+  value: UrgencyValue;
+  label: string;
+  desc: string;
+  tone: Tone;
+  icon: React.ElementType;
+}[] = [
   {
-    value: "routine" as UrgencyValue,
+    value: "routine",
     label: "Routine",
     desc: "Non-urgent, within days",
-    color: "#166534",
-    bg: "#f0fdf4",
-    border: "#bbf7d0",
+    tone: "success",
     icon: Clock,
   },
   {
-    value: "urgent" as UrgencyValue,
+    value: "urgent",
     label: "Urgent",
     desc: "Attention within hours",
-    color: "#d97706",
-    bg: "#fffbeb",
-    border: "#fde68a",
+    tone: "urgent",
     icon: AlertTriangle,
   },
   {
-    value: "emergency" as UrgencyValue,
+    value: "emergency",
     label: "Emergency",
     desc: "Prompt transfer today",
-    color: "#ea580c",
-    bg: "#fff7ed",
-    border: "#fed7aa",
+    tone: "critical",
     icon: AlertTriangle,
   },
   {
-    value: "critical" as UrgencyValue,
+    value: "critical",
     label: "Critical",
     desc: "Immediate, life-threatening",
-    color: "#dc2626",
-    bg: "#fef2f2",
-    border: "#fecaca",
+    tone: "accent",
     icon: Zap,
   },
-] as const;
+];
 
 // ── Step dot ──────────────────────────────────────────────────────────────────
-function StepDot({
-  n,
-  active,
-  done,
-}: {
-  n: number;
-  active: boolean;
-  done: boolean;
-}) {
+function StepDot({ n, active, done }: { n: number; active: boolean; done: boolean }) {
   return (
-    <div
-      className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all"
-      style={
-        done
-          ? { background: "#16a34a", color: "#fff" }
+    <span
+      className="inline-flex items-center justify-center flex-shrink-0"
+      style={{
+        width: 26,
+        height: 26,
+        borderRadius: "50%",
+        background: done
+          ? "var(--brand)"
           : active
-            ? { background: "#1d4ed8", color: "#fff" }
-            : { background: "#f3f4f6", color: "#9ca3af" }
-      }
+            ? "var(--blue-600)"
+            : "var(--surface-sunken)",
+        color: done || active ? "var(--on-brand)" : "var(--text-muted)",
+        font: "700 11.5px/1 var(--font-sans)",
+        transition: "all var(--dur-base) var(--ease-standard)",
+      }}
     >
-      {done ? <CheckCircle2 className="w-4 h-4" /> : n}
-    </div>
+      {done ? <CheckCircle2 className="w-3.5 h-3.5" /> : n}
+    </span>
   );
 }
 
@@ -180,372 +196,427 @@ export function CreateReferralModal({
   };
 
   const urgencyCfg = URGENCY.find((u) => u.value === urgency)!;
+  const uTone = TONES[urgencyCfg.tone];
+
+  const footer =
+    step === 1 ? (
+      <>
+        <Button full onClick={onClose}>
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
+          full
+          iconRight={ArrowRight}
+          disabled={!selected}
+          onClick={() => selected && setStep(2)}
+          style={{ background: "var(--blue-600)", boxShadow: "none" }}
+        >
+          Next
+        </Button>
+      </>
+    ) : step === 2 ? (
+      <>
+        <Button
+          full
+          onClick={() => {
+            setStep(1);
+            setError(null);
+          }}
+        >
+          Back
+        </Button>
+        <Button
+          variant="primary"
+          full
+          icon={Send}
+          loading={submitting}
+          disabled={
+            reason.trim().length < 10 || clinicalSummary.trim().length < 10
+          }
+          onClick={handleSubmit}
+        >
+          {submitting ? "Sending…" : "Send referral"}
+        </Button>
+      </>
+    ) : (
+      <Button variant="primary" full icon={CheckCircle2} onClick={onClose}>
+        Done
+      </Button>
+    );
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)" }}
+    <Modal
+      title="Create referral"
+      subtitle={`Referring ${patientName} to another institution`}
+      icon={Building2}
+      tone="info"
+      width={620}
+      scroll
+      onClose={onClose}
+      footer={footer}
     >
-      <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col"
-        style={{ fontFamily: "'DM Sans', sans-serif", maxHeight: "90vh" }}
-      >
-        {/* ── Header ────────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 flex-shrink-0">
-          <div>
-            <h2 className="text-base font-bold text-gray-900">
-              Create Referral
-            </h2>
-            <p className="text-xs text-gray-400 mt-0.5">
-              Referring{" "}
-              <span className="font-semibold text-gray-700">{patientName}</span>{" "}
-              to another institution
-            </p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {/* ── Step indicators ───────────────────────────────────────────── */}
-        <div className="flex items-center gap-2 px-6 pt-4 pb-3 flex-shrink-0">
-          {[
-            { n: 1, label: "Institution" },
-            { n: 2, label: "Details" },
-            { n: 3, label: "Done" },
-          ].map(({ n, label }, i, arr) => (
-            <div key={n} className="flex items-center gap-2 flex-1">
-              <div className="flex items-center gap-2">
-                <StepDot n={n} active={step === n} done={step > n} />
-                <span
-                  className="text-xs font-semibold hidden sm:block"
-                  style={{
-                    color:
-                      step === n ? "#1d4ed8" : step > n ? "#16a34a" : "#9ca3af",
-                  }}
-                >
-                  {label}
-                </span>
-              </div>
-              {i < arr.length - 1 && (
-                <div className="flex-1 h-px bg-gray-200 mx-2" />
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* ── Scrollable body ───────────────────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-          {/* Step 1 — Institution picker */}
-          {step === 1 && (
-            <div className="space-y-3">
-              <p className="text-sm font-semibold text-gray-700">
-                Select receiving institution
-              </p>
-
-              <div className="relative">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-                <input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Search by name or code…"
-                  className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 placeholder:text-gray-400 transition-all"
-                />
-              </div>
-
-              <div className="space-y-1.5 max-h-72 overflow-y-auto">
-                {loadingInst ? (
-                  [...Array(4)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="h-14 rounded-xl bg-gray-50 animate-pulse"
-                    />
-                  ))
-                ) : filtered.length === 0 ? (
-                  <div className="py-10 text-center text-sm text-gray-400">
-                    No institutions found
-                  </div>
-                ) : (
-                  filtered.map((inst) => {
-                    const isSel = selected?.id === inst.id;
-                    return (
-                      <button
-                        key={inst.id}
-                        onClick={() => setSelected(inst)}
-                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border text-left transition-all"
-                        style={
-                          isSel
-                            ? { background: "#eff6ff", borderColor: "#2563eb" }
-                            : { background: "#fafafa", borderColor: "#f1f5f9" }
-                        }
-                      >
-                        <div
-                          className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
-                          style={{ background: isSel ? "#dbeafe" : "#f1f5f9" }}
-                        >
-                          <Building2
-                            className="w-4 h-4"
-                            style={{ color: isSel ? "#2563eb" : "#9ca3af" }}
-                          />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-gray-900 truncate">
-                            {inst.institutionName}
-                          </p>
-                          <p className="text-xs text-gray-400">
-                            {inst.institutionCode} · {inst.institutionType}
-                          </p>
-                        </div>
-                        {isSel && (
-                          <CheckCircle2 className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                        )}
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Step 2 — Urgency + details */}
-          {step === 2 && (
-            <div className="space-y-5">
-              {/* Institution recap */}
-              <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-50 border border-blue-100">
-                <Building2 className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-blue-500 uppercase tracking-wide">
-                    Referring to
-                  </p>
-                  <p className="text-sm font-bold text-blue-900 truncate">
-                    {selected?.institutionName}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setStep(1)}
-                  className="text-xs text-blue-500 hover:text-blue-700 font-semibold"
-                >
-                  Change
-                </button>
-              </div>
-
-              {/* Urgency */}
-              <div>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
-                  Urgency *
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  {URGENCY.map(
-                    ({ value, label, desc, color, bg, border, icon: Icon }) => {
-                      const active = urgency === value;
-                      return (
-                        <button
-                          key={value}
-                          onClick={() => setUrgency(value)}
-                          className="flex items-start gap-2.5 px-3 py-3 rounded-xl border text-left transition-all"
-                          style={
-                            active
-                              ? { background: bg, borderColor: color }
-                              : {
-                                  background: "#fafafa",
-                                  borderColor: "#f1f5f9",
-                                }
-                          }
-                        >
-                          <Icon
-                            className="w-4 h-4 flex-shrink-0 mt-0.5"
-                            style={{ color: active ? color : "#9ca3af" }}
-                          />
-                          <div>
-                            <p
-                              className="text-sm font-bold"
-                              style={{ color: active ? color : "#374151" }}
-                            >
-                              {label}
-                            </p>
-                            <p
-                              className="text-[10px] leading-tight mt-0.5"
-                              style={{
-                                color: active ? color : "#9ca3af",
-                                opacity: active ? 0.75 : 1,
-                              }}
-                            >
-                              {desc}
-                            </p>
-                          </div>
-                        </button>
-                      );
-                    },
-                  )}
-                </div>
-              </div>
-
-              {/* Reason */}
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-1.5">
-                  Reason for Referral *
-                </label>
-                <textarea
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  rows={2}
-                  placeholder="Why is this patient being referred? (min. 10 characters)"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 resize-none placeholder:text-gray-400 transition-all"
-                />
-                <p className="text-[10px] text-gray-400 mt-1 text-right">
-                  {reason.length} chars
-                </p>
-              </div>
-
-              {/* Clinical summary */}
-              <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-1.5">
-                  Clinical Summary *
-                </label>
-                <textarea
-                  value={clinicalSummary}
-                  onChange={(e) => setClinicalSummary(e.target.value)}
-                  rows={4}
-                  placeholder="Relevant history, investigations done, current medications, allergies, working diagnosis…"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/10 resize-none placeholder:text-gray-400 transition-all"
-                />
-                <p className="text-[10px] text-gray-400 mt-1 text-right">
-                  {clinicalSummary.length} chars
-                </p>
-              </div>
-
-              {error && (
-                <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-red-50 border border-red-100">
-                  <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                  <p className="text-xs text-red-700">{error}</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Step 3 — Success */}
-          {step === 3 && referralNumber && (
-            <div className="py-6 text-center space-y-5">
-              <div className="w-16 h-16 rounded-2xl bg-green-50 flex items-center justify-center mx-auto">
-                <CheckCircle2 className="w-8 h-8 text-green-600" />
-              </div>
-              <div>
-                <p className="text-base font-bold text-gray-900">
-                  Referral Created
-                </p>
-                <p className="text-sm text-gray-500 mt-1">
-                  {patientName} has been referred to{" "}
-                  <span className="font-semibold text-gray-800">
-                    {selected?.institutionName}
-                  </span>
-                </p>
-              </div>
-
-              {/* Referral number — most important thing on this screen */}
-              <div className="px-6 py-5 rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500 mb-2">
-                  Referral Number
-                </p>
-                <p className="text-2xl font-extrabold text-blue-900 font-mono tracking-wide">
-                  {referralNumber}
-                </p>
-                <p className="text-xs text-blue-600 mt-2">
-                  Tell this number to the patient — they will present it at{" "}
-                  {selected?.institutionName}
-                </p>
-              </div>
-
-              {/* Urgency recap */}
-              <div
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-semibold"
-                style={{
-                  background: urgencyCfg.bg,
-                  color: urgencyCfg.color,
-                  border: `1px solid ${urgencyCfg.border}`,
-                }}
-              >
-                <span
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ background: urgencyCfg.color }}
-                />
-                {urgencyCfg.label} urgency
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ── Footer ────────────────────────────────────────────────────── */}
-        <div className="px-6 py-4 border-t border-gray-100 flex items-center justify-between gap-3 flex-shrink-0">
-          {step === 1 && (
-            <>
-              <button
-                onClick={onClose}
-                className="px-4 py-2.5 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-100 transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={() => selected && setStep(2)}
-                disabled={!selected}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40"
-                style={{
-                  background: "linear-gradient(135deg, #1d4ed8, #1e40af)",
-                }}
-              >
-                Next <ArrowRight className="w-4 h-4" />
-              </button>
-            </>
-          )}
-
-          {step === 2 && (
-            <>
-              <button
-                onClick={() => {
-                  setStep(1);
-                  setError(null);
-                }}
-                className="px-4 py-2.5 rounded-xl text-sm font-semibold text-gray-500 hover:bg-gray-100 transition-all"
-              >
-                Back
-              </button>
-              <button
-                onClick={handleSubmit}
-                disabled={
-                  submitting ||
-                  reason.trim().length < 10 ||
-                  clinicalSummary.trim().length < 10
-                }
-                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40"
-                style={{
-                  background: "linear-gradient(135deg, #16a34a, #15803d)",
-                }}
-              >
-                {submitting ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <Send className="w-4 h-4" />
-                )}
-                {submitting ? "Sending…" : "Send Referral"}
-              </button>
-            </>
-          )}
-
-          {step === 3 && (
-            <button
-              onClick={onClose}
-              className="w-full flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white"
+      {/* ── Step indicators ─────────────────────────────────────────────── */}
+      <div className="flex items-center" style={{ gap: 8 }}>
+        {[
+          { n: 1, label: "Institution" },
+          { n: 2, label: "Details" },
+          { n: 3, label: "Done" },
+        ].map(({ n, label }, i, arr) => (
+          <div key={n} className="flex items-center flex-1" style={{ gap: 8 }}>
+            <StepDot n={n} active={step === n} done={step > n} />
+            <span
+              className="hidden sm:block"
               style={{
-                background: "linear-gradient(135deg, #166534, #15803d)",
+                font: `${step === n ? 700 : 500} 12px/1 var(--font-sans)`,
+                color:
+                  step === n
+                    ? "var(--info-ink)"
+                    : step > n
+                      ? "var(--green-800)"
+                      : "var(--text-muted)",
               }}
             >
-              <CheckCircle2 className="w-4 h-4" /> Done
-            </button>
-          )}
-        </div>
+              {label}
+            </span>
+            {i < arr.length - 1 && (
+              <span
+                className="flex-1"
+                style={{
+                  height: 1,
+                  margin: "0 6px",
+                  background: step > n ? "var(--brand)" : "var(--hc-border)",
+                }}
+              />
+            )}
+          </div>
+        ))}
       </div>
-    </div>
+
+      {/* ── Step 1 — institution picker ──────────────────────────────────── */}
+      {step === 1 && (
+        <>
+          <p
+            style={{
+              margin: 0,
+              font: "600 13px/1 var(--font-sans)",
+              color: "var(--text-secondary)",
+            }}
+          >
+            Select the receiving institution
+          </p>
+
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search by name or code…"
+            icon={Search}
+            clearIcon={X}
+            style={{ height: 40, boxShadow: "none" }}
+          />
+
+          <div
+            className="flex flex-col"
+            style={{ gap: 6, maxHeight: 288, overflowY: "auto" }}
+          >
+            {loadingInst ? (
+              [...Array(4)].map((_, i) => (
+                <SkeletonBlock key={i} height={56} radius="var(--r-sm)" />
+              ))
+            ) : filtered.length === 0 ? (
+              <p
+                style={{
+                  margin: 0,
+                  padding: "40px 0",
+                  textAlign: "center",
+                  font: "400 13px/1 var(--font-sans)",
+                  color: "var(--text-muted)",
+                }}
+              >
+                No institutions found
+              </p>
+            ) : (
+              filtered.map((inst) => {
+                const isSel = selected?.id === inst.id;
+                return (
+                  <button
+                    key={inst.id}
+                    onClick={() => setSelected(inst)}
+                    className="w-full flex items-center text-left"
+                    style={{
+                      gap: 12,
+                      padding: 12,
+                      borderRadius: "var(--r-sm)",
+                      border: `1px solid ${isSel ? "var(--blue-600)" : "var(--border-faint)"}`,
+                      background: isSel ? "var(--info-tint)" : "var(--surface-sunken)",
+                      cursor: "pointer",
+                      transition: "all var(--dur-fast) var(--ease-standard)",
+                    }}
+                  >
+                    <span
+                      className="inline-flex items-center justify-center flex-shrink-0"
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: "var(--r-sm)",
+                        background: isSel ? "var(--blue-100)" : "var(--surface-card)",
+                        color: isSel ? "var(--info-ink)" : "var(--text-muted)",
+                      }}
+                    >
+                      <Building2 className="w-4 h-4" />
+                    </span>
+                    <span className="flex-1 min-w-0 flex flex-col" style={{ gap: 4 }}>
+                      <span
+                        className="truncate"
+                        style={{
+                          font: "600 13.5px/1 var(--font-sans)",
+                          color: "var(--text-primary)",
+                        }}
+                      >
+                        {inst.institutionName}
+                      </span>
+                      <span
+                        className="truncate"
+                        style={{
+                          font: "400 11.5px/1 var(--font-sans)",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        {inst.institutionCode} · {inst.institutionType}
+                      </span>
+                    </span>
+                    {isSel && (
+                      <CheckCircle2
+                        className="w-4 h-4 flex-shrink-0"
+                        style={{ color: "var(--info-ink)" }}
+                      />
+                    )}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ── Step 2 — urgency + details ───────────────────────────────────── */}
+      {step === 2 && (
+        <>
+          <div
+            className="flex items-center"
+            style={{
+              gap: 12,
+              padding: "12px 16px",
+              borderRadius: "var(--r-sm)",
+              background: "var(--info-tint)",
+              border: "1px solid var(--blue-100)",
+            }}
+          >
+            <Building2
+              className="w-4 h-4 flex-shrink-0"
+              style={{ color: "var(--info-ink)" }}
+            />
+            <span className="flex-1 min-w-0 flex flex-col" style={{ gap: 4 }}>
+              <SectionLabel style={{ color: "var(--info-ink)" }}>
+                Referring to
+              </SectionLabel>
+              <span
+                className="truncate"
+                style={{
+                  font: "700 13.5px/1 var(--font-sans)",
+                  color: "var(--info-ink)",
+                }}
+              >
+                {selected?.institutionName}
+              </span>
+            </span>
+            <Button variant="ghost" size="sm" onClick={() => setStep(1)}>
+              Change
+            </Button>
+          </div>
+
+          <Field label="Urgency" required>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+                gap: 8,
+              }}
+            >
+              {URGENCY.map(({ value, label, desc, tone, icon: Icon }) => {
+                const active = urgency === value;
+                const t = TONES[tone];
+                return (
+                  <button
+                    key={value}
+                    onClick={() => setUrgency(value)}
+                    className="flex items-start text-left"
+                    style={{
+                      gap: 10,
+                      padding: 12,
+                      borderRadius: "var(--r-sm)",
+                      border: `1px solid ${active ? t.ink : "var(--border-faint)"}`,
+                      background: active ? t.tint : "var(--surface-sunken)",
+                      cursor: "pointer",
+                      transition: "all var(--dur-fast) var(--ease-standard)",
+                    }}
+                  >
+                    <Icon
+                      className="w-4 h-4 flex-shrink-0"
+                      style={{
+                        marginTop: 2,
+                        color: active ? t.ink : "var(--text-muted)",
+                      }}
+                    />
+                    <span className="flex flex-col" style={{ gap: 4 }}>
+                      <span
+                        style={{
+                          font: "700 13px/1 var(--font-sans)",
+                          color: active ? t.ink : "var(--text-secondary)",
+                        }}
+                      >
+                        {label}
+                      </span>
+                      <span
+                        style={{
+                          font: "400 10.5px/1.3 var(--font-sans)",
+                          color: active ? t.ink : "var(--text-muted)",
+                          opacity: active ? 0.85 : 1,
+                        }}
+                      >
+                        {desc}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+
+          <Field
+            label="Reason for referral"
+            required
+            hint={`${reason.length} characters — 10 minimum`}
+          >
+            <Textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={2}
+              placeholder="Why is this patient being referred?"
+              style={{ minHeight: 68 }}
+            />
+          </Field>
+
+          <Field
+            label="Clinical summary"
+            required
+            hint={`${clinicalSummary.length} characters — 10 minimum`}
+          >
+            <Textarea
+              value={clinicalSummary}
+              onChange={(e) => setClinicalSummary(e.target.value)}
+              rows={4}
+              placeholder="Relevant history, investigations done, current medications, allergies, working diagnosis…"
+              style={{ minHeight: 110 }}
+            />
+          </Field>
+
+          {error && (
+            <Banner tone="critical" icon={AlertCircle}>
+              {error}
+            </Banner>
+          )}
+        </>
+      )}
+
+      {/* ── Step 3 — success ─────────────────────────────────────────────── */}
+      {step === 3 && referralNumber && (
+        <div
+          className="flex flex-col items-center text-center"
+          style={{ padding: "16px 0", gap: 16 }}
+        >
+          <span
+            className="inline-flex items-center justify-center"
+            style={{
+              width: 56,
+              height: 56,
+              borderRadius: "var(--r-md)",
+              background: "var(--brand-tint)",
+              color: "var(--green-700)",
+            }}
+          >
+            <CheckCircle2 className="w-7 h-7" />
+          </span>
+
+          <div className="flex flex-col" style={{ gap: 6 }}>
+            <p
+              style={{
+                margin: 0,
+                font: "700 15px/1.2 var(--font-sans)",
+                color: "var(--text-primary)",
+              }}
+            >
+              Referral created
+            </p>
+            <p
+              style={{
+                margin: 0,
+                font: "400 13px/1.5 var(--font-sans)",
+                color: "var(--text-secondary)",
+              }}
+            >
+              {patientName} has been referred to{" "}
+              <strong style={{ color: "var(--text-primary)" }}>
+                {selected?.institutionName}
+              </strong>
+              .
+            </p>
+          </div>
+
+          {/* The patient carries this number — it is the whole point. */}
+          <div
+            className="w-full"
+            style={{
+              padding: "20px 24px",
+              borderRadius: "var(--r-md)",
+              border: "1.5px dashed var(--blue-600)",
+              background: "var(--info-tint)",
+              display: "flex",
+              flexDirection: "column",
+              gap: 8,
+            }}
+          >
+            <SectionLabel style={{ color: "var(--info-ink)" }}>
+              Referral number
+            </SectionLabel>
+            <p
+              style={{
+                margin: 0,
+                font: "700 22px/1 var(--font-mono)",
+                letterSpacing: "0.02em",
+                color: "var(--info-ink)",
+              }}
+            >
+              {referralNumber}
+            </p>
+            <p
+              style={{
+                margin: 0,
+                font: "400 11.5px/1.4 var(--font-sans)",
+                color: "var(--info-ink)",
+                opacity: 0.8,
+              }}
+            >
+              Give this number to the patient — they present it at{" "}
+              {selected?.institutionName}.
+            </p>
+          </div>
+
+          <Badge tone={urgencyCfg.tone} dot style={{ height: 24 }}>
+            {urgencyCfg.label} urgency
+          </Badge>
+        </div>
+      )}
+    </Modal>
   );
 }

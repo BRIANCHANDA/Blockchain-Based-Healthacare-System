@@ -15,6 +15,29 @@ import {
   History,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
+import {
+  Page,
+  PageHeader,
+  Card,
+  KpiCard,
+  KpiGrid,
+  Pill as Badge,
+  Button,
+  EmptyState,
+  SkeletonRow,
+  SearchInput,
+  SectionLabel,
+  hoverRow,
+} from "@/components/dashboard/ui";
+
+/* ==========================================================================
+   Dispense history.
+
+   Grouped by day rather than paged: a pharmacist looks for "what went out
+   this morning", not "record 41 of 300". The endpoint returns both
+   camelCase and snake_case depending on which query path served it, so
+   normalize() reads every field both ways before anything else touches it.
+   ========================================================================== */
 
 function normalize(p: any) {
   return {
@@ -27,19 +50,6 @@ function normalize(p: any) {
     dispensedBy: p.dispensedBy ?? p.dispensed_by_name ?? null,
     status: p.status ?? "dispensed",
   };
-}
-
-function SkeletonRow() {
-  return (
-    <div className="flex items-center gap-4 px-5 py-4 animate-pulse border-b border-gray-50">
-      <div className="w-10 h-10 rounded-xl bg-gray-100 flex-shrink-0" />
-      <div className="flex-1 space-y-2">
-        <div className="h-3.5 w-40 bg-gray-100 rounded" />
-        <div className="h-3 w-56 bg-gray-100 rounded" />
-      </div>
-      <div className="w-20 h-6 bg-gray-100 rounded-full" />
-    </div>
-  );
 }
 
 export default function PharmacyDispensedPage() {
@@ -85,7 +95,8 @@ export default function PharmacyDispensedPage() {
     );
   });
 
-  // Group by date
+  // Group by day. Insertion order is preserved, and `filtered` is already
+  // sorted newest-first, so the groups come out newest-first too.
   const grouped = filtered.reduce((acc: Record<string, any[]>, p) => {
     const key = p.dispensedAt
       ? format(new Date(p.dispensedAt), "dd MMM yyyy")
@@ -102,187 +113,188 @@ export default function PharmacyDispensedPage() {
   ).length;
 
   return (
-    <div style={{ fontFamily: "'DM Sans',sans-serif" }}>
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1
-            className="text-2xl font-bold text-gray-900"
-            style={{ fontFamily: "'Playfair Display',serif" }}
+    <Page maxWidth={1000}>
+      <PageHeader
+        eyebrow="Pharmacy"
+        title="Dispense history"
+        subtitle={
+          loading ? "Loading…" : `${items.length} dispensed · ${todayCount} today`
+        }
+        actions={
+          <Button
+            icon={RefreshCw}
+            onClick={() => load(true)}
+            disabled={refreshing || loading}
           >
-            Dispense History
-          </h1>
-          <p className="text-sm text-gray-400 mt-0.5">
-            {loading
-              ? "Loading…"
-              : `${items.length} dispensed · ${todayCount} today`}
-          </p>
-        </div>
-        <button
-          onClick={() => load(true)}
-          disabled={refreshing || loading}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-40"
-        >
-          <RefreshCw
-            className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`}
-          />{" "}
-          Refresh
-        </button>
-      </div>
+            Refresh
+          </Button>
+        }
+      />
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-3 mb-5">
-        {[
-          {
-            label: "Total Dispensed",
-            value: items.length,
-            color: "#166534",
-            bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
-            border: "#bbf7d0",
-            icon: Package,
-          },
-          {
-            label: "Dispensed Today",
-            value: todayCount,
-            color: "#1d4ed8",
-            bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
-            border: "#bfdbfe",
-            icon: CheckCircle2,
-          },
-        ].map(({ label, value, color, bg, border, icon: Icon }) => (
-          <div
-            key={label}
-            className="relative rounded-2xl border overflow-hidden p-4"
-            style={{ background: bg, borderColor: border }}
-          >
-            <div
-              className="absolute -right-2 -bottom-2 w-14 h-14 rounded-full opacity-10"
-              style={{ background: color }}
-            />
-            <Icon className="w-4 h-4 mb-2" style={{ color }} />
-            <p
-              className="text-2xl font-extrabold leading-none"
-              style={{ color }}
-            >
-              {loading ? (
-                <span
-                  className="inline-block w-6 h-6 rounded animate-pulse"
-                  style={{ background: `${color}20` }}
-                />
-              ) : (
-                value
-              )}
-            </p>
-            <p
-              className="text-xs font-semibold mt-1"
-              style={{ color, opacity: 0.65 }}
-            >
-              {label}
-            </p>
-          </div>
-        ))}
-      </div>
-
-      {/* Search */}
-      <div className="relative max-w-sm mb-5">
-        <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search patient, prescription, visit…"
-          className="w-full pl-9 pr-8 py-2 rounded-xl border border-gray-200 bg-white text-sm outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/10 transition-all"
+      <KpiGrid min={240}>
+        <KpiCard
+          label="Total dispensed"
+          value={items.length}
+          sub="All time"
+          icon={Package}
+          tone="success"
+          loading={loading}
         />
-        {search && (
-          <button
-            onClick={() => setSearch("")}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        )}
-      </div>
+        <KpiCard
+          label="Dispensed today"
+          value={todayCount}
+          sub={format(new Date(), "EEEE, d MMMM")}
+          icon={CheckCircle2}
+          tone="info"
+          loading={loading}
+        />
+      </KpiGrid>
 
-      {/* List */}
+      <SearchInput
+        value={search}
+        onChange={setSearch}
+        placeholder="Search patient, prescription, visit…"
+        icon={Search}
+        clearIcon={X}
+        style={{ maxWidth: 380 }}
+      />
+
       {loading ? (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <Card>
           {[...Array(6)].map((_, i) => (
             <SkeletonRow key={i} />
           ))}
-        </div>
+        </Card>
       ) : filtered.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm py-16 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center mx-auto mb-4">
-            <History className="w-6 h-6 text-gray-400" />
-          </div>
-          <p className="text-sm font-semibold text-gray-500">
-            {items.length === 0
-              ? "No dispensed prescriptions yet"
-              : "No results match your search"}
-          </p>
-          <p className="text-xs text-gray-400 mt-1">
-            {items.length === 0
-              ? "Dispensed prescriptions will appear here"
-              : "Try a different search term"}
-          </p>
-        </div>
+        <Card>
+          <EmptyState
+            icon={History}
+            title={
+              items.length === 0
+                ? "No dispensed prescriptions yet"
+                : "No results match your search"
+            }
+            message={
+              items.length === 0
+                ? "Dispensed prescriptions will appear here."
+                : "Try a different search term."
+            }
+            tone="neutral"
+            pad={64}
+          />
+        </Card>
       ) : (
-        <div className="space-y-5">
+        <div className="flex flex-col" style={{ gap: 20 }}>
           {Object.entries(grouped).map(([date, group]) => (
             <div key={date}>
-              <div className="flex items-center gap-2 mb-2 px-1">
-                <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                <p className="text-xs font-bold text-gray-400 uppercase tracking-widest">
-                  {date}
-                </p>
-                <span className="text-xs text-gray-300">· {group.length}</span>
+              <div
+                className="flex items-center"
+                style={{ gap: 8, marginBottom: 8, paddingLeft: 4 }}
+              >
+                <Calendar className="w-3.5 h-3.5" style={{ color: "var(--text-muted)" }} />
+                <SectionLabel>{date}</SectionLabel>
+                <span
+                  style={{
+                    font: "500 11.5px/1 var(--font-mono)",
+                    color: "var(--text-disabled)",
+                  }}
+                >
+                  · {group.length}
+                </span>
               </div>
-              <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-                {group.map((p) => (
+
+              <Card>
+                {group.map((p, i) => (
                   <button
                     key={p.id}
-                    onClick={() =>
-                      router.push(`/dashboard/pharmacy/queue/${p.id}`)
-                    }
-                    className="w-full flex items-center gap-4 px-5 py-3.5 hover:bg-gray-50 transition-colors text-left border-b border-gray-50 last:border-0 group"
+                    onClick={() => router.push(`/dashboard/pharmacy/queue/${p.id}`)}
+                    className="w-full flex items-center text-left"
+                    style={{
+                      gap: 14,
+                      padding: "12px 20px",
+                      border: "none",
+                      borderBottom:
+                        i < group.length - 1
+                          ? "1px solid var(--border-faint)"
+                          : "none",
+                      background: "transparent",
+                      cursor: "pointer",
+                      transition: "background var(--dur-fast) var(--ease-standard)",
+                    }}
+                    {...hoverRow}
                   >
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 bg-green-50">
-                      <Package className="w-4.5 h-4.5 text-green-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-semibold text-gray-900">
+                    <span
+                      className="inline-flex items-center justify-center flex-shrink-0"
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: "var(--r-sm)",
+                        background: "var(--brand-tint)",
+                        color: "var(--green-700)",
+                      }}
+                    >
+                      <Package className="w-4 h-4" />
+                    </span>
+
+                    <span className="flex-1 min-w-0 flex flex-col" style={{ gap: 5 }}>
+                      <span className="flex items-center flex-wrap" style={{ gap: 8 }}>
+                        <span
+                          className="truncate"
+                          style={{
+                            font: "600 13.5px/1 var(--font-sans)",
+                            color: "var(--text-primary)",
+                          }}
+                        >
                           {p.patientName}
-                        </p>
-                        <span className="font-mono text-xs text-gray-400">
+                        </span>
+                        <span
+                          style={{
+                            font: "500 11px/1 var(--font-mono)",
+                            color: "var(--text-muted)",
+                          }}
+                        >
                           {p.prescriptionNumber}
                         </span>
-                      </div>
-                      <div className="flex items-center gap-3 mt-0.5">
-                        <span className="text-xs text-gray-400 flex items-center gap-1">
-                          <Pill className="w-3 h-3" /> {p.itemCount} item
-                          {p.itemCount !== 1 ? "s" : ""}
+                      </span>
+
+                      <span
+                        className="flex items-center flex-wrap"
+                        style={{
+                          gap: 12,
+                          font: "400 11.5px/1 var(--font-sans)",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        <span className="inline-flex items-center" style={{ gap: 5 }}>
+                          <Pill className="w-3 h-3" />
+                          {p.itemCount} item{p.itemCount !== 1 ? "s" : ""}
                         </span>
                         {p.dispensedAt && (
-                          <span className="text-xs text-gray-400 flex items-center gap-1">
-                            <Clock className="w-3 h-3" />{" "}
+                          <span className="inline-flex items-center" style={{ gap: 5 }}>
+                            <Clock className="w-3 h-3" />
                             {formatDistanceToNow(new Date(p.dispensedAt), {
                               addSuffix: true,
                             })}
                           </span>
                         )}
-                      </div>
-                    </div>
-                    <span className="flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full bg-green-50 text-green-700 flex-shrink-0">
-                      <CheckCircle2 className="w-3 h-3" /> Dispensed
+                      </span>
                     </span>
-                    <ChevronRight className="w-4 h-4 text-gray-200 group-hover:text-green-600 transition-colors flex-shrink-0" />
+
+                    <Badge tone="success" icon={CheckCircle2}>
+                      Dispensed
+                    </Badge>
+
+                    <ChevronRight
+                      className="w-4 h-4 flex-shrink-0"
+                      style={{ color: "var(--text-disabled)" }}
+                    />
                   </button>
                 ))}
-              </div>
+              </Card>
             </div>
           ))}
         </div>
       )}
-    </div>
+    </Page>
   );
 }

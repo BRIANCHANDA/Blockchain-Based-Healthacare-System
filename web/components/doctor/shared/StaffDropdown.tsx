@@ -1,4 +1,5 @@
 import { Loader2, AlertCircle } from "lucide-react";
+import { Select } from "@/components/dashboard/ui";
 
 interface StaffMember {
   id: string;
@@ -9,6 +10,13 @@ interface StaffMember {
   lastSeenAt: string | null;
 }
 
+/**
+ * Picks a member of staff who is currently online.
+ *
+ * Renders three distinct states rather than an empty dropdown: loading, the
+ * "nobody is online" case (which is actionable information, not an error),
+ * and the populated select.
+ */
 export function StaffDropdown({
   value,
   onChange,
@@ -24,25 +32,48 @@ export function StaffDropdown({
 }) {
   if (loading) {
     return (
-      <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-400">
-        <Loader2 size={13} className="animate-spin" /> Loading staff…
+      <div
+        className="flex items-center"
+        style={{
+          gap: 8,
+          height: 40,
+          padding: "0 12px",
+          borderRadius: "var(--r-sm)",
+          border: "1px solid var(--hc-border)",
+          background: "var(--surface-sunken)",
+          font: "400 13px/1 var(--font-sans)",
+          color: "var(--text-muted)",
+        }}
+      >
+        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+        Loading staff…
       </div>
     );
   }
+
   if (!staff.length) {
     return (
-      <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl border border-amber-200 bg-amber-50 text-sm text-amber-700">
-        <AlertCircle size={13} /> No staff currently online
+      <div
+        className="flex items-center"
+        style={{
+          gap: 8,
+          height: 40,
+          padding: "0 12px",
+          borderRadius: "var(--r-sm)",
+          border: "1px solid var(--amber-100)",
+          background: "var(--amber-050)",
+          font: "500 13px/1 var(--font-sans)",
+          color: "var(--urgent-ink)",
+        }}
+      >
+        <AlertCircle className="w-3.5 h-3.5" />
+        No staff currently online
       </div>
     );
   }
+
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className="w-full px-3.5 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm text-gray-900 outline-none
-        focus:border-green-600 focus:ring-2 focus:ring-green-600/10 focus:bg-white transition-all"
-    >
+    <Select value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">{placeholder}</option>
       {staff.map((s) => (
         <option key={s.id} value={s.id}>
@@ -50,7 +81,7 @@ export function StaffDropdown({
           {s.specialization ? ` — ${s.specialization}` : ""}
         </option>
       ))}
-    </select>
+    </Select>
   );
 }
 

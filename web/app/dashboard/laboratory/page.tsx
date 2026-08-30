@@ -28,33 +28,49 @@ import {
   Tooltip,
 } from "recharts";
 import {
+  Page,
+  PageHeader,
+  Card,
+  CardHeader,
   KpiCard,
-  Panel,
-  PanelHeader,
-  SkeletonRow,
+  KpiGrid,
+  Pill as Badge,
+  Button,
+  LinkAction,
+  Banner,
   EmptyState,
-  PageHeading,
-} from "@/components/dashboard/primitives";
+  SkeletonRow,
+  SkeletonBlock,
+  hoverRow,
+  TONES,
+} from "@/components/dashboard/ui";
+import {
+  getUrgency,
+  URGENCY_ORDER,
+  timeSince,
+  formatTurnaround,
+  normalizeOrder,
+} from "./vocab";
 
-const URGENCY: Record<string, { color: string; bg: string; label: string }> = {
-  critical: { color: "#dc2626", bg: "#fef2f2", label: "Critical" },
-  emergency: { color: "#ea580c", bg: "#fff7ed", label: "Emergency" },
-  urgent: { color: "#d97706", bg: "#fffbeb", label: "Urgent" },
-  routine: { color: "#16a34a", bg: "#f0fdf4", label: "Routine" },
+/* ==========================================================================
+   Laboratory overview.
+
+   Styling follows the HealthChain design system (app/design-tokens.css);
+   layout primitives come from components/dashboard/ui.tsx and the domain
+   vocabulary (urgency / status / specimen labels) from ./vocab.
+
+   Recharts renders SVG presentation attributes, which accept var() the same
+   way CSS does, so chart colours reference the same tokens as the page.
+   ========================================================================== */
+
+const AXIS_TICK = { fontSize: 10, fill: "var(--text-muted)" };
+const TOOLTIP_STYLE = {
+  borderRadius: 10,
+  border: "1px solid var(--hc-border)",
+  boxShadow: "var(--elev-2)",
+  fontFamily: "var(--font-sans)",
+  fontSize: 12,
 };
-const getU = (u: string) => URGENCY[u] ?? URGENCY.routine;
-
-function timeSince(iso: string) {
-  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (mins < 60) return `${mins}m`;
-  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
-}
-
-function formatTA(minutes: number) {
-  if (!minutes) return "—";
-  if (minutes >= 60) return `${(minutes / 60).toFixed(1)}h`;
-  return `${minutes}m`;
-}
 
 export default function LabOverviewPage() {
   const router = useRouter();
@@ -69,6 +85,7 @@ export default function LabOverviewPage() {
     if (!silent) setLoading(true);
     else setRefreshing(true);
     try {
+      // allSettled: one failing stat endpoint must not blank the queue.
       const [a, b, c] = await Promise.allSettled([
         labStatsApi.getOverview(),
         labStatsApi.getMyStats(),
@@ -76,7 +93,10 @@ export default function LabOverviewPage() {
       ]);
       if (a.status === "fulfilled") setStats(a.value.data.data);
       if (b.status === "fulfilled") setMyStats(b.value.data.data);
-      if (c.status === "fulfilled") setPending(c.value.data.data?.orders ?? []);
+      if (c.status === "fulfilled") {
+        const raw = c.value.data.data?.orders ?? [];
+        setPending(raw.map(normalizeOrder));
+      }
     } catch (_) {
     } finally {
       setLoading(false);
@@ -93,14 +113,8 @@ export default function LabOverviewPage() {
   const resultedToday = stats?.resultedToday ?? 0;
   const abnormalToday = stats?.abnormalToday ?? 0;
 
-  const urgencyOrder: Record<string, number> = {
-    critical: 0,
-    emergency: 1,
-    urgent: 2,
-    routine: 3,
-  };
   const sortedPending = [...pending].sort(
-    (a, b) => (urgencyOrder[a.urgency] ?? 9) - (urgencyOrder[b.urgency] ?? 9),
+    (a, b) => (URGENCY_ORDER[a.urgency] ?? 9) - (URGENCY_ORDER[b.urgency] ?? 9),
   );
 
   /*
@@ -115,401 +129,587 @@ export default function LabOverviewPage() {
   }));
 
   return (
-    <div className="w-full max-w-[1280px] mx-auto pb-8">
-      <PageHeading
+    <Page>
+      <PageHeader
         eyebrow="Laboratory"
         title={(user as any)?.institutionName || "Laboratory"}
+        subtitle={
+          loading
+            ? "Loading queue…"
+            : `${totalPending} order${totalPending !== 1 ? "s" : ""} awaiting processing`
+        }
         actions={
           <>
-            <button
+            <Button
+              variant="primary"
+              icon={FlaskConical}
               onClick={() => router.push("/dashboard/laboratory/queue")}
-              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white text-[13px] font-semibold shadow-sm transition-colors"
             >
-              <FlaskConical className="w-3.5 h-3.5" />
-              Open Queue
-            </button>
-
-            <button
+              Open queue
+            </Button>
+            <Button
+              icon={ClipboardList}
               onClick={() => router.push("/dashboard/laboratory/history")}
-              className="hidden sm:inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:border-emerald-200 text-slate-700 text-[13px] font-semibold transition-colors"
             >
-              <ClipboardList className="w-3.5 h-3.5" />
-              My Results
-            </button>
-
-            <button
+              My results
+            </Button>
+            <Button
+              icon={RefreshCw}
               onClick={() => fetchData(true)}
               disabled={refreshing}
-              className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-600 transition-colors disabled:opacity-40"
-            >
-              <RefreshCw
-                className={`w-3.5 h-3.5 ${refreshing ? "animate-spin" : ""}`}
-              />
-            </button>
+              style={{ padding: 0, width: 38 }}
+            />
           </>
         }
       />
 
       {/* Critical orders are the one thing that cannot wait for a scroll. */}
       {!loading && criticalCount > 0 && (
-        <button
+        <Banner
+          tone="critical"
+          icon={AlertTriangle}
           onClick={() => router.push("/dashboard/laboratory/queue")}
-          className="w-full flex items-center gap-3 p-4 rounded-2xl mb-5 bg-red-50 border border-red-200 text-left hover:bg-red-100/60 transition-colors"
+          action={
+            <span
+              className="inline-flex items-center whitespace-nowrap"
+              style={{
+                gap: 4,
+                font: "700 12.5px/1 var(--font-sans)",
+                color: "var(--critical-ink)",
+              }}
+            >
+              Open queue
+              <ChevronRight className="w-3.5 h-3.5" />
+            </span>
+          }
         >
-          <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
-          <p className="text-[13px] font-semibold text-red-800 flex-1">
-            {criticalCount} order{criticalCount > 1 ? "s" : ""} marked critical
-            or urgent need immediate attention
-          </p>
-          <span className="text-[13px] font-bold text-red-700 flex items-center gap-1 whitespace-nowrap">
-            Open queue <ChevronRight className="w-3.5 h-3.5" />
-          </span>
-        </button>
+          {criticalCount} order{criticalCount > 1 ? "s" : ""} marked critical or
+          urgent need immediate attention.
+        </Banner>
       )}
 
-      {/* KPIs */}
-      <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
+      <KpiGrid>
         <KpiCard
-          label="Pending Orders"
-          value={loading ? undefined : totalPending}
-          description="Awaiting processing"
+          label="Pending orders"
+          value={totalPending}
+          sub="Awaiting processing"
           icon={FlaskConical}
-          iconClass="bg-amber-50 text-amber-600"
-          href="/dashboard/laboratory/queue"
+          tone="urgent"
+          loading={loading}
+          onClick={() => router.push("/dashboard/laboratory/queue")}
         />
         <KpiCard
-          label="Critical / Urgent"
-          value={loading ? undefined : criticalCount}
-          description="Need attention now"
+          label="Critical / urgent"
+          value={criticalCount}
+          sub="Need attention now"
           icon={AlertTriangle}
-          iconClass="bg-red-50 text-red-600"
-          href="/dashboard/laboratory/queue"
+          tone="critical"
+          loading={loading}
+          onClick={() => router.push("/dashboard/laboratory/queue")}
         />
         <KpiCard
-          label="Resulted Today"
-          value={loading ? undefined : resultedToday}
-          description="Released to clinicians"
+          label="Resulted today"
+          value={resultedToday}
+          sub="Released to clinicians"
           icon={CheckCircle2}
-          iconClass="bg-emerald-50 text-emerald-600"
-          href="/dashboard/laboratory/history"
+          tone="success"
+          loading={loading}
         />
         <KpiCard
-          label="Abnormal Today"
-          value={loading ? undefined : abnormalToday}
-          description="Flagged out of range"
+          label="Abnormal today"
+          value={abnormalToday}
+          sub="Flagged out of range"
           icon={TrendingUp}
-          iconClass="bg-violet-50 text-violet-600"
+          tone="accent"
+          loading={loading}
         />
-      </section>
+      </KpiGrid>
 
       {/* Activity + urgency mix */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
-        <Panel className="lg:col-span-2">
-          <PanelHeader
-            title="7-Day Activity"
-            icon={Activity}
-            meta={
-              <div className="hidden sm:flex items-center gap-3">
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-amber-400" />
-                  <span className="text-[11px] text-slate-500">Ordered</span>
-                </span>
-                <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-600" />
-                  <span className="text-[11px] text-slate-500">Resulted</span>
-                </span>
-              </div>
-            }
-          />
-          <div className="px-2 py-4" style={{ height: 224 }}>
-            {loading ? (
-              <div className="h-full mx-3 rounded-xl bg-slate-50 animate-pulse" />
-            ) : weekly.length ? (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={weekly}
-                  margin={{ top: 4, right: 12, left: -22, bottom: 0 }}
-                >
-                  <defs>
-                    <linearGradient id="labOrdered" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#d97706" stopOpacity={0.24} />
-                      <stop offset="100%" stopColor="#d97706" stopOpacity={0} />
-                    </linearGradient>
-                    <linearGradient id="labResulted" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#166534" stopOpacity={0.3} />
-                      <stop offset="100%" stopColor="#166534" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                    stroke="#f3f4f6"
-                    vertical={false}
-                  />
-                  <XAxis
-                    dataKey="date"
-                    tick={{ fontSize: 10, fill: "#9ca3af" }}
-                    axisLine={false}
-                    tickLine={false}
-                    tickFormatter={(v) => (v ? format(new Date(v), "EEE") : v)}
-                  />
-                  <YAxis
-                    tick={{ fontSize: 10, fill: "#9ca3af" }}
-                    axisLine={false}
-                    tickLine={false}
-                    width={38}
-                    allowDecimals={false}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      borderRadius: 12,
-                      border: "1px solid #eaecf0",
-                      fontSize: 12,
-                    }}
-                    labelFormatter={(v) =>
-                      v ? format(new Date(v), "EEE d MMM") : v
-                    }
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="ordered"
-                    name="Ordered"
-                    stroke="#d97706"
-                    fill="url(#labOrdered)"
-                    strokeWidth={2}
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="resulted"
-                    name="Resulted"
-                    stroke="#166534"
-                    fill="url(#labResulted)"
-                    strokeWidth={2}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="h-full flex items-center justify-center text-[13px] text-slate-400">
-                No activity in the last 7 days
-              </div>
-            )}
-          </div>
-        </Panel>
-
-        <Panel>
-          <PanelHeader title="Queue by Urgency" icon={AlertTriangle} />
-          <div className="p-3 space-y-1">
-            {["critical", "emergency", "urgent", "routine"].map((u) => {
-              const count = stats?.pendingByUrgency?.[u] ?? 0;
-              const cfg = getU(u);
-              const pct = totalPending > 0 ? (count / totalPending) * 100 : 0;
-
-              return (
-                <div key={u} className="px-2 py-2">
-                  <div className="flex items-center gap-2 mb-1.5">
+      <div className="flex flex-wrap" style={{ gap: 16, alignItems: "flex-start" }}>
+        <div style={{ flex: "2 1 460px", minWidth: 0 }}>
+          <Card>
+            <CardHeader
+              icon={Activity}
+              title="7-day activity"
+              right={
+                <div className="hidden sm:flex items-center" style={{ gap: 14 }}>
+                  {[
+                    { label: "Ordered", color: "var(--amber-500)" },
+                    { label: "Resulted", color: "var(--green-700)" },
+                  ].map(({ label, color }) => (
                     <span
-                      className="w-2 h-2 rounded-full flex-shrink-0"
-                      style={{ background: cfg.color }}
-                    />
-                    <p className="text-[12.5px] text-slate-600 flex-1">
-                      {cfg.label}
-                    </p>
-                    <p className="text-[13px] font-bold text-slate-800">
-                      {loading ? "—" : count}
-                    </p>
-                  </div>
-
-                  <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                    <div
-                      className="h-full rounded-full transition-all"
-                      style={{ width: `${pct}%`, background: cfg.color }}
-                    />
-                  </div>
+                      key={label}
+                      className="inline-flex items-center"
+                      style={{ gap: 6 }}
+                    >
+                      <span
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          background: color,
+                        }}
+                      />
+                      <span
+                        style={{
+                          font: "500 11.5px/1 var(--font-sans)",
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        {label}
+                      </span>
+                    </span>
+                  ))}
                 </div>
-              );
-            })}
-          </div>
-        </Panel>
-      </section>
+              }
+            />
+            <div style={{ padding: "16px 8px", height: 224 }}>
+              {loading ? (
+                <div style={{ margin: "0 12px" }}>
+                  <SkeletonBlock height={192} />
+                </div>
+              ) : weekly.length ? (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart
+                    data={weekly}
+                    margin={{ top: 4, right: 12, left: -22, bottom: 0 }}
+                  >
+                    <defs>
+                      <linearGradient id="labOrdered" x1="0" y1="0" x2="0" y2="1">
+                        <stop
+                          offset="0%"
+                          stopColor="var(--amber-500)"
+                          stopOpacity={0.24}
+                        />
+                        <stop
+                          offset="100%"
+                          stopColor="var(--amber-500)"
+                          stopOpacity={0}
+                        />
+                      </linearGradient>
+                      <linearGradient id="labResulted" x1="0" y1="0" x2="0" y2="1">
+                        <stop
+                          offset="0%"
+                          stopColor="var(--green-700)"
+                          stopOpacity={0.3}
+                        />
+                        <stop
+                          offset="100%"
+                          stopColor="var(--green-700)"
+                          stopOpacity={0}
+                        />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      stroke="var(--border-100)"
+                      vertical={false}
+                    />
+                    <XAxis
+                      dataKey="date"
+                      tick={AXIS_TICK}
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v) => (v ? format(new Date(v), "EEE") : v)}
+                    />
+                    <YAxis
+                      tick={AXIS_TICK}
+                      axisLine={false}
+                      tickLine={false}
+                      width={38}
+                      allowDecimals={false}
+                    />
+                    <Tooltip
+                      contentStyle={TOOLTIP_STYLE}
+                      labelFormatter={(v) => (v ? format(new Date(v), "EEE d MMM") : v)}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="ordered"
+                      name="Ordered"
+                      stroke="var(--amber-500)"
+                      fill="url(#labOrdered)"
+                      strokeWidth={2}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="resulted"
+                      name="Resulted"
+                      stroke="var(--green-700)"
+                      fill="url(#labResulted)"
+                      strokeWidth={2}
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              ) : (
+                <div
+                  className="h-full flex items-center justify-center"
+                  style={{
+                    font: "400 13px/1 var(--font-sans)",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  No activity in the last 7 days
+                </div>
+              )}
+            </div>
+          </Card>
+        </div>
 
-      {/* Queue + my performance */}
-      <section className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Panel className="lg:col-span-2">
-          <PanelHeader
-            title="Pending Orders"
-            icon={ClipboardList}
-            action={pending.length > 0 ? "View all" : undefined}
-            onAction={
-              pending.length > 0
-                ? () => router.push("/dashboard/laboratory/queue")
-                : undefined
-            }
-          />
-
-          {loading ? (
-            [...Array(5)].map((_, i) => <SkeletonRow key={i} />)
-          ) : sortedPending.length === 0 ? (
-            <EmptyState icon={CheckCircle2} message="The queue is clear." />
-          ) : (
-            <>
-              {sortedPending.slice(0, 8).map((order: any, index: number) => {
-                const u = getU(order.urgency);
-                const isUrgent = ["critical", "emergency"].includes(
-                  order.urgency,
-                );
+        <div style={{ flex: "1 1 280px", minWidth: 260 }}>
+          <Card>
+            <CardHeader icon={AlertTriangle} title="Queue by urgency" />
+            <div style={{ padding: 14 }}>
+              {["critical", "emergency", "urgent", "routine"].map((u) => {
+                const count = stats?.pendingByUrgency?.[u] ?? 0;
+                const cfg = getUrgency(u);
+                const dot = TONES[cfg.tone].dot;
+                // Share of the whole pending queue, not of the largest bar.
+                const pct = totalPending > 0 ? (count / totalPending) * 100 : 0;
 
                 return (
-                  <button
-                    key={order.id}
-                    onClick={() =>
-                      router.push(`/dashboard/laboratory/queue/${order.id}`)
-                    }
-                    className={`w-full flex items-center gap-3 px-5 py-3.5 text-left hover:bg-slate-50 transition-colors group ${
-                      index < Math.min(sortedPending.length, 8) - 1
-                        ? "border-b border-slate-50"
-                        : ""
-                    }`}
-                  >
+                  <div key={u} style={{ padding: "8px 4px" }}>
                     <div
-                      className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                      style={{ background: u.bg }}
+                      className="flex items-center"
+                      style={{ gap: 8, marginBottom: 6 }}
                     >
-                      <FlaskConical
-                        className="w-4 h-4"
-                        style={{ color: u.color }}
+                      <span
+                        className="flex-shrink-0"
+                        style={{
+                          width: 8,
+                          height: 8,
+                          borderRadius: "50%",
+                          background: dot,
+                        }}
+                      />
+                      <span
+                        className="flex-1 truncate"
+                        style={{
+                          font: "500 12.5px/1 var(--font-sans)",
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        {cfg.label}
+                      </span>
+                      <span
+                        style={{
+                          font: "700 13px/1 var(--font-sans)",
+                          color: "var(--text-primary)",
+                        }}
+                      >
+                        {loading ? "—" : count}
+                      </span>
+                    </div>
+
+                    <div
+                      style={{
+                        height: 5,
+                        borderRadius: "var(--r-pill)",
+                        background: "var(--surface-sunken)",
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          height: "100%",
+                          width: `${pct}%`,
+                          borderRadius: "var(--r-pill)",
+                          background: dot,
+                          transition: "width var(--dur-slow) var(--ease-out)",
+                        }}
                       />
                     </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-[13px] font-semibold text-slate-800 truncate">
-                          {order.testName ?? "Test"}
-                        </p>
-                        <span className="text-[11.5px] font-mono text-slate-400">
-                          {order.orderNumber}
-                        </span>
-                      </div>
-
-                      <p className="text-[12.5px] text-slate-400 mt-0.5 truncate">
-                        {order.specimenType ?? "—"}
-                        {order.visit_number ? ` · ${order.visit_number}` : ""}
-                        {order.clinicalNotes ? ` · ${order.clinicalNotes}` : ""}
-                      </p>
-                    </div>
-
-                    <div className="flex flex-col items-end gap-1 flex-shrink-0">
-                      <span
-                        className="px-2 py-0.5 rounded-full text-[11px] font-bold"
-                        style={{ background: u.bg, color: u.color }}
-                      >
-                        {u.label}
-                      </span>
-
-                      <span className="text-[11.5px] text-slate-400 flex items-center gap-1">
-                        <Clock className="w-3 h-3" />
-                        {order.orderedAt ? timeSince(order.orderedAt) : "—"}
-                        {isUrgent && (
-                          <ChevronRight className="w-3 h-3 text-slate-300 group-hover:text-emerald-600" />
-                        )}
-                      </span>
-                    </div>
-                  </button>
+                  </div>
                 );
               })}
+            </div>
+          </Card>
+        </div>
+      </div>
 
-              {sortedPending.length > 8 && (
-                <button
-                  onClick={() => router.push("/dashboard/laboratory/queue")}
-                  className="w-full py-3 text-[12.5px] font-semibold text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-colors flex items-center justify-center gap-1.5 border-t border-slate-50"
-                >
-                  +{sortedPending.length - 8} more
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              )}
-            </>
-          )}
-        </Panel>
+      {/* Worklist + performance */}
+      <div className="flex flex-wrap" style={{ gap: 16, alignItems: "flex-start" }}>
+        <div style={{ flex: "2 1 460px", minWidth: 0 }}>
+          <Card>
+            <CardHeader
+              icon={ClipboardList}
+              title="Pending orders"
+              subtitle="Most urgent first"
+              right={
+                sortedPending.length > 0 ? (
+                  <LinkAction onClick={() => router.push("/dashboard/laboratory/queue")}>
+                    View all
+                  </LinkAction>
+                ) : undefined
+              }
+            />
 
-        <div className="space-y-4">
-          <Panel>
-            <PanelHeader title="My Performance" icon={TrendingUp} />
-            <div className="grid grid-cols-2 divide-x divide-y divide-slate-100">
+            {loading ? (
+              [...Array(5)].map((_, i) => <SkeletonRow key={i} />)
+            ) : sortedPending.length === 0 ? (
+              <EmptyState
+                icon={CheckCircle2}
+                title="The queue is clear"
+                message="New lab orders will appear here."
+              />
+            ) : (
+              <>
+                {sortedPending.slice(0, 8).map((order: any) => {
+                  const u = getUrgency(order.urgency);
+                  const uTone = TONES[u.tone];
+
+                  return (
+                    <button
+                      key={order.id}
+                      onClick={() =>
+                        router.push(`/dashboard/laboratory/queue/${order.id}`)
+                      }
+                      className="w-full flex items-center text-left"
+                      style={{
+                        gap: 12,
+                        padding: "12px 20px",
+                        border: "none",
+                        borderBottom: "1px solid var(--border-faint)",
+                        background: "transparent",
+                        cursor: "pointer",
+                        transition: "background var(--dur-fast) var(--ease-standard)",
+                      }}
+                      {...hoverRow}
+                    >
+                      <span
+                        className="inline-flex items-center justify-center flex-shrink-0"
+                        style={{
+                          width: 34,
+                          height: 34,
+                          borderRadius: "var(--r-sm)",
+                          background: uTone.tint,
+                          color: uTone.ink,
+                        }}
+                      >
+                        <FlaskConical className="w-4 h-4" />
+                      </span>
+
+                      <span className="flex-1 min-w-0 flex flex-col" style={{ gap: 5 }}>
+                        <span className="flex items-center flex-wrap" style={{ gap: 8 }}>
+                          <span
+                            className="truncate"
+                            style={{
+                              font: "600 13.5px/1 var(--font-sans)",
+                              color: "var(--text-primary)",
+                            }}
+                          >
+                            {order.testName || "Test"}
+                          </span>
+                          <span
+                            style={{
+                              font: "500 11px/1 var(--font-mono)",
+                              color: "var(--text-muted)",
+                            }}
+                          >
+                            {order.orderNumber}
+                          </span>
+                        </span>
+
+                        <span
+                          className="truncate"
+                          style={{
+                            font: "400 12.5px/1 var(--font-sans)",
+                            color: "var(--text-muted)",
+                            textTransform: "capitalize",
+                          }}
+                        >
+                          {order.specimenType || "—"}
+                          {order.visitNumber ? ` · ${order.visitNumber}` : ""}
+                          {order.clinicalNotes ? ` · ${order.clinicalNotes}` : ""}
+                        </span>
+                      </span>
+
+                      <span
+                        className="flex flex-col items-end flex-shrink-0"
+                        style={{ gap: 6 }}
+                      >
+                        <Badge tone={u.tone}>{u.label}</Badge>
+                        <span
+                          className="inline-flex items-center"
+                          style={{
+                            gap: 5,
+                            font: "500 11.5px/1 var(--font-mono)",
+                            color: "var(--text-muted)",
+                          }}
+                        >
+                          <Clock className="w-3 h-3" />
+                          {timeSince(order.orderedAt)}
+                        </span>
+                      </span>
+
+                      <ChevronRight
+                        className="w-4 h-4 flex-shrink-0"
+                        style={{ color: "var(--text-disabled)" }}
+                      />
+                    </button>
+                  );
+                })}
+
+                {sortedPending.length > 8 && (
+                  <div className="flex justify-center" style={{ padding: 12 }}>
+                    <LinkAction
+                      onClick={() => router.push("/dashboard/laboratory/queue")}
+                    >
+                      +{sortedPending.length - 8} more
+                    </LinkAction>
+                  </div>
+                )}
+              </>
+            )}
+          </Card>
+        </div>
+
+        <div
+          style={{
+            flex: "1 1 280px",
+            minWidth: 260,
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+          }}
+        >
+          <Card>
+            <CardHeader icon={TrendingUp} title="My performance" />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
               {[
-                {
-                  label: "This month",
-                  value: myStats?.monthResults ?? 0,
-                  cls: "text-emerald-700",
-                },
-                {
-                  label: "Today",
-                  value: myStats?.todayResults ?? 0,
-                  cls: "text-blue-700",
-                },
+                { label: "This month", value: myStats?.monthResults ?? 0, ink: "var(--green-700)" },
+                { label: "Today", value: myStats?.todayResults ?? 0, ink: "var(--info-ink)" },
                 {
                   label: "Avg turnaround",
-                  value: formatTA(myStats?.avgTurnaroundMinutes ?? 0),
-                  cls: "text-violet-700",
+                  value: formatTurnaround(myStats?.avgTurnaroundMinutes ?? 0),
+                  ink: "var(--accent-ink)",
                 },
                 {
-                  label: "Abnormal flagged",
+                  label: "Abnormal this month",
                   value: myStats?.abnormalThisMonth ?? 0,
-                  cls: "text-red-700",
+                  ink: "var(--urgent-ink)",
                 },
-              ].map(({ label, value, cls }) => (
-                <div key={label} className="p-4">
-                  <p className={`text-[20px] font-bold leading-none ${cls}`}>
+              ].map(({ label, value, ink }, i) => (
+                <div
+                  key={label}
+                  style={{
+                    padding: 16,
+                    // Interior hairlines only — the card supplies the outer edge.
+                    borderRight: i % 2 === 0 ? "1px solid var(--border-faint)" : "none",
+                    borderTop: i > 1 ? "1px solid var(--border-faint)" : "none",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 7,
+                  }}
+                >
+                  <span
+                    className="truncate"
+                    style={{
+                      font: "700 19px/1 var(--font-sans)",
+                      letterSpacing: "var(--ls-tight)",
+                      color: ink,
+                    }}
+                  >
                     {loading ? "—" : value}
-                  </p>
-                  <p className="text-[11.5px] text-slate-400 mt-1.5">{label}</p>
+                  </span>
+                  <span
+                    style={{
+                      font: "400 11.5px/1 var(--font-sans)",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    {label}
+                  </span>
                 </div>
               ))}
             </div>
-          </Panel>
+          </Card>
 
-          <Panel>
-            <PanelHeader title="Quick Actions" icon={ArrowRight} />
-            <div className="p-3 space-y-2">
+          <Card>
+            <CardHeader icon={ArrowRight} title="Quick actions" />
+            <div style={{ padding: 8, display: "flex", flexDirection: "column", gap: 2 }}>
               {[
                 {
-                  label: "Lab Queue",
+                  label: "Sample queue",
+                  sub: "Orders awaiting processing",
                   href: "/dashboard/laboratory/queue",
                   icon: FlaskConical,
-                  cls: "bg-amber-50 text-amber-600",
+                  tint: "var(--urgent-tint)",
+                  ink: "var(--urgent-ink)",
                 },
                 {
-                  label: "My Results",
+                  label: "Result history",
+                  sub: "What you have released",
                   href: "/dashboard/laboratory/history",
                   icon: History,
-                  cls: "bg-blue-50 text-blue-600",
+                  tint: "var(--info-tint)",
+                  ink: "var(--info-ink)",
                 },
                 {
                   label: "Patients",
+                  sub: "Search lab history",
                   href: "/dashboard/laboratory/patients",
                   icon: Users,
-                  cls: "bg-emerald-50 text-emerald-600",
+                  tint: "var(--brand-tint)",
+                  ink: "var(--green-700)",
                 },
-              ].map(({ label, href, icon: Icon, cls }) => (
+              ].map(({ label, sub, href, icon: Icon, tint, ink }) => (
                 <button
                   key={href}
                   onClick={() => router.push(href)}
-                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl border border-slate-200 text-left hover:border-emerald-200 hover:shadow-sm transition-all group"
+                  className="flex items-center text-left"
+                  style={{
+                    gap: 12,
+                    padding: 10,
+                    border: "none",
+                    borderRadius: "var(--r-sm)",
+                    background: "transparent",
+                    cursor: "pointer",
+                    transition: "background var(--dur-fast) var(--ease-standard)",
+                  }}
+                  {...hoverRow}
                 >
-                  <div
-                    className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${cls}`}
+                  <span
+                    className="inline-flex items-center justify-center flex-shrink-0"
+                    style={{
+                      width: 32,
+                      height: 32,
+                      borderRadius: "var(--r-xs)",
+                      background: tint,
+                      color: ink,
+                    }}
                   >
                     <Icon className="w-4 h-4" />
-                  </div>
-
-                  <p className="flex-1 text-[13px] font-semibold text-slate-800">
-                    {label}
-                  </p>
-
-                  <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-emerald-600 transition-colors" />
+                  </span>
+                  <span className="flex-1 flex flex-col" style={{ gap: 3 }}>
+                    <span
+                      style={{
+                        font: "600 13.5px/1 var(--font-sans)",
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      {label}
+                    </span>
+                    <span
+                      style={{
+                        font: "400 11.5px/1 var(--font-sans)",
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      {sub}
+                    </span>
+                  </span>
+                  <ChevronRight
+                    className="w-4 h-4 flex-shrink-0"
+                    style={{ color: "var(--text-disabled)" }}
+                  />
                 </button>
               ))}
             </div>
-          </Panel>
+          </Card>
         </div>
-      </section>
-    </div>
+      </div>
+    </Page>
   );
 }

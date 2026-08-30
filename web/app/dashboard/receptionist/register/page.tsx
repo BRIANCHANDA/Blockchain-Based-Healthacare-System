@@ -7,10 +7,42 @@ import { patientApi } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
 import { PhoneInput } from "@/components/ui/PhoneInput";
 import {
-  CheckCircle, AlertCircle, User, Baby, Shield,
-  Search, X, Loader2, Phone,
+  CheckCircle,
+  AlertCircle,
+  User,
+  Baby,
+  Shield,
+  Search,
+  X,
+  Loader2,
+  Phone,
+  UserPlus,
 } from "lucide-react";
+import {
+  Page,
+  PageHeader,
+  Card,
+  CardHeader,
+  Field,
+  Input,
+  Select,
+  Button,
+  Banner,
+  Pill,
+  SectionLabel,
+  hoverRow,
+} from "@/components/dashboard/ui";
 
+/* ==========================================================================
+   Patient registration.
+
+   Two registration paths share one form: adults are identified by NRC,
+   minors by a guardian who must already exist as an adult patient. The
+   `isMinor` toggle switches which block of fields is required, and the zod
+   refinements below enforce that — the UI never relies on the toggle alone.
+   ========================================================================== */
+
+/** Renders a raw NRC as the Zambian 123456/78/9 form while the user types. */
 function formatNRC(raw: string): string {
   const digits = raw.replace(/\D/g, "").slice(0, 9);
   if (digits.length <= 6) return digits;
@@ -23,6 +55,7 @@ function calcAge(dob: string): number {
   const now = new Date();
   let age = now.getFullYear() - d.getFullYear();
   const m = now.getMonth() - d.getMonth();
+  // Birthday not yet reached this year.
   if (m < 0 || (m === 0 && now.getDate() < d.getDate())) age--;
   return age;
 }
@@ -35,40 +68,63 @@ const RELATIONSHIPS = [
   { value: "other", label: "Other" },
 ] as const;
 
-type Relationship = typeof RELATIONSHIPS[number]["value"];
-
 // ── Schema ────────────────────────────────────────────────────────────────────
-const schema = z.object({
-  isMinor: z.boolean().default(false),
-  firstName: z.string().min(2, "Required"),
-  lastName: z.string().min(2, "Required"),
-  middleName: z.string().optional(),
-  dateOfBirth: z.string().min(1, "Required"),
-  gender: z.enum(["male", "female", "other"]),
-  bloodType: z.enum(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "unknown"]).optional(),
-  phoneNumber: z.string().regex(/^\+\d{10,13}$/, "Enter a valid phone number (e.g. +260977123456)"),
-  email: z.string().email({ message: "Invalid email" }).optional().or(z.literal("")),
-  address: z.string().min(5, "Full address required"),
-  nationalId: z.string().optional(),
-  emergencyContact: z.string().min(5, "Required"),
-  maritalStatus: z.enum(["single", "married", "divorced", "widowed"]).optional(),
-  occupation: z.string().optional(),
-  // Minor guardian fields
-  guardianPatientId: z.string().uuid().optional(),
-  guardianRelationship: z.enum(["mother", "father", "legal_guardian", "grandparent", "other"]).optional(),
-  guardianDocumentReference: z.string().optional(),
-}).superRefine((d, ctx) => {
-  if (!d.isMinor && !d.nationalId?.trim())
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "National ID is required for adult patients", path: ["nationalId"] });
-  if (d.isMinor && d.dateOfBirth) {
-    const age = calcAge(d.dateOfBirth);
-    if (age >= 16) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Patient is ${age} years old — minor registration requires age under 16`, path: ["dateOfBirth"] });
-  }
-  if (d.isMinor && !d.guardianPatientId)
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Select an existing adult patient as guardian", path: ["guardianPatientId"] });
-  if (d.isMinor && !d.guardianRelationship)
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Relationship is required", path: ["guardianRelationship"] });
-});
+const schema = z
+  .object({
+    isMinor: z.boolean(),
+    firstName: z.string().min(2, "Required"),
+    lastName: z.string().min(2, "Required"),
+    middleName: z.string().optional(),
+    dateOfBirth: z.string().min(1, "Required"),
+    gender: z.enum(["male", "female", "other"]),
+    bloodType: z
+      .enum(["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-", "unknown"])
+      .optional(),
+    phoneNumber: z
+      .string()
+      .regex(/^\+\d{10,13}$/, "Enter a valid phone number (e.g. +260977123456)"),
+    email: z.string().email({ message: "Invalid email" }).optional().or(z.literal("")),
+    address: z.string().min(5, "Full address required"),
+    nationalId: z.string().optional(),
+    emergencyContact: z.string().min(5, "Required"),
+    maritalStatus: z.enum(["single", "married", "divorced", "widowed"]).optional(),
+    occupation: z.string().optional(),
+    // Minor guardian fields
+    guardianPatientId: z.string().uuid().optional(),
+    guardianRelationship: z
+      .enum(["mother", "father", "legal_guardian", "grandparent", "other"])
+      .optional(),
+    guardianDocumentReference: z.string().optional(),
+  })
+  .superRefine((d, ctx) => {
+    if (!d.isMinor && !d.nationalId?.trim())
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "National ID is required for adult patients",
+        path: ["nationalId"],
+      });
+    if (d.isMinor && d.dateOfBirth) {
+      const age = calcAge(d.dateOfBirth);
+      if (age >= 16)
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Patient is ${age} years old — minor registration requires age under 16`,
+          path: ["dateOfBirth"],
+        });
+    }
+    if (d.isMinor && !d.guardianPatientId)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Select an existing adult patient as guardian",
+        path: ["guardianPatientId"],
+      });
+    if (d.isMinor && !d.guardianRelationship)
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Relationship is required",
+        path: ["guardianRelationship"],
+      });
+  });
 
 type FormData = z.infer<typeof schema>;
 
@@ -81,21 +137,50 @@ type GuardianCandidate = {
   gender: string;
 };
 
+/* Two-column field row that collapses to one column on narrow screens. */
+function Row({ children }: { children: React.ReactNode }) {
+  return (
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+        gap: 16,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function RegisterPatientPage() {
   const user = useAuthStore((s) => s.user);
   const institutionId = user?.institutionId;
 
-  const [submitted, setSubmitted] = useState<null | { patientId: string; isMinor: boolean; temporaryPatientId?: string | null; name: string }>(null);
+  const [submitted, setSubmitted] = useState<null | {
+    patientId: string;
+    isMinor: boolean;
+    temporaryPatientId?: string | null;
+    name: string;
+  }>(null);
   const [serverError, setServerError] = useState("");
 
   // Guardian search state
   const [guardianQuery, setGuardianQuery] = useState("");
   const [guardianResults, setGuardianResults] = useState<GuardianCandidate[]>([]);
   const [guardianSearching, setGuardianSearching] = useState(false);
-  const [selectedGuardian, setSelectedGuardian] = useState<GuardianCandidate | null>(null);
+  const [selectedGuardian, setSelectedGuardian] = useState<GuardianCandidate | null>(
+    null,
+  );
 
-  const { register, handleSubmit, watch, setValue, control, formState: { errors, isSubmitting } } = useForm<FormData>({
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    control,
+    formState: { errors, isSubmitting },
+  } = useForm<FormData>({
     resolver: zodResolver(schema),
     defaultValues: { isMinor: false, bloodType: "unknown", gender: "male" },
   });
@@ -104,21 +189,33 @@ export default function RegisterPatientPage() {
 
   // ── Guardian search ──────────────────────────────────────────────────────
   const searchGuardians = useCallback(async (q: string) => {
-    if (q.trim().length < 2) { setGuardianResults([]); return; }
+    if (q.trim().length < 2) {
+      setGuardianResults([]);
+      return;
+    }
     setGuardianSearching(true);
     try {
       const res = await patientApi.search(q, true);
       const all: any[] = (res.data as any)?.data?.patients ?? [];
-      // Only show adult non-minor patients
-      setGuardianResults(all.filter((p: any) => !p.isMinor).slice(0, 8).map((p: any) => ({
-        id: p.id,
-        firstName: p.firstName,
-        lastName: p.lastName,
-        nationalId: p.nationalId ?? null,
-        dateOfBirth: p.dateOfBirth,
-        gender: p.gender,
-      })));
-    } catch { /* ignore */ } finally { setGuardianSearching(false); }
+      // A minor cannot stand as guardian, so filter them out before display.
+      setGuardianResults(
+        all
+          .filter((p: any) => !p.isMinor)
+          .slice(0, 8)
+          .map((p: any) => ({
+            id: p.id,
+            firstName: p.firstName,
+            lastName: p.lastName,
+            nationalId: p.nationalId ?? null,
+            dateOfBirth: p.dateOfBirth,
+            gender: p.gender,
+          })),
+      );
+    } catch {
+      /* ignore */
+    } finally {
+      setGuardianSearching(false);
+    }
   }, []);
 
   const selectGuardian = (g: GuardianCandidate) => {
@@ -140,9 +237,11 @@ export default function RegisterPatientPage() {
     setServerError("");
     try {
       const payload: any = {
-        firstName: data.firstName, lastName: data.lastName,
+        firstName: data.firstName,
+        lastName: data.lastName,
         middleName: data.middleName || undefined,
-        dateOfBirth: data.dateOfBirth, gender: data.gender,
+        dateOfBirth: data.dateOfBirth,
+        gender: data.gender,
         bloodType: data.bloodType || "unknown",
         phoneNumber: data.phoneNumber,
         email: data.email || undefined,
@@ -154,6 +253,7 @@ export default function RegisterPatientPage() {
         institutionId: institutionId || undefined,
       };
 
+      // The two paths are mutually exclusive — send only the relevant fields.
       if (data.isMinor) {
         payload.guardianPatientId = data.guardianPatientId;
         payload.guardianRelationship = data.guardianRelationship;
@@ -171,277 +271,571 @@ export default function RegisterPatientPage() {
         name: `${data.firstName} ${data.lastName}`,
       });
     } catch (e: any) {
-      setServerError(e?.response?.data?.error?.message ?? "Registration failed. Please try again.");
+      setServerError(
+        e?.response?.data?.error?.message ?? "Registration failed. Please try again.",
+      );
     }
   };
 
   // ── Success screen ────────────────────────────────────────────────────────
   if (submitted) {
     return (
-      <div className="max-w-lg mx-auto mt-20 text-center space-y-4">
-        <CheckCircle className="mx-auto text-emerald-500" size={56} />
-        <h2 className="text-2xl font-bold text-gray-900">Patient Registered</h2>
-        <p className="text-gray-600">
-          <strong>{submitted.name}</strong> has been successfully registered.
-        </p>
-        {submitted.isMinor && submitted.temporaryPatientId ? (
-          <div className="rounded-xl border-2 border-amber-400 bg-amber-50 p-5 text-left space-y-1">
-            <p className="text-sm font-semibold text-amber-800">Minor Patient — Clinic ID</p>
-            <p className="text-2xl font-mono font-bold text-amber-700">{submitted.temporaryPatientId}</p>
-            <p className="text-xs text-amber-600">
-              This temporary ID is used for login until the patient turns 16 and receives an NRC.
-            </p>
-          </div>
-        ) : (
-          <p className="text-sm text-gray-500">Patient ID: {submitted.patientId}</p>
-        )}
-        <button
-          onClick={() => { setSubmitted(null); setSelectedGuardian(null); setGuardianQuery(""); }}
-          className="mt-4 px-6 py-2.5 bg-emerald-600 text-white rounded-xl font-semibold hover:bg-emerald-700"
-        >
-          Register Another Patient
-        </button>
-      </div>
+      <Page maxWidth={560}>
+        <div style={{ marginTop: 48 }}>
+          <Card pad={32}>
+            <div className="flex flex-col items-center text-center" style={{ gap: 14 }}>
+              <span
+                className="inline-flex items-center justify-center"
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: "var(--r-md)",
+                  background: "var(--brand-tint)",
+                  color: "var(--green-700)",
+                }}
+              >
+                <CheckCircle className="w-7 h-7" />
+              </span>
+
+              <h2
+                style={{
+                  margin: 0,
+                  font: "700 22px/1.2 var(--font-sans)",
+                  letterSpacing: "var(--ls-tight)",
+                  color: "var(--text-primary)",
+                }}
+              >
+                Patient registered
+              </h2>
+
+              <p
+                style={{
+                  margin: 0,
+                  font: "400 14px/1.5 var(--font-sans)",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                <strong style={{ color: "var(--text-primary)" }}>{submitted.name}</strong>{" "}
+                has been added to the register.
+              </p>
+
+              {/*
+               * A minor has no NRC, so the clinic issues a temporary ID that
+               * doubles as their login until they turn 16. It is shown once,
+               * prominently — the receptionist has to hand it over now.
+               */}
+              {submitted.isMinor && submitted.temporaryPatientId ? (
+                <div
+                  className="w-full text-left"
+                  style={{
+                    marginTop: 6,
+                    padding: 18,
+                    borderRadius: "var(--r-md)",
+                    background: "var(--amber-050)",
+                    border: "1px solid var(--amber-100)",
+                    borderLeft: "4px solid var(--amber-500)",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 7,
+                  }}
+                >
+                  <SectionLabel style={{ color: "var(--urgent-ink)" }}>
+                    Minor patient · clinic ID
+                  </SectionLabel>
+                  <p
+                    style={{
+                      margin: 0,
+                      font: "700 24px/1 var(--font-mono)",
+                      letterSpacing: "0.02em",
+                      color: "var(--urgent-ink)",
+                    }}
+                  >
+                    {submitted.temporaryPatientId}
+                  </p>
+                  <p
+                    style={{
+                      margin: 0,
+                      font: "400 12px/1.5 var(--font-sans)",
+                      color: "var(--urgent-ink)",
+                      opacity: 0.85,
+                    }}
+                  >
+                    Used for login until the patient turns 16 and receives an NRC.
+                  </p>
+                </div>
+              ) : (
+                <p
+                  style={{
+                    margin: 0,
+                    font: "500 12.5px/1 var(--font-mono)",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  {submitted.patientId}
+                </p>
+              )}
+
+              <Button
+                variant="primary"
+                icon={UserPlus}
+                style={{ marginTop: 8 }}
+                onClick={() => {
+                  setSubmitted(null);
+                  setSelectedGuardian(null);
+                  setGuardianQuery("");
+                }}
+              >
+                Register another patient
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </Page>
     );
   }
 
   // ── Form ──────────────────────────────────────────────────────────────────
-  const inp = "w-full rounded-xl border border-gray-200 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500";
-  const lbl = "block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1";
-  const err = (msg?: string) => msg ? <p className="mt-1 text-xs text-red-500">{msg}</p> : null;
+  const errMsg = (e?: { message?: string }) => e?.message;
 
   return (
-    <div className="max-w-3xl mx-auto py-8 px-4 space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Register Patient</h1>
-        <p className="text-sm text-gray-500 mt-1">Add a new patient to the system</p>
+    <Page maxWidth={860}>
+      <PageHeader
+        eyebrow="Front desk"
+        title="Register patient"
+        subtitle="Add a new patient to the register. Fields marked with an asterisk are required."
+      />
+
+      {/* ── Adult / Minor path selector ───────────────────────────────────── */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))",
+          gap: 12,
+        }}
+      >
+        {[
+          {
+            minor: false,
+            icon: User,
+            title: "Adult patient",
+            sub: "Identified by NRC",
+            active: "var(--brand)",
+            tint: "var(--brand-tint)",
+            ink: "var(--green-800)",
+          },
+          {
+            minor: true,
+            icon: Baby,
+            title: "Minor patient",
+            sub: "Under 16 · needs a guardian",
+            active: "var(--amber-500)",
+            tint: "var(--amber-050)",
+            ink: "var(--urgent-ink)",
+          },
+        ].map((opt) => {
+          const on = isMinor === opt.minor;
+          return (
+            <button
+              key={opt.title}
+              type="button"
+              onClick={() => {
+                setValue("isMinor", opt.minor);
+                if (!opt.minor) clearGuardian();
+              }}
+              className="flex items-center text-left"
+              style={{
+                gap: 12,
+                padding: "14px 16px",
+                borderRadius: "var(--r-md)",
+                border: `1.5px solid ${on ? opt.active : "var(--hc-border)"}`,
+                background: on ? opt.tint : "var(--surface-card)",
+                boxShadow: on ? "none" : "var(--elev-1)",
+                cursor: "pointer",
+                transition: "all var(--dur-fast) var(--ease-standard)",
+              }}
+            >
+              <span
+                className="inline-flex items-center justify-center flex-shrink-0"
+                style={{
+                  width: 34,
+                  height: 34,
+                  borderRadius: "var(--r-sm)",
+                  background: on ? "var(--surface-card)" : "var(--surface-sunken)",
+                  color: on ? opt.ink : "var(--text-muted)",
+                }}
+              >
+                <opt.icon className="w-[17px] h-[17px]" />
+              </span>
+              <span className="flex flex-col" style={{ gap: 3 }}>
+                <span
+                  style={{
+                    font: "700 14px/1 var(--font-sans)",
+                    color: on ? opt.ink : "var(--text-primary)",
+                  }}
+                >
+                  {opt.title}
+                </span>
+                <span
+                  style={{
+                    font: "400 12px/1 var(--font-sans)",
+                    color: on ? opt.ink : "var(--text-muted)",
+                    opacity: on ? 0.85 : 1,
+                  }}
+                >
+                  {opt.sub}
+                </span>
+              </span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* ── Adult / Minor toggle ── */}
-      <div className="flex gap-3">
-        <button
-          type="button"
-          onClick={() => { setValue("isMinor", false); clearGuardian(); }}
-          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-semibold text-sm transition-all ${
-            !isMinor ? "border-emerald-500 bg-emerald-50 text-emerald-700" : "border-gray-200 text-gray-500 hover:border-gray-300"
-          }`}
-        >
-          <User size={16} /> Adult Patient (has NRC)
-        </button>
-        <button
-          type="button"
-          onClick={() => setValue("isMinor", true)}
-          className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl border-2 font-semibold text-sm transition-all ${
-            isMinor ? "border-amber-500 bg-amber-50 text-amber-700" : "border-gray-200 text-gray-500 hover:border-gray-300"
-          }`}
-        >
-          <Baby size={16} /> Minor Patient (under 16)
-        </button>
-      </div>
-
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
+      <form
+        onSubmit={handleSubmit(onSubmit)}
+        style={{ display: "flex", flexDirection: "column", gap: 16 }}
+      >
         {/* ── Personal details ── */}
-        <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm space-y-4">
-          <h3 className="font-semibold text-gray-700 flex items-center gap-2"><User size={16} /> Personal Details</h3>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={lbl}>First Name *</label>
-              <input className={inp} {...register("firstName")} />
-              {err(errors.firstName?.message)}
-            </div>
-            <div>
-              <label className={lbl}>Last Name *</label>
-              <input className={inp} {...register("lastName")} />
-              {err(errors.lastName?.message)}
-            </div>
+        <Card>
+          <CardHeader icon={User} title="Personal details" />
+          <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+            <Row>
+              <Field label="First name" required error={errMsg(errors.firstName)}>
+                <Input invalid={!!errors.firstName} {...register("firstName")} />
+              </Field>
+              <Field label="Last name" required error={errMsg(errors.lastName)}>
+                <Input invalid={!!errors.lastName} {...register("lastName")} />
+              </Field>
+            </Row>
+
+            <Field label="Middle name">
+              <Input {...register("middleName")} />
+            </Field>
+
+            <Row>
+              <Field label="Date of birth" required error={errMsg(errors.dateOfBirth)}>
+                <Input
+                  type="date"
+                  invalid={!!errors.dateOfBirth}
+                  max={new Date().toISOString().split("T")[0]}
+                  {...register("dateOfBirth")}
+                />
+              </Field>
+              <Field label="Gender" required>
+                <Select {...register("gender")}>
+                  <option value="male">Male</option>
+                  <option value="female">Female</option>
+                  <option value="other">Other</option>
+                </Select>
+              </Field>
+            </Row>
+
+            <Row>
+              <Field label="Blood type">
+                <Select {...register("bloodType")}>
+                  {["unknown", "A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map(
+                    (bt) => (
+                      <option key={bt} value={bt}>
+                        {bt}
+                      </option>
+                    ),
+                  )}
+                </Select>
+              </Field>
+              <Field label="Marital status">
+                <Select {...register("maritalStatus")}>
+                  <option value="">— select —</option>
+                  <option value="single">Single</option>
+                  <option value="married">Married</option>
+                  <option value="divorced">Divorced</option>
+                  <option value="widowed">Widowed</option>
+                </Select>
+              </Field>
+            </Row>
+
+            <Field label="Occupation">
+              <Input {...register("occupation")} />
+            </Field>
           </div>
-          <div>
-            <label className={lbl}>Middle Name</label>
-            <input className={inp} {...register("middleName")} />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={lbl}>Date of Birth *</label>
-              <input type="date" className={inp} {...register("dateOfBirth")} max={new Date().toISOString().split("T")[0]} />
-              {err(errors.dateOfBirth?.message)}
-            </div>
-            <div>
-              <label className={lbl}>Gender *</label>
-              <select className={inp} {...register("gender")}>
-                <option value="male">Male</option>
-                <option value="female">Female</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className={lbl}>Blood Type</label>
-              <select className={inp} {...register("bloodType")}>
-                {["unknown","A+","A-","B+","B-","AB+","AB-","O+","O-"].map(bt => <option key={bt} value={bt}>{bt}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className={lbl}>Marital Status</label>
-              <select className={inp} {...register("maritalStatus")}>
-                <option value="">— select —</option>
-                <option value="single">Single</option>
-                <option value="married">Married</option>
-                <option value="divorced">Divorced</option>
-                <option value="widowed">Widowed</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <label className={lbl}>Occupation</label>
-            <input className={inp} {...register("occupation")} />
-          </div>
-        </div>
+        </Card>
 
         {/* ── NRC (adults only) ── */}
         {!isMinor && (
-          <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm space-y-4">
-            <h3 className="font-semibold text-gray-700 flex items-center gap-2"><Shield size={16} /> National ID</h3>
-            <div>
-              <label className={lbl}>NRC Number *</label>
-              <Controller
-                control={control}
-                name="nationalId"
-                render={({ field }) => (
-                  <input
-                    className={inp}
-                    placeholder="123456/78/1"
-                    value={field.value ?? ""}
-                    onChange={(e) => field.onChange(formatNRC(e.target.value))}
-                  />
-                )}
-              />
-              {err(errors.nationalId?.message)}
+          <Card>
+            <CardHeader icon={Shield} title="National ID" />
+            <div style={{ padding: 20 }}>
+              <Field
+                label="NRC number"
+                required
+                error={errMsg(errors.nationalId)}
+                hint="Formatted automatically as you type."
+              >
+                <Controller
+                  control={control}
+                  name="nationalId"
+                  render={({ field }) => (
+                    <Input
+                      placeholder="123456/78/1"
+                      invalid={!!errors.nationalId}
+                      value={field.value ?? ""}
+                      onChange={(e) => field.onChange(formatNRC(e.target.value))}
+                      style={{ fontFamily: "var(--font-mono)", letterSpacing: "0.02em" }}
+                    />
+                  )}
+                />
+              </Field>
             </div>
-          </div>
+          </Card>
         )}
 
         {/* ── Guardian section (minors only) ── */}
         {isMinor && (
-          <div className="rounded-2xl border-2 border-amber-300 bg-amber-50 p-6 shadow-sm space-y-4">
-            <h3 className="font-semibold text-amber-800 flex items-center gap-2"><Baby size={16} /> Guardian Details</h3>
-            <p className="text-xs text-amber-700">The guardian must already be a registered adult patient in this system.</p>
+          <Card style={{ borderColor: "var(--amber-100)" }}>
+            <CardHeader
+              icon={Baby}
+              title="Guardian details"
+              subtitle="The guardian must already be a registered adult patient"
+              tone="urgent"
+            />
+            <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+              {/* Guardian search */}
+              <Field
+                label="Search guardian by name or NRC"
+                required
+                error={errMsg((errors as any).guardianPatientId)}
+              >
+                <div className="relative">
+                  <Search
+                    className="absolute w-4 h-4"
+                    style={{
+                      left: 12,
+                      top: "50%",
+                      transform: "translateY(-50%)",
+                      color: "var(--text-muted)",
+                    }}
+                  />
+                  <Input
+                    placeholder="Type a name or NRC…"
+                    value={guardianQuery}
+                    invalid={!!(errors as any).guardianPatientId}
+                    onChange={(e) => {
+                      setGuardianQuery(e.target.value);
+                      // Editing the query invalidates any prior selection.
+                      if (selectedGuardian) clearGuardian();
+                      searchGuardians(e.target.value);
+                    }}
+                    style={{ paddingLeft: 36, paddingRight: 36 }}
+                  />
+                  {guardianSearching && (
+                    <Loader2
+                      className="absolute w-4 h-4 animate-spin"
+                      style={{
+                        right: 12,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        color: "var(--text-muted)",
+                      }}
+                    />
+                  )}
+                  {selectedGuardian && !guardianSearching && (
+                    <button
+                      type="button"
+                      onClick={clearGuardian}
+                      className="absolute inline-flex items-center justify-center"
+                      style={{
+                        right: 8,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        width: 24,
+                        height: 24,
+                        border: "none",
+                        borderRadius: "var(--r-xs)",
+                        background: "transparent",
+                        color: "var(--text-muted)",
+                        cursor: "pointer",
+                      }}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </div>
+              </Field>
 
-            {/* Guardian search */}
-            <div>
-              <label className={lbl + " text-amber-700"}>Search Guardian by Name or NRC *</label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-amber-400" size={16} />
-                <input
-                  className="w-full rounded-xl border-2 border-amber-300 bg-white pl-9 pr-10 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-                  placeholder="Type name or NRC…"
-                  value={guardianQuery}
-                  onChange={(e) => {
-                    setGuardianQuery(e.target.value);
-                    if (selectedGuardian) clearGuardian();
-                    searchGuardians(e.target.value);
-                  }}
-                />
-                {guardianSearching && <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-amber-400" size={16} />}
-                {selectedGuardian && !guardianSearching && (
-                  <button type="button" onClick={clearGuardian} className="absolute right-3 top-1/2 -translate-y-1/2">
-                    <X size={16} className="text-amber-500" />
-                  </button>
-                )}
-              </div>
-
-              {/* Search results dropdown */}
+              {/* Search results */}
               {guardianResults.length > 0 && (
-                <div className="mt-1 rounded-xl border border-amber-200 bg-white shadow-lg overflow-hidden">
+                <div
+                  style={{
+                    marginTop: -8,
+                    borderRadius: "var(--r-sm)",
+                    border: "1px solid var(--hc-border)",
+                    boxShadow: "var(--elev-2)",
+                    overflow: "hidden",
+                  }}
+                >
                   {guardianResults.map((g) => (
                     <button
-                      key={g.id} type="button"
+                      key={g.id}
+                      type="button"
                       onClick={() => selectGuardian(g)}
-                      className="w-full text-left px-4 py-3 hover:bg-amber-50 border-b border-amber-100 last:border-0"
+                      className="w-full text-left"
+                      style={{
+                        padding: "11px 14px",
+                        border: "none",
+                        borderBottom: "1px solid var(--border-faint)",
+                        background: "transparent",
+                        cursor: "pointer",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4,
+                      }}
+                      {...hoverRow}
                     >
-                      <p className="font-semibold text-gray-900 text-sm">{g.firstName} {g.lastName}</p>
-                      <p className="text-xs text-gray-500">{g.nationalId ?? "—"} · {g.gender} · Age {g.dateOfBirth ? calcAge(g.dateOfBirth) : "?"}</p>
+                      <span
+                        style={{
+                          font: "600 13.5px/1 var(--font-sans)",
+                          color: "var(--text-primary)",
+                        }}
+                      >
+                        {g.firstName} {g.lastName}
+                      </span>
+                      <span
+                        style={{
+                          font: "400 11.5px/1 var(--font-sans)",
+                          color: "var(--text-muted)",
+                        }}
+                      >
+                        {g.nationalId ?? "No NRC"} · {g.gender} · age{" "}
+                        {g.dateOfBirth ? calcAge(g.dateOfBirth) : "?"}
+                      </span>
                     </button>
                   ))}
                 </div>
               )}
 
-              {/* Selected guardian confirmation card */}
+              {/* Selected guardian confirmation */}
               {selectedGuardian && (
-                <div className="mt-3 rounded-xl border-2 border-emerald-400 bg-emerald-50 p-4 flex items-center justify-between">
-                  <div>
-                    <p className="font-semibold text-emerald-800">{selectedGuardian.firstName} {selectedGuardian.lastName}</p>
-                    <p className="text-xs text-emerald-600">{selectedGuardian.nationalId ?? "No NRC"} · {selectedGuardian.gender} · Age {calcAge(selectedGuardian.dateOfBirth)}</p>
+                <div
+                  className="flex items-center justify-between"
+                  style={{
+                    gap: 12,
+                    padding: "12px 16px",
+                    borderRadius: "var(--r-md)",
+                    background: "var(--brand-tint)",
+                    border: "1px solid var(--green-100)",
+                  }}
+                >
+                  <div className="min-w-0 flex flex-col" style={{ gap: 4 }}>
+                    <span
+                      className="truncate"
+                      style={{
+                        font: "700 13.5px/1 var(--font-sans)",
+                        color: "var(--green-800)",
+                      }}
+                    >
+                      {selectedGuardian.firstName} {selectedGuardian.lastName}
+                    </span>
+                    <span
+                      className="truncate"
+                      style={{
+                        font: "400 11.5px/1 var(--font-sans)",
+                        color: "var(--green-800)",
+                        opacity: 0.85,
+                      }}
+                    >
+                      {selectedGuardian.nationalId ?? "No NRC"} · {selectedGuardian.gender}{" "}
+                      · age {calcAge(selectedGuardian.dateOfBirth)}
+                    </span>
                   </div>
-                  <CheckCircle className="text-emerald-500" size={22} />
+                  <Pill tone="success" icon={CheckCircle}>
+                    Linked
+                  </Pill>
                 </div>
               )}
-              {err((errors as any).guardianPatientId?.message)}
-            </div>
 
-            {/* Relationship */}
-            <div>
-              <label className={lbl + " text-amber-700"}>Relationship to Patient *</label>
-              <select className="w-full rounded-xl border-2 border-amber-300 bg-white px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400" {...register("guardianRelationship")}>
-                <option value="">— select relationship —</option>
-                {RELATIONSHIPS.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
-              </select>
-              {err(errors.guardianRelationship?.message)}
-            </div>
+              <Field
+                label="Relationship to patient"
+                required
+                error={errMsg(errors.guardianRelationship)}
+              >
+                <Select
+                  invalid={!!errors.guardianRelationship}
+                  {...register("guardianRelationship")}
+                >
+                  <option value="">— select relationship —</option>
+                  {RELATIONSHIPS.map((r) => (
+                    <option key={r.value} value={r.value}>
+                      {r.label}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
 
-            {/* Document reference */}
-            <div>
-              <label className={lbl + " text-amber-700"}>Document Reference (optional)</label>
-              <input className="w-full rounded-xl border-2 border-amber-300 bg-white px-4 py-3 text-sm focus:outline-none" placeholder="Birth certificate number, court order, etc." {...register("guardianDocumentReference")} />
+              <Field
+                label="Document reference"
+                hint="Birth certificate number, court order, or similar."
+              >
+                <Input {...register("guardianDocumentReference")} />
+              </Field>
             </div>
-          </div>
+          </Card>
         )}
 
         {/* ── Contact ── */}
-        <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm space-y-4">
-          <h3 className="font-semibold text-gray-700 flex items-center gap-2"><Phone size={16} /> Contact & Address</h3>
-          <div>
-            <label className={lbl}>Phone Number *</label>
-            <Controller
-              control={control}
-              name="phoneNumber"
-              render={({ field }) => (
-                <PhoneInput value={field.value ?? ""} onChange={field.onChange} />
-              )}
-            />
-            {err(errors.phoneNumber?.message)}
+        <Card>
+          <CardHeader icon={Phone} title="Contact & address" />
+          <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+            <Field label="Phone number" required error={errMsg(errors.phoneNumber)}>
+              <Controller
+                control={control}
+                name="phoneNumber"
+                render={({ field }) => (
+                  <PhoneInput value={field.value ?? ""} onChange={field.onChange} />
+                )}
+              />
+            </Field>
+
+            <Field label="Email" error={errMsg(errors.email)}>
+              <Input type="email" invalid={!!errors.email} {...register("email")} />
+            </Field>
+
+            <Field label="Address" required error={errMsg(errors.address)}>
+              <Input
+                placeholder="Street, city, province"
+                invalid={!!errors.address}
+                {...register("address")}
+              />
+            </Field>
+
+            <Field
+              label="Emergency contact"
+              required
+              error={errMsg(errors.emergencyContact)}
+            >
+              <Input
+                placeholder="+260977123456"
+                invalid={!!errors.emergencyContact}
+                {...register("emergencyContact")}
+              />
+            </Field>
           </div>
-          <div>
-            <label className={lbl}>Email</label>
-            <input type="email" className={inp} {...register("email")} />
-            {err(errors.email?.message)}
-          </div>
-          <div>
-            <label className={lbl}>Address *</label>
-            <input className={inp} {...register("address")} placeholder="Street, City, Province" />
-            {err(errors.address?.message)}
-          </div>
-          <div>
-            <label className={lbl}>Emergency Contact *</label>
-            <input className={inp} {...register("emergencyContact")} placeholder="+260977123456" />
-            {err(errors.emergencyContact?.message)}
-          </div>
-        </div>
+        </Card>
 
         {serverError && (
-          <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            <AlertCircle size={16} /> {serverError}
-          </div>
+          <Banner tone="critical" icon={AlertCircle}>
+            {serverError}
+          </Banner>
         )}
 
-        <button
+        <Button
           type="submit"
-          disabled={isSubmitting}
-          className="w-full py-4 rounded-2xl bg-emerald-600 text-white font-bold text-base hover:bg-emerald-700 disabled:opacity-50 flex items-center justify-center gap-2"
+          variant="primary"
+          size="lg"
+          full
+          loading={isSubmitting}
+          icon={UserPlus}
         >
-          {isSubmitting ? <><Loader2 size={18} className="animate-spin" /> Registering…</> : "Register Patient"}
-        </button>
+          {isSubmitting ? "Registering…" : "Register patient"}
+        </Button>
       </form>
-    </div>
+    </Page>
   );
 }

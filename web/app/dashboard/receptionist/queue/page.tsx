@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { api, practitionersApi, visitApi } from "@/lib/api";
 import {
@@ -7,7 +7,6 @@ import {
   Users,
   RefreshCw,
   Activity,
-  ChevronRight,
   UserPlus,
   CheckCircle2,
   Loader2,
@@ -19,7 +18,36 @@ import {
   UserCheck,
   AlertCircle,
 } from "lucide-react";
-import { format, formatDistanceToNow } from "date-fns";
+import { format } from "date-fns";
+import {
+  Page,
+  PageHeader,
+  Card,
+  CardHeader,
+  KpiCard,
+  KpiGrid,
+  Pill,
+  MonoTag,
+  Avatar,
+  Button,
+  LinkAction,
+  SearchInput,
+  SegmentedControl,
+  Banner,
+  EmptyState,
+  SkeletonRow,
+  SectionLabel,
+  hoverRow,
+  type Tone,
+} from "@/components/dashboard/ui";
+
+/* ==========================================================================
+   Today's queue — the full, filterable view behind the overview's short list.
+
+   Data comes from /api/dashboard/receptionist, which (unlike
+   /api/visits/today) returns real lifecycle statuses, so waiting /
+   in-progress / completed are all meaningful here.
+   ========================================================================== */
 
 interface QueueItem {
   id: string;
@@ -44,123 +72,45 @@ interface Nurse {
   lastSeenAt: string | null;
 }
 
-const PRIORITY: Record<
-  string,
-  { color: string; bg: string; border: string; dot: string; label: string }
-> = {
-  urgent: {
-    color: "#b45309",
-    bg: "#fffbeb",
-    border: "#fde68a",
-    dot: "#f59e0b",
-    label: "Urgent",
-  },
-  normal: {
-    color: "#166534",
-    bg: "#f0fdf4",
-    border: "#bbf7d0",
-    dot: "#16a34a",
-    label: "Normal",
-  },
-  elderly: {
-    color: "#92400e",
-    bg: "#fff7ed",
-    border: "#fed7aa",
-    dot: "#f97316",
-    label: "Elderly",
-  },
-  routine: {
-    color: "#166534",
-    bg: "#f0fdf4",
-    border: "#bbf7d0",
-    dot: "#16a34a",
-    label: "Routine",
-  },
-  emergency: {
-    color: "#dc2626",
-    bg: "#fef2f2",
-    border: "#fecaca",
-    dot: "#ef4444",
-    label: "Emergency",
-  },
-  critical: {
-    color: "#7c3aed",
-    bg: "#faf5ff",
-    border: "#e9d5ff",
-    dot: "#a855f7",
-    label: "Critical",
-  },
+/* Priority → tone. Ordering the map by clinical severity keeps the sort
+   comparator below and the visual weight in agreement. */
+const PRIORITY: Record<string, { tone: Tone; label: string }> = {
+  critical: { tone: "accent", label: "Critical" },
+  emergency: { tone: "critical", label: "Emergency" },
+  urgent: { tone: "urgent", label: "Urgent" },
+  elderly: { tone: "urgent", label: "Elderly" },
+  normal: { tone: "success", label: "Normal" },
+  routine: { tone: "success", label: "Routine" },
 };
-const P_FALLBACK = {
-  color: "#374151",
-  bg: "#f9fafb",
-  border: "#e5e7eb",
-  dot: "#9ca3af",
-  label: "—",
-};
-const getP = (p: string) => PRIORITY[p] ?? P_FALLBACK;
-const waitColor = (m: number) =>
-  m > 60 ? "#dc2626" : m > 30 ? "#d97706" : "#6b7280";
+const getP = (p: string) => PRIORITY[p] ?? { tone: "neutral" as Tone, label: p || "—" };
 
-function PulseDot({
-  color,
-  animate = false,
-}: {
-  color: string;
-  animate?: boolean;
-}) {
-  return (
-    <span className="relative flex h-2.5 w-2.5 flex-shrink-0">
-      {animate && (
-        <span
-          className="animate-ping absolute inline-flex h-full w-full rounded-full opacity-40"
-          style={{ background: color }}
-        />
-      )}
-      <span
-        className="relative inline-flex rounded-full h-2.5 w-2.5"
-        style={{ background: color }}
-      />
-    </span>
-  );
-}
+/* Waits only earn colour once they are worth acting on. */
+const waitInk = (m: number) =>
+  m > 60 ? "var(--critical-ink)" : m > 30 ? "var(--urgent-ink)" : "var(--text-secondary)";
 
-function StatusBadge({ status }: { status: string }) {
-  if (status === "in-progress")
-    return (
-      <span
-        className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full"
-        style={{
-          background: "#f0fdf4",
-          color: "#15803d",
-          border: "1px solid #bbf7d0",
-        }}
-      >
-        <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
-        In Progress
-      </span>
-    );
+const waitLabel = (m: number) =>
+  m > 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
+
+function StatusPill({ status }: { status: string }) {
+  if (status === "in-progress") return <Pill tone="success" dot>In care</Pill>;
   if (status === "completed")
     return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full bg-gray-100 text-gray-400">
-        <CheckCircle2 size={11} /> Done
-      </span>
+      <Pill tone="neutral" icon={CheckCircle2}>
+        Done
+      </Pill>
     );
   return (
-    <span
-      className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-full"
-      style={{
-        background: "#fafafa",
-        color: "#6b7280",
-        border: "1px solid #e5e7eb",
-      }}
-    >
-      <Clock size={11} /> Waiting
-    </span>
+    <Pill tone="neutral" icon={Clock}>
+      Waiting
+    </Pill>
   );
 }
 
 type FilterStatus = "all" | "waiting" | "in-progress" | "completed";
+
+/* Shared grid template — the header row and every body row use this one
+   definition, so columns cannot drift apart. */
+const GRID = "44px 36px minmax(190px, 1fr) 96px 108px 96px 150px";
 
 export default function QueuePage() {
   const router = useRouter();
@@ -172,9 +122,7 @@ export default function QueuePage() {
   const [search, setSearch] = useState("");
   const [assigning, setAssigning] = useState<string | null>(null);
   const [onlineNurses, setOnlineNurses] = useState<Nurse[]>([]);
-  const [showNurseDropdown, setShowNurseDropdown] = useState<string | null>(
-    null,
-  );
+  const [showNurseDropdown, setShowNurseDropdown] = useState<string | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   // ── Fetch queue only (used for silent refresh and initial load) ────────────
@@ -185,22 +133,13 @@ export default function QueuePage() {
 
     try {
       const res = await api.get("/api/dashboard/receptionist");
-      console.log("[Queue] dashboard response:", res.data);
-
       // Handle both { data: { queue: [] } } and { queue: [] } shapes
       const q = res.data?.data?.queue ?? res.data?.queue ?? [];
       setQueue(q);
       setLastRefresh(new Date());
     } catch (err: any) {
-      console.error(
-        "[Queue] fetch error:",
-        err.response?.status,
-        err.response?.data,
-      );
       setError(
-        err.response?.data?.error?.message ??
-          err.message ??
-          "Failed to load queue.",
+        err.response?.data?.error?.message ?? err.message ?? "Failed to load queue.",
       );
     } finally {
       setLoading(false);
@@ -213,21 +152,16 @@ export default function QueuePage() {
     try {
       const res = await practitionersApi.getOnlineStaff("nurse");
       setOnlineNurses(res.data?.data?.staff ?? res.data?.staff ?? []);
-    } catch (err) {
-      console.warn("[Queue] Could not fetch online nurses (non-fatal):", err);
-      // Non-fatal — queue still works without nurse list
+    } catch {
+      // Non-fatal — the queue still works without the nurse list.
     }
   }, []);
 
   // ── Initial load: run both independently so neither blocks the other ───────
   useEffect(() => {
-    fetchQueue(false); // shows loading spinner
-    fetchNurses(); // silent, non-blocking
-
-    const interval = setInterval(() => {
-      fetchQueue(true); // silent refresh every 30s
-    }, 30_000);
-
+    fetchQueue(false);
+    fetchNurses();
+    const interval = setInterval(() => fetchQueue(true), 30_000);
     return () => clearInterval(interval);
   }, [fetchQueue, fetchNurses]);
 
@@ -239,8 +173,7 @@ export default function QueuePage() {
       await visitApi.assignNurse(visitId, nurseId);
       await fetchQueue(true);
       setShowNurseDropdown(null);
-    } catch (err) {
-      console.error("Failed to assign nurse", err);
+    } catch {
       alert("Failed to assign nurse. Please try again.");
     } finally {
       setAssigning(null);
@@ -268,476 +201,508 @@ export default function QueuePage() {
     return matchStatus && matchSearch;
   });
 
-  const sorted = [...filtered].sort((a, b) => {
-    const order: Record<string, number> = {
-      critical: 0,
-      emergency: 1,
-      urgent: 2,
-      elderly: 3,
-      normal: 4,
-      routine: 4,
-    };
-    const po = (order[a.priority] ?? 5) - (order[b.priority] ?? 5);
-    return po !== 0 ? po : (b.waitMins ?? 0) - (a.waitMins ?? 0);
-  });
+  const sorted = useMemo(
+    () =>
+      [...filtered].sort((a, b) => {
+        const order: Record<string, number> = {
+          critical: 0,
+          emergency: 1,
+          urgent: 2,
+          elderly: 3,
+          normal: 4,
+          routine: 4,
+        };
+        const po = (order[a.priority] ?? 5) - (order[b.priority] ?? 5);
+        // Within a band, whoever has waited longest goes first.
+        return po !== 0 ? po : (b.waitMins ?? 0) - (a.waitMins ?? 0);
+      }),
+    [filtered],
+  );
 
-  const filterTabs: { key: FilterStatus; label: string; count: number }[] = [
-    { key: "all", label: "All", count: queue.length },
-    { key: "waiting", label: "Waiting", count: counts.waiting },
-    { key: "in-progress", label: "In Progress", count: counts.inProgress },
-    { key: "completed", label: "Completed", count: counts.done },
-  ];
+  const isFiltered = filterStatus !== "all" || !!search;
 
   return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif" }}>
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-6">
-        <div>
-          <h1
-            className="text-2xl font-bold text-gray-900"
-            style={{ fontFamily: "'Playfair Display', serif" }}
-          >
-            Today's Queue
-          </h1>
-          <p className="text-gray-500 text-sm mt-1">
+    <Page>
+      <PageHeader
+        eyebrow="Front desk"
+        title="Today's queue"
+        subtitle={
+          <>
             {format(new Date(), "EEEE, dd MMMM yyyy")} ·{" "}
             {loading
               ? "Loading…"
               : `${queue.length} visit${queue.length !== 1 ? "s" : ""} registered`}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400 mr-1">
             {refreshing
-              ? "Refreshing…"
-              : lastRefresh
-                ? `Updated ${format(lastRefresh, "HH:mm")}`
+              ? " · refreshing…"
+              : lastRefresh && !loading
+                ? ` · updated ${format(lastRefresh, "HH:mm")}`
                 : ""}
-          </span>
-          <button
-            onClick={() => fetchQueue(true)}
-            disabled={refreshing || loading}
-            className="p-2.5 rounded-xl border border-gray-200 text-gray-400 hover:text-gray-700 hover:bg-gray-50 transition-colors disabled:opacity-40"
-          >
-            <RefreshCw size={14} className={refreshing ? "animate-spin" : ""} />
-          </button>
-          <button
-            onClick={() => router.push("/dashboard/receptionist/visits/new")}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-semibold hover:shadow-md transition-all"
-            style={{ background: "linear-gradient(135deg, #166534, #15803d)" }}
-          >
-            <UserPlus size={15} /> New Visit
-          </button>
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <>
+            <Button
+              variant="primary"
+              icon={UserPlus}
+              onClick={() => router.push("/dashboard/receptionist/visits/new")}
+            >
+              New visit
+            </Button>
+            <Button
+              icon={RefreshCw}
+              onClick={() => fetchQueue(true)}
+              disabled={refreshing || loading}
+              style={{ padding: 0, width: 38 }}
+            />
+          </>
+        }
+      />
 
-      {/* Error banner */}
       {error && (
-        <div className="mb-5 flex items-center gap-2.5 px-4 py-3 rounded-xl bg-red-50 border border-red-100">
-          <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-          <p className="text-sm text-red-700 flex-1">{error}</p>
-          <button
-            onClick={() => fetchQueue(false)}
-            className="text-xs font-semibold text-red-700 underline"
-          >
-            Retry
-          </button>
-        </div>
+        <Banner
+          tone="critical"
+          icon={AlertCircle}
+          action={
+            <Button variant="ghost" size="sm" onClick={() => fetchQueue(false)}>
+              Retry
+            </Button>
+          }
+        >
+          {error}
+        </Banner>
       )}
 
-      {/* Summary strip */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
-        {[
-          {
-            label: "Waiting",
-            value: counts.waiting,
-            color: "#b45309",
-            bg: "linear-gradient(135deg,#fffbeb,#fef3c7)",
-            border: "#fde68a",
-            icon: Clock,
-          },
-          {
-            label: "In Progress",
-            value: counts.inProgress,
-            color: "#1d4ed8",
-            bg: "linear-gradient(135deg,#eff6ff,#dbeafe)",
-            border: "#bfdbfe",
-            icon: Activity,
-          },
-          {
-            label: "Completed",
-            value: counts.done,
-            color: "#166534",
-            bg: "linear-gradient(135deg,#f0fdf4,#dcfce7)",
-            border: "#bbf7d0",
-            icon: CheckCircle2,
-          },
-          {
-            label: "Urgent+",
-            value: counts.urgent,
-            color: "#dc2626",
-            bg: "linear-gradient(135deg,#fef2f2,#fee2e2)",
-            border: "#fecaca",
-            icon: Zap,
-          },
-        ].map(({ label, value, color, bg, border, icon: Icon }) => (
-          <div
-            key={label}
-            className="relative rounded-2xl p-4 border overflow-hidden"
-            style={{ background: bg, borderColor: border }}
-          >
-            <div
-              className="absolute -right-3 -bottom-3 w-16 h-16 rounded-full opacity-10"
-              style={{ background: color }}
-            />
-            <Icon size={15} style={{ color }} className="mb-2" />
-            <p
-              className="text-2xl font-extrabold leading-none"
-              style={{ color }}
-            >
-              {loading ? (
-                <span className="inline-block w-6 h-6 rounded bg-black/5 animate-pulse" />
-              ) : (
-                value
-              )}
-            </p>
-            <p className="text-xs font-medium text-gray-500 mt-1">{label}</p>
-          </div>
-        ))}
-      </div>
+      <KpiGrid>
+        <KpiCard
+          label="Waiting"
+          value={counts.waiting}
+          sub="Not yet seen"
+          icon={Clock}
+          tone="urgent"
+          loading={loading}
+          onClick={() => setFilterStatus("waiting")}
+        />
+        <KpiCard
+          label="In progress"
+          value={counts.inProgress}
+          sub="Currently in care"
+          icon={Activity}
+          tone="info"
+          loading={loading}
+          onClick={() => setFilterStatus("in-progress")}
+        />
+        <KpiCard
+          label="Completed"
+          value={counts.done}
+          sub="Discharged today"
+          icon={CheckCircle2}
+          tone="success"
+          loading={loading}
+          onClick={() => setFilterStatus("completed")}
+        />
+        <KpiCard
+          label="Urgent+"
+          value={counts.urgent}
+          sub="Urgent, emergency or critical"
+          icon={Zap}
+          tone="critical"
+          loading={loading}
+        />
+      </KpiGrid>
 
-      {/* Filters + search */}
-      <div className="flex flex-col sm:flex-row gap-3 mb-4">
-        <div className="flex gap-1.5 p-1 rounded-xl bg-gray-100/80 w-fit">
-          {filterTabs.map(({ key, label, count }) => (
-            <button
-              key={key}
-              onClick={() => setFilterStatus(key)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
-              style={
-                filterStatus === key
-                  ? {
-                      background: "#fff",
-                      color: "#166534",
-                      boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
-                    }
-                  : { color: "#6b7280" }
-              }
-            >
-              {label}
-              {count > 0 && (
-                <span
-                  className="text-xs font-bold px-1.5 py-0.5 rounded-full"
-                  style={
-                    filterStatus === key
-                      ? { background: "#f0fdf4", color: "#166534" }
-                      : { background: "rgba(0,0,0,0.06)", color: "#9ca3af" }
-                  }
-                >
-                  {count}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-        <div className="relative flex-1 max-w-xs">
-          <Search
-            size={14}
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"
-          />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search ticket, name, reason…"
-            className="w-full pl-9 pr-8 py-2 rounded-xl border border-gray-200 bg-white text-sm text-gray-900 outline-none focus:border-green-500 focus:ring-2 focus:ring-green-500/10 placeholder:text-gray-400 transition-all"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
-            >
-              <X size={13} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Queue list */}
-      {loading ? (
-        <div className="space-y-3">
-          {[...Array(5)].map((_, i) => (
-            <div
-              key={i}
-              className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 animate-pulse"
-            >
-              <div className="flex items-center gap-4">
-                <div className="w-10 h-10 rounded-xl bg-gray-100 flex-shrink-0" />
-                <div className="flex-1 space-y-2">
-                  <div className="h-3.5 w-24 bg-gray-100 rounded" />
-                  <div className="h-4 w-48 bg-gray-100 rounded" />
-                  <div className="h-3 w-32 bg-gray-100 rounded" />
-                </div>
-                <div className="w-20 h-8 bg-gray-100 rounded-xl" />
-              </div>
+      <Card>
+        <CardHeader
+          icon={Users}
+          title="Patient queue"
+          subtitle="Priority-sorted · longest wait first"
+          right={
+            <div className="hidden sm:flex items-center" style={{ gap: 6 }}>
+              <span
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: "50%",
+                  background:
+                    onlineNurses.length > 0 ? "var(--green-600)" : "var(--ink-300)",
+                }}
+              />
+              <span style={{ font: "500 12px/1 var(--font-sans)", color: "var(--text-secondary)" }}>
+                {onlineNurses.length} nurse{onlineNurses.length !== 1 ? "s" : ""} online
+              </span>
             </div>
-          ))}
+          }
+        />
+
+        {/* Filters */}
+        <div
+          className="flex items-center justify-between flex-wrap"
+          style={{
+            gap: 12,
+            padding: "12px 20px",
+            borderBottom: "1px solid var(--border-faint)",
+          }}
+        >
+          <SegmentedControl<FilterStatus>
+            value={filterStatus}
+            onChange={setFilterStatus}
+            options={[
+              { value: "all", label: "All", count: queue.length },
+              { value: "waiting", label: "Waiting", count: counts.waiting },
+              { value: "in-progress", label: "In progress", count: counts.inProgress },
+              { value: "completed", label: "Completed", count: counts.done },
+            ]}
+          />
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search ticket, name, reason…"
+            icon={Search}
+            clearIcon={X}
+            style={{ flex: "1 1 220px", maxWidth: 320 }}
+          />
         </div>
-      ) : sorted.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm py-20 text-center">
-          <div
-            className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4"
-            style={{ background: "#f0fdf4" }}
-          >
-            <Users size={24} style={{ color: "#166534" }} />
-          </div>
-          <p className="text-sm font-semibold text-gray-600">
-            {filterStatus === "all" && !search
-              ? "Queue is empty"
-              : "No patients match"}
-          </p>
-          <p className="text-xs text-gray-400 mt-1 mb-5">
-            {filterStatus === "all" && !search
-              ? "Add the first visit to get started"
-              : "Try adjusting your filters"}
-          </p>
-          {filterStatus === "all" && !search && (
-            <button
-              onClick={() => router.push("/dashboard/receptionist/visits/new")}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white"
-              style={{
-                background: "linear-gradient(135deg, #166534, #15803d)",
-              }}
-            >
-              <UserPlus size={14} /> Create First Visit
-            </button>
-          )}
+
+        {/* Column headers */}
+        <div
+          className="hidden lg:grid items-center"
+          style={{
+            gridTemplateColumns: GRID,
+            gap: 14,
+            padding: "9px 20px",
+            background: "var(--surface-sunken)",
+            borderBottom: "1px solid var(--border-faint)",
+          }}
+        >
+          <SectionLabel>Ticket</SectionLabel>
+          <span />
+          <SectionLabel>Patient</SectionLabel>
+          <SectionLabel style={{ textAlign: "right" }}>Wait</SectionLabel>
+          <SectionLabel>Priority</SectionLabel>
+          <SectionLabel>Status</SectionLabel>
+          <SectionLabel style={{ textAlign: "right" }}>Action</SectionLabel>
         </div>
-      ) : (
-        <div className="space-y-2">
-          {sorted.map((item, idx) => {
+
+        {loading ? (
+          [...Array(6)].map((_, i) => <SkeletonRow key={i} />)
+        ) : sorted.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title={isFiltered ? "No patients match" : "Queue is empty"}
+            message={
+              isFiltered
+                ? "Try a different status or clear the search."
+                : "Register the first visit of the day to get started."
+            }
+            pad={64}
+            action={
+              isFiltered ? (
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setFilterStatus("all");
+                    setSearch("");
+                  }}
+                >
+                  Clear filters
+                </Button>
+              ) : (
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={UserPlus}
+                  onClick={() => router.push("/dashboard/receptionist/visits/new")}
+                >
+                  Create first visit
+                </Button>
+              )
+            }
+          />
+        ) : (
+          sorted.map((item, idx) => {
             const p = getP(item.priority);
             const isDone = item.status === "completed";
             const isActive = item.status === "in-progress";
-            const isUrgent = ["critical", "emergency"].includes(item.priority);
             const isWaiting = item.status === "waiting";
 
             return (
               <div
                 key={item.id}
-                className={`bg-white rounded-2xl border shadow-sm transition-all overflow-hidden ${isDone ? "opacity-55" : "hover:shadow-md"}`}
+                className="grid items-center"
                 style={{
-                  borderColor: isActive || isUrgent ? p.border : "#f1f5f9",
+                  gridTemplateColumns: GRID,
+                  gap: 14,
+                  padding: "12px 20px",
+                  borderBottom: "1px solid var(--border-faint)",
+                  opacity: isDone ? 0.55 : 1,
+                  transition: "background var(--dur-fast) var(--ease-standard)",
                 }}
+                {...hoverRow}
               >
-                <div
-                  className="h-0.5 w-full"
-                  style={{ background: isDone ? "#e5e7eb" : p.dot }}
-                />
+                {/* Queue position + ticket */}
+                <div className="flex flex-col items-start" style={{ gap: 4 }}>
+                  <span
+                    className="inline-flex items-center justify-center"
+                    style={{
+                      width: 26,
+                      height: 26,
+                      borderRadius: "var(--r-xs)",
+                      background: isActive ? "var(--brand-tint)" : "var(--surface-sunken)",
+                      color: isActive ? "var(--green-700)" : "var(--text-muted)",
+                      font: "700 12px/1 var(--font-sans)",
+                    }}
+                  >
+                    {idx + 1}
+                  </span>
+                  <MonoTag style={{ height: 16, padding: "0 5px", fontSize: 10 }}>
+                    {item.ticket}
+                  </MonoTag>
+                </div>
 
-                <div className="p-4">
-                  <div className="flex items-start gap-4">
-                    {/* Position + ticket */}
-                    <div className="flex flex-col items-center gap-1 flex-shrink-0">
-                      <div
-                        className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-extrabold"
-                        style={
-                          isActive
-                            ? {
-                                background: p.bg,
-                                color: p.color,
-                                border: `1.5px solid ${p.border}`,
-                              }
-                            : { background: "#f8fafc", color: "#94a3b8" }
-                        }
-                      >
-                        {idx + 1}
-                      </div>
+                <Avatar name={item.name} seed={idx} />
+
+                <div className="min-w-0 flex flex-col" style={{ gap: 4 }}>
+                  <div className="flex items-baseline min-w-0" style={{ gap: 7 }}>
+                    <button
+                      onClick={() =>
+                        router.push(`/dashboard/receptionist/visits/${item.id}`)
+                      }
+                      className="truncate text-left"
+                      style={{
+                        margin: 0,
+                        border: "none",
+                        background: "transparent",
+                        padding: 0,
+                        cursor: "pointer",
+                        font: "600 14px/1.2 var(--font-sans)",
+                        color: "var(--text-primary)",
+                      }}
+                    >
+                      {item.name}
+                    </button>
+                    {item.age ? (
                       <span
-                        className="text-xs font-bold font-mono"
-                        style={{ color: p.color }}
+                        className="flex-shrink-0"
+                        style={{ font: "400 12px/1 var(--font-sans)", color: "var(--text-muted)" }}
                       >
-                        {item.ticket}
+                        {item.age} yrs
                       </span>
-                    </div>
+                    ) : null}
+                  </div>
 
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2 mb-1">
-                        <span
-                          className="inline-flex items-center gap-1.5 text-xs font-semibold px-2.5 py-0.5 rounded-full capitalize"
-                          style={{
-                            background: p.bg,
-                            color: p.color,
-                            border: `1px solid ${p.border}`,
-                          }}
-                        >
-                          <PulseDot
-                            color={p.dot}
-                            animate={isUrgent && !isDone}
-                          />
-                          {p.label}
-                        </span>
-                        <StatusBadge status={item.status} />
-                      </div>
-                      <p className="text-base font-bold text-gray-900 leading-snug">
-                        {item.name}
-                        {item.age ? (
-                          <span className="text-sm font-normal text-gray-400 ml-1.5">
-                            {item.age} yrs
-                          </span>
-                        ) : null}
-                      </p>
-                      <p className="text-sm text-gray-500 mt-0.5 truncate">
-                        {item.reason}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-3 mt-2">
-                        <div
-                          className="flex items-center gap-1 text-xs font-medium"
-                          style={{ color: waitColor(item.waitMins) }}
-                        >
-                          <Clock size={11} />
-                          {item.waitMins > 60
-                            ? `${Math.floor(item.waitMins / 60)}h ${item.waitMins % 60}m`
-                            : `${item.waitMins}m`}{" "}
-                          wait
-                          {item.waitMins > 45 && !isDone && (
-                            <span className="ml-1">· overdue</span>
-                          )}
-                        </div>
-                        {item.doctor && (
-                          <span className="text-xs text-gray-400">
-                            Dr. {item.doctor}
-                          </span>
-                        )}
-                        {item.assignedNurseName && (
-                          <span className="text-xs text-gray-400 flex items-center gap-1">
-                            <UserCheck size={12} /> Nurse:{" "}
-                            {item.assignedNurseName}
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                  <div className="flex items-center min-w-0" style={{ gap: 10 }}>
+                    <p
+                      className="truncate"
+                      style={{
+                        margin: 0,
+                        font: "400 12.5px/1.2 var(--font-sans)",
+                        color: "var(--text-secondary)",
+                      }}
+                    >
+                      {item.reason || "No reason recorded"}
+                    </p>
+                    {item.doctor && (
+                      <span
+                        className="flex-shrink-0"
+                        style={{ font: "500 11.5px/1 var(--font-sans)", color: "var(--text-muted)" }}
+                      >
+                        Dr. {item.doctor}
+                      </span>
+                    )}
+                    {item.assignedNurseName && (
+                      <span
+                        className="inline-flex items-center flex-shrink-0"
+                        style={{
+                          gap: 4,
+                          font: "500 11.5px/1 var(--font-sans)",
+                          color: "var(--green-800)",
+                        }}
+                      >
+                        <UserCheck className="w-3 h-3" />
+                        {item.assignedNurseName}
+                      </span>
+                    )}
+                  </div>
+                </div>
 
-                    {/* Actions */}
-                    <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                      {isWaiting && (
-                        <div className="relative">
-                          {showNurseDropdown === item.id ? (
-                            <div className="absolute right-0 top-0 mt-8 z-10 bg-white rounded-xl shadow-lg border border-gray-200 min-w-[200px]">
-                              <div className="p-2">
-                                <div className="text-xs font-semibold text-gray-500 mb-2 px-2">
-                                  Select Nurse
-                                </div>
-                                {onlineNurses.length === 0 ? (
-                                  <div className="text-xs text-gray-400 px-2 py-2">
-                                    No nurses online
-                                  </div>
-                                ) : (
-                                  onlineNurses.map((nurse) => (
-                                    <button
-                                      key={nurse.id}
-                                      onClick={() =>
-                                        assignNurse(item.id, nurse.id)
-                                      }
-                                      disabled={assigning === item.id}
-                                      className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-gray-50 flex items-center gap-2"
-                                    >
-                                      <User
-                                        size={14}
-                                        className="text-gray-400"
-                                      />
-                                      <span>
-                                        {nurse.firstName} {nurse.lastName}
-                                      </span>
-                                      {assigning === item.id && (
-                                        <Loader2
-                                          size={12}
-                                          className="animate-spin ml-auto"
-                                        />
-                                      )}
-                                    </button>
-                                  ))
-                                )}
-                                <div className="border-t border-gray-100 my-1" />
-                                <button
-                                  onClick={() => setShowNurseDropdown(null)}
-                                  className="w-full text-left px-3 py-2 text-xs text-gray-400 hover:bg-gray-50 rounded-lg"
-                                >
-                                  Cancel
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => setShowNurseDropdown(item.id)}
-                              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:shadow-md"
-                              style={{
-                                background:
-                                  "linear-gradient(135deg,#7C3AED,#6D28D9)",
-                              }}
-                            >
-                              <User size={13} /> Assign Nurse
-                            </button>
-                          )}
-                        </div>
-                      )}
-                      {isActive && (
-                        <button
-                          onClick={() =>
-                            router.push(`/dashboard/visits/${item.id}`)
-                          }
-                          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-white transition-all hover:shadow-md"
-                          style={{
-                            background:
-                              "linear-gradient(135deg,#166534,#15803d)",
-                          }}
-                        >
-                          <Play size={13} /> Continue
-                        </button>
-                      )}
-                      <button
+                <div className="text-right flex flex-col" style={{ gap: 3 }}>
+                  <span style={{ font: "600 13px/1 var(--font-mono)", color: waitInk(item.waitMins) }}>
+                    {waitLabel(item.waitMins)}
+                  </span>
+                  {item.waitMins > 45 && !isDone && (
+                    <span
+                      style={{ font: "500 10.5px/1 var(--font-sans)", color: "var(--critical-ink)" }}
+                    >
+                      overdue
+                    </span>
+                  )}
+                </div>
+
+                <Pill tone={p.tone} dot={["critical", "emergency"].includes(item.priority) && !isDone}>
+                  {p.label}
+                </Pill>
+
+                <StatusPill status={item.status} />
+
+                {/* Actions */}
+                <div className="relative flex items-center justify-end" style={{ gap: 10 }}>
+                  {isWaiting && (
+                    <>
+                      <Button
+                        size="sm"
+                        icon={assigning === item.id ? undefined : User}
+                        loading={assigning === item.id}
                         onClick={() =>
-                          router.push(
-                            `/dashboard/receptionist/visits/${item.id}`,
+                          setShowNurseDropdown(
+                            showNurseDropdown === item.id ? null : item.id,
                           )
                         }
-                        className="flex items-center gap-1 text-xs font-medium text-gray-400 hover:text-gray-600 transition-colors"
                       >
-                        Details <ChevronRight size={12} />
-                      </button>
-                    </div>
-                  </div>
+                        Assign
+                      </Button>
+
+                      {showNurseDropdown === item.id && (
+                        <div
+                          className="absolute right-0 z-20"
+                          style={{
+                            top: 34,
+                            width: 210,
+                            background: "var(--surface-card)",
+                            borderRadius: "var(--r-sm)",
+                            border: "1px solid var(--hc-border)",
+                            boxShadow: "var(--elev-3)",
+                            overflow: "hidden",
+                          }}
+                        >
+                          <SectionLabel
+                            style={{
+                              padding: "9px 12px",
+                              borderBottom: "1px solid var(--border-faint)",
+                            }}
+                          >
+                            Assign nurse
+                          </SectionLabel>
+
+                          <div style={{ maxHeight: 200, overflowY: "auto", padding: 4 }}>
+                            {onlineNurses.length === 0 ? (
+                              <p
+                                style={{
+                                  margin: 0,
+                                  padding: "14px 12px",
+                                  textAlign: "center",
+                                  font: "400 12.5px/1.3 var(--font-sans)",
+                                  color: "var(--text-muted)",
+                                }}
+                              >
+                                No nurses online
+                              </p>
+                            ) : (
+                              onlineNurses.map((nurse) => (
+                                <button
+                                  key={nurse.id}
+                                  onClick={() => assignNurse(item.id, nurse.id)}
+                                  disabled={assigning === item.id}
+                                  className="w-full flex items-center text-left"
+                                  style={{
+                                    gap: 9,
+                                    padding: "8px 9px",
+                                    border: "none",
+                                    borderRadius: "var(--r-xs)",
+                                    background: "transparent",
+                                    cursor: "pointer",
+                                  }}
+                                  {...hoverRow}
+                                >
+                                  <Avatar
+                                    name={`${nurse.firstName} ${nurse.lastName}`}
+                                    size={26}
+                                    seed={1}
+                                  />
+                                  <span
+                                    className="flex-1 min-w-0 truncate"
+                                    style={{
+                                      font: "500 12.5px/1 var(--font-sans)",
+                                      color: "var(--text-primary)",
+                                    }}
+                                  >
+                                    {nurse.firstName} {nurse.lastName}
+                                  </span>
+                                  {assigning === item.id && (
+                                    <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" />
+                                  )}
+                                </button>
+                              ))
+                            )}
+                          </div>
+
+                          <button
+                            onClick={() => setShowNurseDropdown(null)}
+                            className="w-full"
+                            style={{
+                              padding: 8,
+                              border: "none",
+                              borderTop: "1px solid var(--border-faint)",
+                              background: "transparent",
+                              font: "500 11.5px/1 var(--font-sans)",
+                              color: "var(--text-muted)",
+                              cursor: "pointer",
+                            }}
+                          >
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {isActive && (
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      icon={Play}
+                      onClick={() => router.push(`/dashboard/visits/${item.id}`)}
+                    >
+                      Continue
+                    </Button>
+                  )}
+
+                  {isDone && (
+                    <LinkAction
+                      onClick={() =>
+                        router.push(`/dashboard/receptionist/visits/${item.id}`)
+                      }
+                    >
+                      Details
+                    </LinkAction>
+                  )}
                 </div>
               </div>
             );
-          })}
-        </div>
-      )}
+          })
+        )}
 
-      {/* Footer */}
-      {!loading && queue.length > 0 && (
-        <div className="mt-4 text-center">
-          <p className="text-xs text-gray-400">
-            Showing {sorted.length} of {queue.length} visit
-            {queue.length !== 1 ? "s" : ""}
-            {(filterStatus !== "all" || search) && (
-              <>
-                {" "}
-                ·{" "}
-                <button
-                  onClick={() => {
-                    setFilterStatus("all");
-                    setSearch("");
-                  }}
-                  className="underline hover:text-gray-600 transition-colors"
-                >
-                  clear filters
-                </button>
-              </>
+        {!loading && queue.length > 0 && (
+          <div
+            className="flex items-center justify-center"
+            style={{ gap: 8, padding: "12px 20px" }}
+          >
+            <span style={{ font: "400 12px/1 var(--font-sans)", color: "var(--text-muted)" }}>
+              Showing {sorted.length} of {queue.length} visit
+              {queue.length !== 1 ? "s" : ""}
+            </span>
+            {isFiltered && (
+              <LinkAction
+                arrow={false}
+                onClick={() => {
+                  setFilterStatus("all");
+                  setSearch("");
+                }}
+              >
+                Clear filters
+              </LinkAction>
             )}
-          </p>
-        </div>
-      )}
-    </div>
+          </div>
+        )}
+      </Card>
+    </Page>
   );
 }

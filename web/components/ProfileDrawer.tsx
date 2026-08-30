@@ -9,7 +9,6 @@ import {
   Phone,
   Building2,
   Shield,
-  Key,
   BadgeCheck,
   Stethoscope,
   FlaskConical,
@@ -27,7 +26,6 @@ import {
   RefreshCw,
   Hash,
   GraduationCap,
-  Award,
   Clock,
   Activity,
   User,
@@ -35,71 +33,27 @@ import {
   MapPin,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
+import type { Tone } from "@/components/dashboard/ui";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type ToastState = { message: string; type: "success" | "error" } | null;
 
 // ── Role config ───────────────────────────────────────────────────────────────
+// Roles take their tone from the same mapping the admin portal uses
+// (app/dashboard/admin/vocab.ts), so a role badge is the same colour wherever
+// it appears. The design system has six semantic tones, not eight hues.
 const ROLE_CONFIG: Record<
   string,
-  { label: string; color: string; bg: string; border: string; Icon: any }
+  { label: string; tone: Tone; Icon: any }
 > = {
-  practitioner: {
-    label: "Practitioner",
-    color: "#7c3aed",
-    bg: "#faf5ff",
-    border: "#ddd6fe",
-    Icon: Stethoscope,
-  },
-  nurse: {
-    label: "Nurse",
-    color: "#0e7490",
-    bg: "#ecfeff",
-    border: "#a5f3fc",
-    Icon: Activity,
-  },
-  lab_technician: {
-    label: "Lab Technician",
-    color: "#d97706",
-    bg: "#fffbeb",
-    border: "#fde68a",
-    Icon: FlaskConical,
-  },
-  radiologist: {
-    label: "Radiologist",
-    color: "#2563eb",
-    bg: "#eff6ff",
-    border: "#bfdbfe",
-    Icon: ScanLine,
-  },
-  pharmacist: {
-    label: "Pharmacist",
-    color: "#166534",
-    bg: "#f0fdf4",
-    border: "#bbf7d0",
-    Icon: Pill,
-  },
-  receptionist: {
-    label: "Receptionist",
-    color: "#be185d",
-    bg: "#fdf2f8",
-    border: "#fbcfe8",
-    Icon: ClipboardList,
-  },
-  admin: {
-    label: "Administrator",
-    color: "#374151",
-    bg: "#f9fafb",
-    border: "#e5e7eb",
-    Icon: UserCog,
-  },
-  patient: {
-    label: "Patient",
-    color: "#0369a1",
-    bg: "#f0f9ff",
-    border: "#bae6fd",
-    Icon: User,
-  },
+  practitioner:   { label: "Practitioner",   tone: "info",     Icon: Stethoscope },
+  nurse:          { label: "Nurse",          tone: "success",  Icon: Activity },
+  lab_technician: { label: "Lab Technician", tone: "urgent",   Icon: FlaskConical },
+  radiologist:    { label: "Radiologist",    tone: "accent",   Icon: ScanLine },
+  pharmacist:     { label: "Pharmacist",     tone: "brand",    Icon: Pill },
+  receptionist:   { label: "Receptionist",   tone: "info",     Icon: ClipboardList },
+  admin:          { label: "Administrator",  tone: "critical", Icon: UserCog },
+  patient:        { label: "Patient",        tone: "neutral",  Icon: User },
 };
 
 // ── Small sub-components ──────────────────────────────────────────────────────
@@ -116,16 +70,16 @@ function InfoRow({
 }) {
   if (!value) return null;
   return (
-    <div className="flex items-start gap-3 py-2.5 border-b border-gray-50 last:border-0">
-      <div className="w-6 h-6 rounded-md bg-gray-50 flex items-center justify-center flex-shrink-0 mt-0.5">
-        <Icon className="w-3 h-3 text-gray-400" />
+    <div className="flex items-start gap-3 py-2.5 border-b border-[var(--border-faint)] last:border-0">
+      <div className="w-6 h-6 rounded-[var(--r-xs)] bg-[var(--surface-inset)] flex items-center justify-center flex-shrink-0 mt-0.5">
+        <Icon className="w-3 h-3 text-[var(--text-muted)]" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 leading-none mb-0.5">
+        <p className="text-[10px] font-bold uppercase tracking-[var(--ls-caps)] text-[var(--text-muted)] leading-none mb-0.5">
           {label}
         </p>
         <p
-          className={`text-sm font-semibold text-gray-800 break-all leading-snug ${mono ? "font-mono text-xs" : ""}`}
+          className={`text-sm font-semibold text-[var(--text-primary)] break-all leading-snug ${mono ? "font-mono text-xs" : ""}`}
         >
           {value}
         </p>
@@ -136,7 +90,7 @@ function InfoRow({
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
-    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2 mt-5 first:mt-0">
+    <p className="text-[10px] font-bold uppercase tracking-[var(--ls-caps)] text-[var(--text-muted)] mb-2 mt-5 first:mt-0">
       {children}
     </p>
   );
@@ -157,11 +111,11 @@ function Toast({
   }, [onDone]);
   return (
     <div
-      className="absolute bottom-5 left-5 right-5 z-10 flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border text-sm font-semibold"
+      className="absolute bottom-5 left-5 right-5 z-10 flex items-center gap-3 px-4 py-3 rounded-[var(--r-sm)] shadow-[var(--elev-3)] border text-sm font-semibold"
       style={
         type === "success"
-          ? { background: "#f0fdf4", borderColor: "#bbf7d0", color: "#166534" }
-          : { background: "#fef2f2", borderColor: "#fecaca", color: "#dc2626" }
+          ? { background: "var(--brand-tint)", borderColor: "var(--green-200)", color: "var(--success-ink)" }
+          : { background: "var(--coral-050)", borderColor: "var(--coral-100)", color: "var(--critical-ink)" }
       }
     >
       {type === "success" ? (
@@ -203,7 +157,7 @@ function PasswordSection({
     if (/[^A-Za-z0-9]/.test(p)) s++;
     return s;
   })();
-  const strengthColor = ["", "#ef4444", "#f59e0b", "#3b82f6", "#16a34a"][
+  const strengthColor = ["", "var(--critical)", "var(--urgent)", "var(--info)", "var(--brand)"][
     strength
   ];
   const strengthLabel = ["", "Weak", "Fair", "Good", "Strong"][strength];
@@ -244,7 +198,7 @@ function PasswordSection({
   }) {
     return (
       <div>
-        <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-1">
+        <label className="text-[10px] font-bold uppercase tracking-[var(--ls-caps)] text-[var(--text-muted)] block mb-1">
           {label}
         </label>
         <div className="relative">
@@ -253,12 +207,12 @@ function PasswordSection({
             value={form[id]}
             onChange={(e) => setForm((f) => ({ ...f, [id]: e.target.value }))}
             placeholder="••••••••"
-            className="w-full px-3.5 py-2.5 pr-9 rounded-xl border border-gray-200 text-sm font-medium text-gray-800 bg-gray-50 focus:outline-none focus:border-green-400 focus:bg-white transition-colors"
+            className="w-full px-3.5 py-2.5 pr-9 rounded-[var(--r-sm)] border border-[var(--hc-border)] text-sm font-medium text-[var(--text-primary)] bg-[var(--surface-inset)] focus:outline-none focus:border-[var(--brand)] focus:bg-[var(--surface-card)] transition-colors"
           />
           <button
             type="button"
             onClick={() => setShow((s) => ({ ...s, [id]: !s[id] }))}
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
           >
             {show[id] ? (
               <EyeOff className="w-3.5 h-3.5" />
@@ -284,7 +238,7 @@ function PasswordSection({
                   key={i}
                   className="flex-1 h-1 rounded-full transition-all"
                   style={{
-                    background: i <= strength ? strengthColor : "#e5e7eb",
+                    background: i <= strength ? strengthColor : "var(--hc-border)",
                   }}
                 />
               ))}
@@ -302,8 +256,8 @@ function PasswordSection({
       <button
         onClick={handleSubmit}
         disabled={loading}
-        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-50 mt-1"
-        style={{ background: "linear-gradient(135deg,#052e16,#166534)" }}
+        className="w-full flex items-center justify-center gap-2 py-2.5 rounded-[var(--r-sm)] text-sm font-bold text-[var(--white)] transition-all disabled:opacity-50 mt-1"
+        style={{ background: "var(--brand)", color: "var(--on-brand)" }}
       >
         {loading ? (
           <RefreshCw className="w-4 h-4 animate-spin" />
@@ -394,39 +348,39 @@ export function ProfileDrawer({
     <>
       {/* Backdrop */}
       <div
-        className={`fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ${open ? "opacity-100" : "opacity-0 pointer-events-none"}`}
+        className={`fixed inset-0 z-40 bg-[var(--scrim)] backdrop-blur-sm transition-opacity duration-300 ${open ? "opacity-100" : "opacity-0 pointer-events-none"}`}
         onClick={onClose}
       />
 
       {/* Drawer */}
       <div
         ref={drawerRef}
-        className={`fixed top-0 right-0 z-50 h-full w-full max-w-sm flex flex-col bg-white shadow-2xl transition-transform duration-300 ease-out ${open ? "translate-x-0" : "translate-x-full"}`}
-        style={{ fontFamily: "'DM Sans', sans-serif" }}
+        className={`fixed top-0 right-0 z-50 h-full w-full max-w-sm flex flex-col bg-[var(--surface-card)] shadow-[var(--elev-3)] transition-transform duration-300 ease-out ${open ? "translate-x-0" : "translate-x-full"}`}
+        style={{ fontFamily: "var(--font-sans)" }}
       >
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <div
           className="relative flex-shrink-0 px-5 pt-5 pb-5"
           style={{
             background:
-              "linear-gradient(135deg,#052e16 0%,#166534 60%,#15803d 100%)",
+              "var(--sidebar-bg)",
           }}
         >
           {/* Decorative blob */}
           <div
             className="absolute -right-8 -top-8 w-36 h-36 rounded-full opacity-10"
             style={{
-              background: "radial-gradient(circle,#bbf7d0,transparent)",
+              background: "var(--on-dark-raise)",
             }}
           />
 
           {/* Close button */}
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
+            className="absolute top-4 right-4 w-7 h-7 rounded-[var(--r-xs)] flex items-center justify-center transition-colors"
             style={{
-              background: "rgba(255,255,255,0.1)",
-              color: "rgba(255,255,255,0.7)",
+              background: "var(--on-dark-raise)",
+              color: "var(--on-dark-text)",
             }}
           >
             <X className="w-4 h-4" />
@@ -435,10 +389,10 @@ export function ProfileDrawer({
           {/* Avatar + name */}
           <div className="flex items-center gap-4 relative">
             <div
-              className="w-14 h-14 rounded-2xl flex items-center justify-center text-lg font-black text-white flex-shrink-0"
+              className="w-14 h-14 rounded-[var(--r-lg)] flex items-center justify-center text-lg font-black text-[var(--white)] flex-shrink-0"
               style={{
-                background: "rgba(255,255,255,0.15)",
-                border: "1px solid rgba(255,255,255,0.2)",
+                background: "var(--on-dark-raise)",
+                border: "1px solid var(--on-dark-line)",
               }}
             >
               {initials}
@@ -446,14 +400,14 @@ export function ProfileDrawer({
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
                 <p
-                  className="text-white font-bold text-base leading-tight truncate"
-                  style={{ fontFamily: "'Playfair Display', serif" }}
+                  className="text-[var(--white)] font-bold text-base leading-tight truncate"
+                  style={{ fontFamily: "var(--font-display)" }}
                 >
                   {!isPatient && userType === "practitioner" ? "Dr. " : ""}
                   {user?.firstName} {user?.lastName}
                 </p>
                 {isVerified && (
-                  <BadgeCheck className="w-4 h-4 text-green-300 flex-shrink-0" />
+                  <BadgeCheck className="w-4 h-4 text-[var(--green-300)] flex-shrink-0" />
                 )}
               </div>
 
@@ -461,9 +415,9 @@ export function ProfileDrawer({
               <div
                 className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold mt-1"
                 style={{
-                  background: "rgba(255,255,255,0.12)",
-                  color: "#bbf7d0",
-                  border: "1px solid rgba(255,255,255,0.15)",
+                  background: "var(--on-dark-raise)",
+                  color: "var(--green-200)",
+                  border: "1px solid var(--on-dark-line)",
                 }}
               >
                 <RoleIcon className="w-2.5 h-2.5" />
@@ -472,7 +426,7 @@ export function ProfileDrawer({
 
               {/* Institution */}
               {institutionName && (
-                <p className="flex items-center gap-1 text-[11px] text-green-300/60 mt-1 truncate">
+                <p className="flex items-center gap-1 text-[11px] text-[var(--green-300)] opacity-60 mt-1 truncate">
                   <Building2 className="w-3 h-3 flex-shrink-0" />
                   {institutionName}
                 </p>
@@ -483,31 +437,31 @@ export function ProfileDrawer({
           {/* Status row */}
           <div className="flex items-center gap-2 mt-3 relative">
             <span
-              className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold"
+              className="flex items-center gap-1 px-2 py-1 rounded-[var(--r-xs)] text-[10px] font-bold"
               style={{
                 background: isVerified
-                  ? "rgba(134,239,172,0.15)"
-                  : "rgba(239,68,68,0.15)",
-                color: isVerified ? "#86efac" : "#fca5a5",
+                  ? "color-mix(in srgb, var(--green-300) 16%, transparent)"
+                  : "color-mix(in srgb, var(--critical) 16%, transparent)",
+                color: isVerified ? "var(--green-300)" : "var(--coral-100)",
               }}
             >
               <span
-                className={`w-1.5 h-1.5 rounded-full ${isVerified ? "bg-green-300" : "bg-red-400"}`}
+                className={`w-1.5 h-1.5 rounded-full ${isVerified ? "bg-[var(--green-300)]" : "bg-[var(--critical)]"}`}
               />
               {isVerified ? "Verified" : "Unverified"}
             </span>
             {lastSeen && (
-              <span className="text-[10px] text-green-300/50 flex items-center gap-1">
+              <span className="text-[10px] text-[var(--green-300)] opacity-50 flex items-center gap-1">
                 <Clock className="w-2.5 h-2.5" />
                 {formatDistanceToNow(new Date(lastSeen), { addSuffix: true })}
               </span>
             )}
             {mustChangePassword && (
               <span
-                className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold ml-auto"
+                className="flex items-center gap-1 px-2 py-1 rounded-[var(--r-xs)] text-[10px] font-bold ml-auto"
                 style={{
-                  background: "rgba(251,191,36,0.15)",
-                  color: "#fcd34d",
+                  background: "color-mix(in srgb, var(--urgent) 16%, transparent)",
+                  color: "var(--urgent-tint)",
                 }}
               >
                 <AlertCircle className="w-2.5 h-2.5" />
@@ -518,19 +472,19 @@ export function ProfileDrawer({
         </div>
 
         {/* ── Tabs ───────────────────────────────────────────────────────── */}
-        <div className="flex-shrink-0 flex border-b border-gray-100 bg-white">
+        <div className="flex-shrink-0 flex border-b border-[var(--border-faint)] bg-[var(--surface-card)]">
           {(["info", "security"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className="flex-1 py-3 text-xs font-bold uppercase tracking-widest transition-colors relative"
-              style={{ color: activeTab === tab ? "#166534" : "#9ca3af" }}
+              className="flex-1 py-3 text-xs font-bold uppercase tracking-[var(--ls-caps)] transition-colors relative"
+              style={{ color: activeTab === tab ? "var(--success-ink)" : "var(--text-muted)" }}
             >
               {tab === "info" ? "Profile" : "Security"}
               {activeTab === tab && (
                 <span
                   className="absolute bottom-0 left-4 right-4 h-0.5 rounded-full"
-                  style={{ background: "#166534" }}
+                  style={{ background: "var(--brand)" }}
                 />
               )}
             </button>
@@ -543,18 +497,18 @@ export function ProfileDrawer({
           {mustChangePassword && activeTab === "info" && (
             <button
               onClick={() => setActiveTab("security")}
-              className="w-full flex items-center gap-3 p-3 rounded-xl bg-amber-50 border border-amber-200 mb-4 text-left"
+              className="w-full flex items-center gap-3 p-3 rounded-[var(--r-sm)] bg-[var(--amber-050)] border border-[var(--urgent-tint)] mb-4 text-left"
             >
-              <AlertCircle className="w-4 h-4 text-amber-500 flex-shrink-0" />
+              <AlertCircle className="w-4 h-4 text-[var(--urgent)] flex-shrink-0" />
               <div className="flex-1">
-                <p className="text-xs font-bold text-amber-800">
+                <p className="text-xs font-bold text-[var(--urgent-ink)]">
                   Password change required
                 </p>
-                <p className="text-[10px] text-amber-600 mt-0.5">
+                <p className="text-[10px] text-[var(--urgent-ink)] mt-0.5">
                   Tap to update your password
                 </p>
               </div>
-              <ChevronRight className="w-4 h-4 text-amber-400" />
+              <ChevronRight className="w-4 h-4 text-[var(--urgent)]" />
             </button>
           )}
 
@@ -563,15 +517,15 @@ export function ProfileDrawer({
             <div>
               {/* Contact */}
               <SectionTitle>Contact</SectionTitle>
-              <div className="bg-gray-50/60 rounded-2xl border border-gray-100 px-4 py-1 mb-1">
+              <div className="bg-[var(--surface-inset)] rounded-[var(--r-lg)] border border-[var(--border-faint)] px-4 py-1 mb-1">
                 {loading ? (
                   <div className="space-y-3 py-2">
                     {[...Array(3)].map((_, i) => (
                       <div key={i} className="flex gap-3 animate-pulse">
-                        <div className="w-6 h-6 rounded-md bg-gray-200" />
+                        <div className="w-6 h-6 rounded-[var(--r-xs)] bg-[var(--hc-border)]" />
                         <div className="flex-1 space-y-1">
-                          <div className="h-2 w-14 bg-gray-200 rounded" />
-                          <div className="h-3 w-32 bg-gray-200 rounded" />
+                          <div className="h-2 w-14 bg-[var(--hc-border)] rounded" />
+                          <div className="h-3 w-32 bg-[var(--hc-border)] rounded" />
                         </div>
                       </div>
                     ))}
@@ -593,15 +547,15 @@ export function ProfileDrawer({
               {!isPatient && (
                 <>
                   <SectionTitle>Professional</SectionTitle>
-                  <div className="bg-gray-50/60 rounded-2xl border border-gray-100 px-4 py-1 mb-1">
+                  <div className="bg-[var(--surface-inset)] rounded-[var(--r-lg)] border border-[var(--border-faint)] px-4 py-1 mb-1">
                     {loading ? (
                       <div className="space-y-3 py-2">
                         {[...Array(3)].map((_, i) => (
                           <div key={i} className="flex gap-3 animate-pulse">
-                            <div className="w-6 h-6 rounded-md bg-gray-200" />
+                            <div className="w-6 h-6 rounded-[var(--r-xs)] bg-[var(--hc-border)]" />
                             <div className="flex-1 space-y-1">
-                              <div className="h-2 w-14 bg-gray-200 rounded" />
-                              <div className="h-3 w-32 bg-gray-200 rounded" />
+                              <div className="h-2 w-14 bg-[var(--hc-border)] rounded" />
+                              <div className="h-3 w-32 bg-[var(--hc-border)] rounded" />
                             </div>
                           </div>
                         ))}
@@ -637,7 +591,7 @@ export function ProfileDrawer({
 
               {/* MedLink Security */}
               <SectionTitle>MedLink Security</SectionTitle>
-              <div className="bg-gray-50/60 rounded-2xl border border-gray-100 px-4 py-1 mb-1">
+              <div className="bg-[var(--surface-inset)] rounded-[var(--r-lg)] border border-[var(--border-faint)] px-4 py-1 mb-1">
                 <InfoRow
                   icon={Shield}
                   label="Record Security"
@@ -649,8 +603,8 @@ export function ProfileDrawer({
                   value="All access events permanently logged"
                 />
               </div>
-              <div className="mt-2 p-3 rounded-xl bg-green-50 border border-green-100">
-                <p className="text-[11px] text-green-700 leading-relaxed">
+              <div className="mt-2 p-3 rounded-[var(--r-sm)] bg-[var(--brand-tint)] border border-[var(--green-100)]">
+                <p className="text-[11px] text-[var(--success-ink)] leading-relaxed">
                   MedLink protects all patient records with enterprise-grade
                   encryption. Every access event is logged and fully auditable.
                 </p>
@@ -660,7 +614,7 @@ export function ProfileDrawer({
               {createdAt && (
                 <>
                   <SectionTitle>Account</SectionTitle>
-                  <div className="bg-gray-50/60 rounded-2xl border border-gray-100 px-4 py-1">
+                  <div className="bg-[var(--surface-inset)] rounded-[var(--r-lg)] border border-[var(--border-faint)] px-4 py-1">
                     <InfoRow
                       icon={Clock}
                       label="Member Since"
@@ -677,28 +631,28 @@ export function ProfileDrawer({
             <div>
               {/* 2FA status */}
               <SectionTitle>Two-Factor Authentication</SectionTitle>
-              <div className="flex items-center justify-between p-3.5 rounded-2xl bg-green-50 border border-green-100 mb-4">
+              <div className="flex items-center justify-between p-3.5 rounded-[var(--r-lg)] bg-[var(--brand-tint)] border border-[var(--green-100)] mb-4">
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-green-100 flex items-center justify-center">
-                    <CheckCircle2 className="w-4 h-4 text-green-600" />
+                  <div className="w-8 h-8 rounded-[var(--r-sm)] bg-[var(--brand-fill)] flex items-center justify-center">
+                    <CheckCircle2 className="w-4 h-4 text-[var(--brand)]" />
                   </div>
                   <div>
-                    <p className="text-xs font-bold text-green-800">
+                    <p className="text-xs font-bold text-[var(--success-ink)]">
                       Email OTP
                     </p>
-                    <p className="text-[10px] text-green-600">
+                    <p className="text-[10px] text-[var(--brand)]">
                       Active on every login
                     </p>
                   </div>
                 </div>
-                <span className="text-[10px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+                <span className="text-[10px] font-bold text-[var(--success-ink)] bg-[var(--brand-fill)] px-2 py-0.5 rounded-full">
                   Enabled
                 </span>
               </div>
 
               {/* Change password */}
               <SectionTitle>Change Password</SectionTitle>
-              <div className="bg-gray-50/60 rounded-2xl border border-gray-100 p-4">
+              <div className="bg-[var(--surface-inset)] rounded-[var(--r-lg)] border border-[var(--border-faint)] p-4">
                 <PasswordSection userType={userType} onToast={showToast} />
               </div>
             </div>
@@ -706,13 +660,13 @@ export function ProfileDrawer({
         </div>
 
         {/* ── Footer: sign out ────────────────────────────────────────────── */}
-        <div className="flex-shrink-0 px-5 py-4 border-t border-gray-100 bg-white">
+        <div className="flex-shrink-0 px-5 py-4 border-t border-[var(--border-faint)] bg-[var(--surface-card)]">
           <button
             onClick={() => {
               clearAuth();
               router.push("/login");
             }}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-red-600 border border-red-200 bg-red-50 hover:bg-red-100 transition-colors"
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-[var(--r-sm)] text-sm font-bold text-[var(--critical-ink)] border border-[var(--coral-100)] bg-[var(--coral-050)] hover:bg-[var(--critical-tint)] transition-colors"
           >
             <LogOut className="w-4 h-4" />
             Sign Out

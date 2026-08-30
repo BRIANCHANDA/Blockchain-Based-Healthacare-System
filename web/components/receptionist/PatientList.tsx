@@ -6,12 +6,33 @@ import {
   Users,
   UserPlus,
   ChevronRight,
-  Loader2,
   AlertCircle,
   RefreshCw,
   Calendar,
+  X,
 } from "lucide-react";
 import { MinorBadge } from "@/components/ui/MinorBadge";
+import {
+  Page,
+  PageHeader,
+  Card,
+  Button,
+  Avatar,
+  Banner,
+  EmptyState,
+  SkeletonRow,
+  SectionLabel,
+  SearchInput,
+  hoverRow,
+} from "@/components/dashboard/ui";
+
+/* ==========================================================================
+   All-patients register.
+
+   Paginated by offset rather than page number, because the list is appended
+   in place ("Load more") instead of replaced — the receptionist keeps their
+   scroll position while widening the result set.
+   ========================================================================== */
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 interface Patient {
@@ -30,31 +51,8 @@ interface PatientListProps {
   onRegister: () => void;
 }
 
-// ── Skeleton row ──────────────────────────────────────────────────────────────
-function SkeletonRow() {
-  return (
-    <tr className="border-b border-gray-50">
-      <td className="py-3.5 pl-5 pr-3">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-gray-100 animate-pulse flex-shrink-0" />
-          <div>
-            <div className="h-4 w-32 bg-gray-100 rounded animate-pulse mb-1" />
-            <div className="h-3 w-20 bg-gray-100 rounded animate-pulse" />
-          </div>
-        </div>
-      </td>
-      <td className="py-3.5 px-3 hidden sm:table-cell">
-        <div className="h-4 w-16 bg-gray-100 rounded animate-pulse" />
-      </td>
-      <td className="py-3.5 px-3 hidden md:table-cell">
-        <div className="h-4 w-24 bg-gray-100 rounded animate-pulse" />
-      </td>
-      <td className="py-3.5 pl-3 pr-5">
-        <div className="h-4 w-8 bg-gray-100 rounded animate-pulse ml-auto" />
-      </td>
-    </tr>
-  );
-}
+/* Shared column template for the header row and every body row. */
+const GRID = "38px minmax(180px, 1fr) 110px 140px 32px";
 
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function PatientList({
@@ -73,7 +71,7 @@ export default function PatientList({
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Debounce search input
+  // Debounce search input — one request per pause in typing.
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
@@ -101,12 +99,11 @@ export default function PatientList({
         setPatients((prev) =>
           reset ? (newPatients as Patient[]) : [...prev, ...(newPatients as Patient[])],
         );
+        // A short page means we have reached the end.
         setHasMore(newPatients.length === LIMIT);
         if (!reset) setOffset(currentOffset + LIMIT);
       } catch (err: any) {
-        setError(
-          err.response?.data?.error?.message ?? "Failed to load patients.",
-        );
+        setError(err.response?.data?.error?.message ?? "Failed to load patients.");
       } finally {
         setLoading(false);
         setLoadingMore(false);
@@ -118,15 +115,6 @@ export default function PatientList({
   useEffect(() => {
     fetchPatients(true);
   }, [debouncedSearch]);
-
-  const genderColors: Record<string, string> = {
-    male: "#3b82f6",
-    female: "#ec4899",
-    other: "#8b5cf6",
-  };
-
-  const getInitials = (first: string, last: string) =>
-    `${first?.[0] ?? ""}${last?.[0] ?? ""}`.toUpperCase();
 
   const formatDate = (iso: string) => {
     try {
@@ -140,200 +128,196 @@ export default function PatientList({
     }
   };
 
+  /* Patient names are stored encrypted, so a free-text query cannot match
+     them server-side — only an exact UUID resolves. Say so rather than
+     letting an empty result look like "no such patient". */
+  const isUuidQuery = /^[0-9a-f-]{36}$/i.test(search);
+
   return (
-    <div>
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900">All Patients</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Patients registered at your institution
-          </p>
-        </div>
-        <button
-          onClick={onRegister}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-white text-sm font-semibold shadow-sm hover:shadow-md transition-all"
-          style={{ background: "linear-gradient(135deg, #166534, #15803d)" }}
-        >
-          <UserPlus className="w-4 h-4" />
-          Register Patient
-        </button>
-      </div>
-
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        {/* Search bar */}
-        <div className="px-5 py-4 border-b border-gray-100 flex items-center gap-3">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, national ID, or patient ID…"
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-gray-50 border border-gray-100 text-sm text-gray-700 outline-none focus:border-green-400 focus:ring-2 focus:ring-green-400/10 placeholder:text-gray-400"
-            />
-            {search && (
-              <button
-                onClick={() => setSearch("")}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-xs font-medium"
-              >
-                Clear
-              </button>
-            )}
-          </div>
-          <button
-            onClick={() => fetchPatients(true)}
-            className="p-2.5 rounded-xl border border-gray-200 text-gray-400 hover:text-gray-600 hover:bg-gray-50 transition-colors"
-            title="Refresh"
-          >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
-          </button>
-        </div>
-
-        {/* Search note */}
-        {search && !search.match(/^[0-9a-f-]{36}$/i) && (
-          <div className="px-5 py-2.5 bg-amber-50 border-b border-amber-100 flex items-center gap-2">
-            <AlertCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0" />
-            <p className="text-xs text-amber-700">
-              Patient names are encrypted for privacy. Search by exact patient
-              UUID to find a specific patient.
-            </p>
-          </div>
-        )}
-
-        {/* Error */}
-        {error && (
-          <div className="px-5 py-4 flex items-center gap-2.5 bg-red-50 border-b border-red-100">
-            <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-            <p className="text-sm text-red-700 flex-1">{error}</p>
-            <button
+    <Page>
+      <PageHeader
+        eyebrow="Records"
+        title="All patients"
+        subtitle="Patients registered at your institution"
+        actions={
+          <>
+            <Button variant="primary" icon={UserPlus} onClick={onRegister}>
+              Register patient
+            </Button>
+            <Button
+              icon={RefreshCw}
               onClick={() => fetchPatients(true)}
-              className="text-xs font-semibold text-red-700 underline"
-            >
-              Retry
-            </button>
+              disabled={loading}
+              style={{ padding: 0, width: 38 }}
+            />
+          </>
+        }
+      />
+
+      <Card>
+        {/* Search */}
+        <div style={{ padding: "14px 20px", borderBottom: "1px solid var(--border-faint)" }}>
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search by name, national ID, or patient ID…"
+            icon={Search}
+            clearIcon={X}
+          />
+        </div>
+
+        {search && !isUuidQuery && (
+          <div style={{ padding: "10px 20px", borderBottom: "1px solid var(--border-faint)" }}>
+            <Banner tone="urgent" icon={AlertCircle}>
+              Patient names are encrypted for privacy. Search by exact patient UUID to
+              find a specific patient.
+            </Banner>
           </div>
         )}
 
-        {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-gray-100">
-                {["Patient", "Gender", "Registered", ""].map((h, i) => (
-                  <th
-                    key={i}
-                    className={`py-2.5 text-xs font-semibold text-gray-400 uppercase tracking-wide
-                      ${i === 0 ? "pl-5 pr-3" : i === 3 ? "pl-3 pr-5" : "px-3"}
-                      ${i === 1 ? "hidden sm:table-cell" : i === 2 ? "hidden md:table-cell" : ""}`}
-                  >
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
-              ) : patients.length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="py-16 text-center">
-                    <Users className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-                    <p className="text-sm font-semibold text-gray-500">
-                      No patients found
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">
-                      No patients are registered at your institution yet
-                    </p>
-                    <button
-                      onClick={onRegister}
-                      className="mt-4 px-4 py-2 rounded-xl text-sm font-semibold text-white inline-flex items-center gap-2"
-                      style={{ background: "#166534" }}
-                    >
-                      <UserPlus className="w-4 h-4" /> Register Patient
-                    </button>
-                  </td>
-                </tr>
-              ) : (
-                patients.map((p) => (
-                  <tr
-                    key={p.id}
-                    onClick={() => onSelectPatient(p.id)}
-                    className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors cursor-pointer group"
-                  >
-                    <td className="py-3.5 pl-5 pr-3">
-                      <div className="flex items-center gap-3">
-                        <div
-                          className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-                          style={{
-                            background: genderColors[p.gender] ?? "#6b7280",
-                          }}
-                        >
-                          {getInitials(p.firstName, p.lastName)}
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <p className="text-sm font-semibold text-gray-800">
-                              {p.firstName} {p.lastName}
-                            </p>
-                            {p.isMinor && <MinorBadge />}
-                          </div>
-                          <p className="text-xs text-gray-400 font-mono">
-                            {p.temporaryPatientId ?? p.id.slice(0, 8) + "…"}
-                          </p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-3.5 px-3 hidden sm:table-cell">
-                      <span className="text-sm text-gray-600 capitalize">
-                        {p.gender}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-3 hidden md:table-cell">
-                      <div className="flex items-center gap-1.5 text-sm text-gray-500">
-                        <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                        {formatDate(p.createdAt)}
-                      </div>
-                    </td>
-                    <td className="py-3.5 pl-3 pr-5 text-right">
-                      <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-500 transition-colors ml-auto" />
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+        {error && (
+          <div style={{ padding: "10px 20px", borderBottom: "1px solid var(--border-faint)" }}>
+            <Banner
+              tone="critical"
+              icon={AlertCircle}
+              action={
+                <Button variant="ghost" size="sm" onClick={() => fetchPatients(true)}>
+                  Retry
+                </Button>
+              }
+            >
+              {error}
+            </Banner>
+          </div>
+        )}
+
+        {/* Column headers */}
+        <div
+          className="hidden md:grid items-center"
+          style={{
+            gridTemplateColumns: GRID,
+            gap: 14,
+            padding: "9px 20px",
+            background: "var(--surface-sunken)",
+            borderBottom: "1px solid var(--border-faint)",
+          }}
+        >
+          <span />
+          <SectionLabel>Patient</SectionLabel>
+          <SectionLabel>Gender</SectionLabel>
+          <SectionLabel>Registered</SectionLabel>
+          <span />
         </div>
 
-        {/* Load more */}
-        {!loading && hasMore && patients.length > 0 && (
-          <div className="px-5 py-4 border-t border-gray-100 flex justify-center">
-            <button
-              onClick={() => fetchPatients(false)}
-              disabled={loadingMore}
-              className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold border border-gray-200 hover:bg-gray-50 transition-colors text-gray-700 disabled:opacity-50"
+        {loading ? (
+          Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
+        ) : patients.length === 0 ? (
+          <EmptyState
+            icon={Users}
+            title="No patients found"
+            message={
+              search
+                ? "No patient matches that query."
+                : "No patients are registered at your institution yet."
+            }
+            pad={64}
+            action={
+              <Button variant="primary" size="sm" icon={UserPlus} onClick={onRegister}>
+                Register patient
+              </Button>
+            }
+          />
+        ) : (
+          patients.map((p, i) => (
+            <div
+              key={p.id}
+              onClick={() => onSelectPatient(p.id)}
+              className="grid items-center"
+              style={{
+                gridTemplateColumns: GRID,
+                gap: 14,
+                padding: "12px 20px",
+                borderBottom: "1px solid var(--border-faint)",
+                cursor: "pointer",
+                transition: "background var(--dur-fast) var(--ease-standard)",
+              }}
+              {...hoverRow}
             >
-              {loadingMore ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Loading…
-                </>
-              ) : (
-                "Load more"
-              )}
-            </button>
-          </div>
+              <Avatar name={`${p.firstName} ${p.lastName}`} seed={i} />
+
+              <div className="min-w-0 flex flex-col" style={{ gap: 4 }}>
+                <div className="flex items-center flex-wrap" style={{ gap: 7 }}>
+                  <span
+                    className="truncate"
+                    style={{
+                      font: "600 14px/1.2 var(--font-sans)",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    {p.firstName} {p.lastName}
+                  </span>
+                  {p.isMinor && <MinorBadge />}
+                </div>
+                <span
+                  style={{ font: "400 11px/1 var(--font-mono)", color: "var(--text-muted)" }}
+                >
+                  {p.temporaryPatientId ?? `${p.id.slice(0, 8)}…`}
+                </span>
+              </div>
+
+              <span
+                style={{
+                  font: "500 12.5px/1 var(--font-sans)",
+                  color: "var(--text-secondary)",
+                  textTransform: "capitalize",
+                }}
+              >
+                {p.gender}
+              </span>
+
+              <span
+                className="inline-flex items-center"
+                style={{
+                  gap: 6,
+                  font: "400 12.5px/1 var(--font-sans)",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                <Calendar className="w-3.5 h-3.5" style={{ color: "var(--text-muted)" }} />
+                {formatDate(p.createdAt)}
+              </span>
+
+              <ChevronRight
+                className="w-4 h-4 justify-self-end"
+                style={{ color: "var(--text-disabled)" }}
+              />
+            </div>
+          ))
         )}
 
         {!loading && patients.length > 0 && (
-          <div className="px-5 py-3 border-t border-gray-100 bg-gray-50/50">
-            <p className="text-xs text-gray-400 text-center">
-              Showing {patients.length} patient
-              {patients.length !== 1 ? "s" : ""}
-              {!hasMore ? " · All loaded" : ""}
+          <div
+            className="flex flex-col items-center"
+            style={{ gap: 10, padding: "14px 20px" }}
+          >
+            {hasMore && (
+              <Button size="sm" loading={loadingMore} onClick={() => fetchPatients(false)}>
+                {loadingMore ? "Loading…" : "Load more"}
+              </Button>
+            )}
+            <p
+              style={{
+                margin: 0,
+                font: "400 12px/1 var(--font-sans)",
+                color: "var(--text-muted)",
+              }}
+            >
+              Showing {patients.length} patient{patients.length !== 1 ? "s" : ""}
+              {!hasMore ? " · all loaded" : ""}
             </p>
           </div>
         )}
-      </div>
-    </div>
+      </Card>
+    </Page>
   );
 }

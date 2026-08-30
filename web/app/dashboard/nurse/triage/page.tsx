@@ -12,17 +12,18 @@ import {
   XCircle,
   Loader2,
 } from "lucide-react";
+import { Page, PageHeader } from "@/components/dashboard/ui";
 
 const bloodTypeColor: Record<string, string> = {
-  "A+": "#3b82f6",
-  "A-": "#6366f1",
-  "B+": "#8b5cf6",
-  "B-": "#ec4899",
-  "AB+": "#f59e0b",
-  "AB-": "#ef4444",
-  "O+": "#10b981",
-  "O-": "#14b8a6",
-  unknown: "#9ca3af",
+  "A+": "var(--blue-500)",
+  "A-": "var(--blue-600)",
+  "B+": "var(--violet-500)",
+  "B-": "var(--coral-500)",
+  "AB+": "var(--amber-500)",
+  "AB-": "var(--coral-500)",
+  "O+": "var(--green-600)",
+  "O-": "var(--green-600)",
+  unknown: "var(--text-muted)",
 };
 
 type PermissionStatus =
@@ -152,46 +153,39 @@ function NurseTriagePageInner() {
   };
 
   return (
-    <div
-      className="max-w-2xl mx-auto"
-      style={{ fontFamily: "'DM Sans', sans-serif" }}
-    >
-      <div className="mb-6">
-        <h1
-          className="text-2xl font-bold text-gray-900"
-          style={{ fontFamily: "'Playfair Display', serif" }}
-        >
-          Triage Patient
-        </h1>
-        <p className="text-gray-500 text-sm mt-1">
-          {queueVisitNumber
+    <Page maxWidth={700}>
+      <PageHeader
+        eyebrow="Nursing"
+        title="Triage patient"
+        subtitle={
+          queueVisitNumber
             ? "Requesting access for patient…"
-            : "Enter the visit number to begin triage"}
-        </p>
-      </div>
+            : "Enter the visit number to begin triage"
+        }
+      />
 
       {!queueVisitNumber && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-4">
-          <label className="block text-xs font-semibold text-gray-700 uppercase tracking-wide mb-2">
+        <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-6 mb-4">
+          <label className="block text-xs font-semibold text-[var(--text-secondary)] uppercase tracking-wide mb-2">
             Visit Number
           </label>
           <div className="flex gap-3">
             <div className="flex-1 relative">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" />
               <input
                 value={visitNumber}
                 onChange={(e) => setVisitNumber(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                 placeholder="e.g. VIS-2026-AB12CD34"
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 bg-gray-50 text-gray-900 text-sm font-mono outline-none transition-all focus:border-green-600 focus:ring-2 focus:ring-green-600/10 focus:bg-white placeholder:text-gray-400 placeholder:font-sans"
+                className="w-full pl-10 pr-4 py-3 rounded-[var(--r-sm)] border border-[var(--hc-border)] bg-[var(--surface-sunken)] text-[var(--text-primary)] text-sm font-mono outline-none transition-all focus:border-[var(--green-600)] focus:ring-2 focus:ring-[var(--focus-ring)] focus:bg-[var(--surface-card)] placeholder:text-[var(--text-muted)] placeholder:font-sans"
               />
             </div>
             <button
               onClick={handleSearch}
               disabled={loading || !visitNumber.trim()}
-              className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-50"
+              className="flex items-center gap-2 px-5 py-3 rounded-[var(--r-sm)] text-sm font-semibold text-[var(--white)] transition-all disabled:opacity-50"
               style={{
-                background: "linear-gradient(135deg, #166534, #15803d)",
+                background: "var(--brand)",
               }}
             >
               {loading ? (
@@ -222,16 +216,16 @@ function NurseTriagePageInner() {
             </button>
           </div>
           {error && (
-            <div className="flex items-start gap-2 mt-3 p-3 rounded-xl bg-red-50 border border-red-100">
-              <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-              <p className="text-sm text-red-700">{error}</p>
+            <div className="flex items-start gap-2 mt-3 p-3 rounded-[var(--r-sm)] bg-[var(--coral-050)] border border-[var(--coral-100)]">
+              <AlertCircle className="w-4 h-4 text-[var(--coral-500)] mt-0.5 flex-shrink-0" />
+              <p className="text-sm text-[var(--critical-ink)]">{error}</p>
             </div>
           )}
-          <p className="text-xs text-gray-400 mt-3">
+          <p className="text-xs text-[var(--text-muted)] mt-3">
             💡 You can also click any patient in the{" "}
             <button
               onClick={() => router.push("/dashboard/nurse/queue")}
-              className="text-green-700 font-medium hover:underline"
+              className="text-[var(--green-700)] font-medium hover:underline"
             >
               Today's Queue
             </button>{" "}
@@ -241,39 +235,39 @@ function NurseTriagePageInner() {
       )}
 
       {loading && queueVisitNumber && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-10 flex flex-col items-center gap-3 text-gray-400">
-          <Loader2 className="w-7 h-7 animate-spin text-green-700" />
+        <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-10 flex flex-col items-center gap-3 text-[var(--text-muted)]">
+          <Loader2 className="w-7 h-7 animate-spin text-[var(--green-700)]" />
           <p className="text-sm">Loading patient visit…</p>
         </div>
       )}
 
       {!loading && error && queueVisitNumber && (
-        <div className="flex items-start gap-2 p-4 rounded-2xl bg-red-50 border border-red-100">
-          <AlertCircle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-          <p className="text-sm text-red-700">{error}</p>
+        <div className="flex items-start gap-2 p-4 rounded-[var(--r-lg)] bg-[var(--coral-050)] border border-[var(--coral-100)]">
+          <AlertCircle className="w-4 h-4 text-[var(--coral-500)] mt-0.5 flex-shrink-0" />
+          <p className="text-sm text-[var(--critical-ink)]">{error}</p>
         </div>
       )}
 
       {result && (
-        <div className="bg-white rounded-2xl border border-green-100 shadow-sm overflow-hidden">
+        <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--green-100)] shadow-[var(--elev-1)] overflow-hidden">
           <div
-            className="px-6 py-4 border-b border-gray-100 flex items-center gap-3"
-            style={{ background: "linear-gradient(135deg, #f0fdf4, #dcfce7)" }}
+            className="px-6 py-4 border-b border-[var(--border-faint)] flex items-center gap-3"
+            style={{ background: "var(--brand-tint)" }}
           >
             <div
-              className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white flex-shrink-0"
-              style={{ background: "#166534" }}
+              className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-[var(--white)] flex-shrink-0"
+              style={{ background: "var(--green-800)" }}
             >
               {result.patient?.firstName?.[0]}
               {result.patient?.lastName?.[0]}
             </div>
             <div>
-              <p className="font-bold text-gray-900">
+              <p className="font-bold text-[var(--text-primary)]">
                 {result.patient
                   ? `${result.patient.firstName} ${result.patient.lastName}`
                   : "Unknown Patient"}
               </p>
-              <p className="text-xs text-gray-500 font-mono">
+              <p className="text-xs text-[var(--text-secondary)] font-mono">
                 {result.visit?.visitNumber}
               </p>
             </div>
@@ -281,10 +275,10 @@ function NurseTriagePageInner() {
               {result.patient?.bloodType &&
                 result.patient.bloodType !== "unknown" && (
                   <span
-                    className="text-xs font-bold px-2.5 py-1 rounded-full text-white"
+                    className="text-xs font-bold px-2.5 py-1 rounded-full text-[var(--white)]"
                     style={{
                       background:
-                        bloodTypeColor[result.patient.bloodType] ?? "#6b7280",
+                        bloodTypeColor[result.patient.bloodType] ?? "var(--text-secondary)",
                     }}
                   >
                     {result.patient.bloodType}
@@ -293,17 +287,17 @@ function NurseTriagePageInner() {
             </div>
           </div>
 
-          <div className="px-6 py-4 grid grid-cols-2 gap-4 text-sm border-b border-gray-100">
+          <div className="px-6 py-4 grid grid-cols-2 gap-4 text-sm border-b border-[var(--border-faint)]">
             <div>
-              <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">
+              <p className="text-xs text-[var(--text-muted)] font-medium uppercase tracking-wide mb-1">
                 Chief Complaint
               </p>
-              <p className="text-gray-800 font-medium">
+              <p className="text-[var(--text-primary)] font-medium">
                 {result.visit?.chiefComplaint}
               </p>
             </div>
             <div>
-              <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">
+              <p className="text-xs text-[var(--text-muted)] font-medium uppercase tracking-wide mb-1">
                 Priority
               </p>
               <span
@@ -311,34 +305,34 @@ function NurseTriagePageInner() {
                 style={{
                   background:
                     result.visit?.priority === "critical"
-                      ? "#fef2f2"
+                      ? "var(--coral-050)"
                       : result.visit?.priority === "urgent"
-                        ? "#fffbeb"
-                        : "#f0fdf4",
+                        ? "var(--amber-050)"
+                        : "var(--brand-tint)",
                   color:
                     result.visit?.priority === "critical"
-                      ? "#dc2626"
+                      ? "var(--critical-ink)"
                       : result.visit?.priority === "urgent"
-                        ? "#d97706"
-                        : "#16a34a",
+                        ? "var(--urgent-ink)"
+                        : "var(--green-600)",
                 }}
               >
                 {result.visit?.priority}
               </span>
             </div>
             <div>
-              <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">
+              <p className="text-xs text-[var(--text-muted)] font-medium uppercase tracking-wide mb-1">
                 Visit Type
               </p>
-              <p className="text-gray-600 capitalize">
+              <p className="text-[var(--text-secondary)] capitalize">
                 {result.visit?.visitType}
               </p>
             </div>
             <div>
-              <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">
+              <p className="text-xs text-[var(--text-muted)] font-medium uppercase tracking-wide mb-1">
                 Gender
               </p>
-              <p className="text-gray-600 capitalize">
+              <p className="text-[var(--text-secondary)] capitalize">
                 {result.patient?.gender ?? "—"}
               </p>
             </div>
@@ -348,9 +342,9 @@ function NurseTriagePageInner() {
             {permStatus === "idle" && (
               <button
                 onClick={() => sendAccessRequest(result)}
-                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md"
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-[var(--r-sm)] text-sm font-semibold text-[var(--white)] transition-all hover:shadow-[var(--elev-2)]"
                 style={{
-                  background: "linear-gradient(135deg, #166534, #15803d)",
+                  background: "var(--brand)",
                 }}
               >
                 <Activity className="w-4 h-4" /> Begin Triage{" "}
@@ -358,20 +352,20 @@ function NurseTriagePageInner() {
               </button>
             )}
             {permStatus === "requesting" && (
-              <div className="flex items-center justify-center gap-3 py-4 text-gray-500 text-sm">
-                <Loader2 className="w-5 h-5 animate-spin text-green-700" />{" "}
+              <div className="flex items-center justify-center gap-3 py-4 text-[var(--text-secondary)] text-sm">
+                <Loader2 className="w-5 h-5 animate-spin text-[var(--green-700)]" />{" "}
                 Sending access request to patient…
               </div>
             )}
             {permStatus === "pending" && (
               <div className="space-y-3">
-                <div className="flex items-start gap-3 p-4 rounded-xl bg-blue-50 border border-blue-100">
-                  <Clock className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                <div className="flex items-start gap-3 p-4 rounded-[var(--r-sm)] bg-[var(--info-tint)] border border-[var(--blue-100)]">
+                  <Clock className="w-5 h-5 text-[var(--blue-500)] mt-0.5 flex-shrink-0" />
                   <div>
-                    <p className="text-sm font-semibold text-blue-900">
+                    <p className="text-sm font-semibold text-[var(--info-ink)]">
                       Waiting for patient approval
                     </p>
-                    <p className="text-xs text-blue-700 mt-0.5">
+                    <p className="text-xs text-[var(--info-ink)] mt-0.5">
                       A notification has been sent to{" "}
                       <span className="font-medium">
                         {result.patient?.firstName} {result.patient?.lastName}
@@ -380,7 +374,7 @@ function NurseTriagePageInner() {
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center justify-center gap-2 py-1 text-xs text-gray-400">
+                <div className="flex items-center justify-center gap-2 py-1 text-xs text-[var(--text-muted)]">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" /> Checking for
                   response… ({pollCount * 5}s elapsed)
                 </div>
@@ -388,13 +382,13 @@ function NurseTriagePageInner() {
             )}
             {permStatus === "approved" && (
               <div className="space-y-3">
-                <div className="flex items-start gap-3 p-4 rounded-xl bg-green-50 border border-green-200">
-                  <CheckCircle2 className="w-5 h-5 text-green-600 mt-0.5 flex-shrink-0" />
+                <div className="flex items-start gap-3 p-4 rounded-[var(--r-sm)] bg-[var(--brand-tint)] border border-[var(--green-200)]">
+                  <CheckCircle2 className="w-5 h-5 text-[var(--green-700)] mt-0.5 flex-shrink-0" />
                   <div>
-                    <p className="text-sm font-semibold text-green-900">
+                    <p className="text-sm font-semibold text-[var(--green-800)]">
                       Access approved
                     </p>
-                    <p className="text-xs text-green-700 mt-0.5">
+                    <p className="text-xs text-[var(--green-700)] mt-0.5">
                       {result.patient?.firstName} {result.patient?.lastName} has
                       granted you access.
                     </p>
@@ -404,9 +398,9 @@ function NurseTriagePageInner() {
                   onClick={() =>
                     router.push(`/dashboard/nurse/triage/${result.visit.id}`)
                   }
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md"
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-[var(--r-sm)] text-sm font-semibold text-[var(--white)] transition-all hover:shadow-[var(--elev-2)]"
                   style={{
-                    background: "linear-gradient(135deg, #166534, #15803d)",
+                    background: "var(--brand)",
                   }}
                 >
                   <Activity className="w-4 h-4" /> Begin Triage{" "}
@@ -415,13 +409,13 @@ function NurseTriagePageInner() {
               </div>
             )}
             {permStatus === "rejected" && (
-              <div className="flex items-start gap-3 p-4 rounded-xl bg-red-50 border border-red-100">
-                <XCircle className="w-5 h-5 text-red-500 mt-0.5 flex-shrink-0" />
+              <div className="flex items-start gap-3 p-4 rounded-[var(--r-sm)] bg-[var(--coral-050)] border border-[var(--coral-100)]">
+                <XCircle className="w-5 h-5 text-[var(--coral-500)] mt-0.5 flex-shrink-0" />
                 <div>
-                  <p className="text-sm font-semibold text-red-900">
+                  <p className="text-sm font-semibold text-[var(--critical-ink)]">
                     Access denied
                   </p>
-                  <p className="text-xs text-red-700 mt-0.5">
+                  <p className="text-xs text-[var(--critical-ink)] mt-0.5">
                     The patient declined the request. Please speak with them
                     directly or escalate to the attending practitioner.
                   </p>
@@ -430,13 +424,13 @@ function NurseTriagePageInner() {
             )}
             {permStatus === "expired" && (
               <div className="space-y-3">
-                <div className="flex items-start gap-3 p-4 rounded-xl bg-gray-50 border border-gray-200">
-                  <Clock className="w-5 h-5 text-gray-400 mt-0.5 flex-shrink-0" />
+                <div className="flex items-start gap-3 p-4 rounded-[var(--r-sm)] bg-[var(--surface-sunken)] border border-[var(--hc-border)]">
+                  <Clock className="w-5 h-5 text-[var(--text-muted)] mt-0.5 flex-shrink-0" />
                   <div>
-                    <p className="text-sm font-semibold text-gray-800">
+                    <p className="text-sm font-semibold text-[var(--text-primary)]">
                       Request timed out
                     </p>
-                    <p className="text-xs text-gray-600 mt-0.5">
+                    <p className="text-xs text-[var(--text-secondary)] mt-0.5">
                       No response from the patient. You can try again.
                     </p>
                   </div>
@@ -447,7 +441,7 @@ function NurseTriagePageInner() {
                     setRequestId(null);
                     setPollCount(0);
                   }}
-                  className="w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-semibold border border-gray-200 text-gray-700 hover:bg-gray-50 transition-all"
+                  className="w-full flex items-center justify-center gap-2 py-3 rounded-[var(--r-sm)] text-sm font-semibold border border-[var(--hc-border)] text-[var(--text-secondary)] hover:bg-[var(--surface-sunken)] transition-all"
                 >
                   Try Again
                 </button>
@@ -456,16 +450,24 @@ function NurseTriagePageInner() {
           </div>
         </div>
       )}
-    </div>
+    </Page>
   );
 }
 
 // ── Suspense wrapper ──────────────────────────────────────────────────────────
+// The inner component reads useSearchParams, which Next requires be wrapped.
 export default function NurseTriagePage() {
   return (
     <Suspense
       fallback={
-        <div style={{ padding: 40, textAlign: "center", color: "#9ca3af" }}>
+        <div
+          style={{
+            padding: 40,
+            textAlign: "center",
+            font: "400 13px/1 var(--font-sans)",
+            color: "var(--text-muted)",
+          }}
+        >
           Loading…
         </div>
       }

@@ -19,7 +19,7 @@ export default function NurseVitalsRedirectPage({
         alignItems: "center",
         justifyContent: "center",
         height: "50vh",
-        color: "#9ca3af",
+        color: "var(--text-muted)",
         fontSize: 14,
       }}
     >

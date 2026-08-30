@@ -152,24 +152,23 @@ export default function LoginPage() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "#f8f9fc",
-        fontFamily: "'DM Sans', sans-serif",
+        background: "var(--surface-bg)",
+        fontFamily: "var(--font-sans)",
         padding: 24,
       }}
     >
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:wght@600;700&display=swap');
         @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
-        .input-field { width:100%; padding:11px 14px; border-radius:10px; border:1.5px solid #e5e7eb; background:#fff; font-size:14px; color:#111827; outline:none; transition:all 0.15s; font-family:'DM Sans',sans-serif; box-sizing:border-box; }
-        .input-field:focus { border-color:#166534; box-shadow:0 0 0 3px rgba(22,101,52,0.07); }
-        .input-field::placeholder { color:#d1d5db; }
-        .submit-btn { width:100%; padding:12px; border-radius:10px; border:none; background:#166534; color:#fff; font-size:14px; font-weight:700; cursor:pointer; transition:all 0.15s; display:flex; align-items:center; justify-content:center; gap:8px; font-family:'DM Sans',sans-serif; }
-        .submit-btn:hover:not(:disabled) { background:#15803d; }
+        .input-field { width:100%; padding:11px 14px; border-radius:var(--r-sm); border:1.5px solid var(--hc-border); background:var(--surface-card); font-size:14px; color:var(--text-primary); outline:none; transition:all 0.15s; font-family:var(--font-sans); box-sizing:border-box; }
+        .input-field:focus { border-color:var(--brand); box-shadow:0 0 0 3px var(--focus-ring); }
+        .input-field::placeholder { color:var(--text-disabled); }
+        .submit-btn { width:100%; padding:12px; border-radius:var(--r-sm); border:none; background:var(--brand); color:var(--on-brand); font-size:14px; font-weight:700; cursor:pointer; transition:all 0.15s; display:flex; align-items:center; justify-content:center; gap:8px; font-family:var(--font-sans); }
+        .submit-btn:hover:not(:disabled) { background:var(--brand-deep); }
         .submit-btn:disabled { opacity:0.55; cursor:not-allowed; }
-        .mode-btn { flex:1; padding:9px; border-radius:9px; border:1.5px solid #e5e7eb; background:#fff; font-size:13px; font-weight:600; color:#6b7280; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; transition:all 0.15s; font-family:'DM Sans',sans-serif; }
-        .mode-btn.active { border-color:#166534; background:#f0fdf4; color:#166534; }
-        .otp-input { width:100%; padding:14px; border-radius:10px; border:1.5px solid #e5e7eb; background:#fff; font-size:32px; font-weight:800; color:#111827; outline:none; transition:all 0.15s; font-family:monospace; text-align:center; letter-spacing:12px; box-sizing:border-box; }
-        .otp-input:focus { border-color:#166534; box-shadow:0 0 0 3px rgba(22,101,52,0.07); }
+        .mode-btn { flex:1; padding:9px; border-radius:var(--r-xs); border:1.5px solid var(--hc-border); background:var(--surface-card); font-size:13px; font-weight:600; color:var(--text-secondary); cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; transition:all 0.15s; font-family:var(--font-sans); }
+        .mode-btn.active { border-color:var(--brand); background:var(--brand-tint); color:var(--success-ink); }
+        .otp-input { width:100%; padding:14px; border-radius:var(--r-sm); border:1.5px solid var(--hc-border); background:var(--surface-card); font-size:32px; font-weight:800; color:var(--text-primary); outline:none; transition:all 0.15s; font-family:var(--font-mono); text-align:center; letter-spacing:12px; box-sizing:border-box; }
+        .otp-input:focus { border-color:var(--brand); box-shadow:0 0 0 3px var(--focus-ring); }
       `}</style>
 
       <div
@@ -185,7 +184,7 @@ export default function LoginPage() {
             style={{
               width: 44,
               height: 44,
-              borderRadius: 12,
+              borderRadius: "var(--r-sm)",
               overflow: "hidden",
               margin: "0 auto 12px",
             }}
@@ -194,16 +193,16 @@ export default function LoginPage() {
           </div>
           <p
             style={{
-              fontFamily: "'Playfair Display',serif",
+              fontFamily: "var(--font-display)",
               fontSize: 20,
               fontWeight: 700,
-              color: "#0A0E1A",
+              color: "var(--text-primary)",
               margin: 0,
             }}
           >
-            Med<span style={{ color: "#059669" }}>Link</span>
+            Med<span style={{ color: "var(--brand)" }}>Link</span>
           </p>
-          <p style={{ fontSize: 12, color: "#9ca3af", marginTop: 3 }}>
+          <p style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 3 }}>
             Staff Portal · Zambia
           </p>
         </div>
@@ -211,22 +210,22 @@ export default function LoginPage() {
         {/* Card */}
         <div
           style={{
-            background: "#fff",
-            borderRadius: 16,
-            border: "1px solid #e5e7eb",
+            background: "var(--surface-card)",
+            borderRadius: "var(--r-lg)",
+            border: "1px solid var(--hc-border)",
             padding: "32px 28px",
             boxShadow:
-              "0 1px 3px rgba(0,0,0,0.05), 0 4px 16px rgba(0,0,0,0.04)",
+              "var(--elev-2)",
           }}
         >
           {!otpStep ? (
             <>
               <h1
                 style={{
-                  fontFamily: "'Playfair Display',serif",
+                  fontFamily: "var(--font-display)",
                   fontSize: 22,
                   fontWeight: 700,
-                  color: "#111827",
+                  color: "var(--text-primary)",
                   marginBottom: 4,
                   marginTop: 0,
                 }}
@@ -236,7 +235,7 @@ export default function LoginPage() {
               <p
                 style={{
                   fontSize: 13.5,
-                  color: "#9ca3af",
+                  color: "var(--text-muted)",
                   marginBottom: 24,
                   marginTop: 0,
                 }}
@@ -278,7 +277,7 @@ export default function LoginPage() {
                         display: "block",
                         fontSize: 11.5,
                         fontWeight: 700,
-                        color: "#374151",
+                        color: "var(--text-secondary)",
                         textTransform: "uppercase",
                         letterSpacing: "0.06em",
                         marginBottom: 6,
@@ -294,7 +293,7 @@ export default function LoginPage() {
                     />
                     {licenseForm.formState.errors.licenseNumber && (
                       <p
-                        style={{ fontSize: 12, color: "#ef4444", marginTop: 4 }}
+                        style={{ fontSize: 12, color: "var(--critical)", marginTop: 4 }}
                       >
                         {licenseForm.formState.errors.licenseNumber.message}
                       </p>
@@ -306,7 +305,7 @@ export default function LoginPage() {
                         display: "block",
                         fontSize: 11.5,
                         fontWeight: 700,
-                        color: "#374151",
+                        color: "var(--text-secondary)",
                         textTransform: "uppercase",
                         letterSpacing: "0.06em",
                         marginBottom: 6,
@@ -334,7 +333,7 @@ export default function LoginPage() {
                           background: "none",
                           border: "none",
                           cursor: "pointer",
-                          color: "#9ca3af",
+                          color: "var(--text-muted)",
                           display: "flex",
                           padding: 0,
                         }}
@@ -344,7 +343,7 @@ export default function LoginPage() {
                     </div>
                     {licenseForm.formState.errors.password && (
                       <p
-                        style={{ fontSize: 12, color: "#ef4444", marginTop: 4 }}
+                        style={{ fontSize: 12, color: "var(--critical)", marginTop: 4 }}
                       >
                         {licenseForm.formState.errors.password.message}
                       </p>
@@ -357,16 +356,16 @@ export default function LoginPage() {
                         alignItems: "center",
                         gap: 9,
                         padding: "10px 13px",
-                        borderRadius: 9,
-                        background: "#fef2f2",
-                        border: "1px solid #fecaca",
+                        borderRadius: "var(--r-xs)",
+                        background: "var(--coral-050)",
+                        border: "1px solid var(--coral-100)",
                       }}
                     >
                       <AlertCircle
                         size={14}
-                        style={{ color: "#dc2626", flexShrink: 0 }}
+                        style={{ color: "var(--critical-ink)", flexShrink: 0 }}
                       />
-                      <p style={{ fontSize: 13, color: "#dc2626", margin: 0 }}>
+                      <p style={{ fontSize: 13, color: "var(--critical-ink)", margin: 0 }}>
                         {error}
                       </p>
                     </div>
@@ -400,7 +399,7 @@ export default function LoginPage() {
                         display: "block",
                         fontSize: 11.5,
                         fontWeight: 700,
-                        color: "#374151",
+                        color: "var(--text-secondary)",
                         textTransform: "uppercase",
                         letterSpacing: "0.06em",
                         marginBottom: 6,
@@ -417,7 +416,7 @@ export default function LoginPage() {
                     />
                     {emailForm.formState.errors.email && (
                       <p
-                        style={{ fontSize: 12, color: "#ef4444", marginTop: 4 }}
+                        style={{ fontSize: 12, color: "var(--critical)", marginTop: 4 }}
                       >
                         {emailForm.formState.errors.email.message}
                       </p>
@@ -429,7 +428,7 @@ export default function LoginPage() {
                         display: "block",
                         fontSize: 11.5,
                         fontWeight: 700,
-                        color: "#374151",
+                        color: "var(--text-secondary)",
                         textTransform: "uppercase",
                         letterSpacing: "0.06em",
                         marginBottom: 6,
@@ -457,7 +456,7 @@ export default function LoginPage() {
                           background: "none",
                           border: "none",
                           cursor: "pointer",
-                          color: "#9ca3af",
+                          color: "var(--text-muted)",
                           display: "flex",
                           padding: 0,
                         }}
@@ -467,7 +466,7 @@ export default function LoginPage() {
                     </div>
                     {emailForm.formState.errors.password && (
                       <p
-                        style={{ fontSize: 12, color: "#ef4444", marginTop: 4 }}
+                        style={{ fontSize: 12, color: "var(--critical)", marginTop: 4 }}
                       >
                         {emailForm.formState.errors.password.message}
                       </p>
@@ -480,16 +479,16 @@ export default function LoginPage() {
                         alignItems: "center",
                         gap: 9,
                         padding: "10px 13px",
-                        borderRadius: 9,
-                        background: "#fef2f2",
-                        border: "1px solid #fecaca",
+                        borderRadius: "var(--r-xs)",
+                        background: "var(--coral-050)",
+                        border: "1px solid var(--coral-100)",
                       }}
                     >
                       <AlertCircle
                         size={14}
-                        style={{ color: "#dc2626", flexShrink: 0 }}
+                        style={{ color: "var(--critical-ink)", flexShrink: 0 }}
                       />
-                      <p style={{ fontSize: 13, color: "#dc2626", margin: 0 }}>
+                      <p style={{ fontSize: 13, color: "var(--critical-ink)", margin: 0 }}>
                         {error}
                       </p>
                     </div>
@@ -525,13 +524,13 @@ export default function LoginPage() {
                   alignItems: "center",
                   gap: 7,
                   fontSize: 13,
-                  color: "#6b7280",
+                  color: "var(--text-secondary)",
                   background: "none",
                   border: "none",
                   cursor: "pointer",
                   marginBottom: 24,
                   padding: 0,
-                  fontFamily: "'DM Sans',sans-serif",
+                  fontFamily: "var(--font-sans)",
                 }}
               >
                 <ArrowLeft size={14} /> Back
@@ -540,10 +539,10 @@ export default function LoginPage() {
               <div style={{ marginBottom: 24 }}>
                 <h1
                   style={{
-                    fontFamily: "'Playfair Display',serif",
+                    fontFamily: "var(--font-display)",
                     fontSize: 22,
                     fontWeight: 700,
-                    color: "#111827",
+                    color: "var(--text-primary)",
                     marginBottom: 4,
                     marginTop: 0,
                   }}
@@ -553,13 +552,13 @@ export default function LoginPage() {
                 <p
                   style={{
                     fontSize: 13.5,
-                    color: "#9ca3af",
+                    color: "var(--text-muted)",
                     marginTop: 0,
                     lineHeight: 1.6,
                   }}
                 >
                   We sent a 6-digit code to{" "}
-                  <strong style={{ color: "#374151" }}>
+                  <strong style={{ color: "var(--text-secondary)" }}>
                     {otpData?.maskedEmail}
                   </strong>
                 </p>
@@ -575,7 +574,7 @@ export default function LoginPage() {
                       display: "block",
                       fontSize: 11.5,
                       fontWeight: 700,
-                      color: "#374151",
+                      color: "var(--text-secondary)",
                       textTransform: "uppercase",
                       letterSpacing: "0.06em",
                       marginBottom: 6,
@@ -584,7 +583,16 @@ export default function LoginPage() {
                     Verification Code
                   </label>
                   <input
-                    {...otpForm.register("otp")}
+                    {...otpForm.register("otp", {
+                      onChange: (e) => {
+                        const val = e.target.value.replace(/\D/g, "").slice(0, 6);
+                        e.target.value = val;
+                        otpForm.setValue("otp", val);
+                        if (val.length === 6) {
+                          otpForm.handleSubmit(onSubmitOTP)();
+                        }
+                      },
+                    })}
                     className="otp-input"
                     placeholder="000000"
                     maxLength={6}
@@ -596,7 +604,7 @@ export default function LoginPage() {
                     <p
                       style={{
                         fontSize: 12,
-                        color: "#ef4444",
+                        color: "var(--critical)",
                         marginTop: 4,
                         textAlign: "center",
                       }}
@@ -613,16 +621,16 @@ export default function LoginPage() {
                       alignItems: "center",
                       gap: 9,
                       padding: "10px 13px",
-                      borderRadius: 9,
-                      background: "#fef2f2",
-                      border: "1px solid #fecaca",
+                      borderRadius: "var(--r-xs)",
+                      background: "var(--coral-050)",
+                      border: "1px solid var(--coral-100)",
                     }}
                   >
                     <AlertCircle
                       size={14}
-                      style={{ color: "#dc2626", flexShrink: 0 }}
+                      style={{ color: "var(--critical-ink)", flexShrink: 0 }}
                     />
-                    <p style={{ fontSize: 13, color: "#dc2626", margin: 0 }}>
+                    <p style={{ fontSize: 13, color: "var(--critical-ink)", margin: 0 }}>
                       {error}
                     </p>
                   </div>
@@ -631,7 +639,7 @@ export default function LoginPage() {
                   <p
                     style={{
                       fontSize: 12,
-                      color: "#166534",
+                      color: "var(--success-ink)",
                       textAlign: "center",
                       margin: 0,
                     }}
@@ -653,7 +661,7 @@ export default function LoginPage() {
                 <p
                   style={{
                     fontSize: 13,
-                    color: "#9ca3af",
+                    color: "var(--text-muted)",
                     textAlign: "center",
                     margin: 0,
                   }}
@@ -667,11 +675,11 @@ export default function LoginPage() {
                       background: "none",
                       border: "none",
                       cursor: "pointer",
-                      color: "#166534",
+                      color: "var(--success-ink)",
                       fontWeight: 700,
                       fontSize: 13,
                       textDecoration: "underline",
-                      fontFamily: "'DM Sans',sans-serif",
+                      fontFamily: "var(--font-sans)",
                       padding: 0,
                     }}
                   >
@@ -682,7 +690,7 @@ export default function LoginPage() {
                 <p
                   style={{
                     fontSize: 11.5,
-                    color: "#d1d5db",
+                    color: "var(--text-disabled)",
                     textAlign: "center",
                     margin: 0,
                   }}
@@ -697,7 +705,7 @@ export default function LoginPage() {
         <p
           style={{
             fontSize: 12,
-            color: "#d1d5db",
+            color: "var(--text-disabled)",
             textAlign: "center",
             marginTop: 20,
           }}

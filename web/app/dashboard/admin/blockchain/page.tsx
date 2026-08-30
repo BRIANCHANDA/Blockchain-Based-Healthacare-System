@@ -26,7 +26,6 @@ import {
   WifiOff,
   Lock,
   Copy as CopyIcon,
-  Activity,
   History,
   GitCommit,
 } from "lucide-react";
@@ -94,24 +93,24 @@ interface HistoryEntry {
 
 const STATUS_COLOR = {
   healthy: {
-    bg: "#f0fdf4",
-    text: "#15803d",
-    border: "#86efac",
-    dot: "#16a34a",
+    bg: "var(--brand-tint)",
+    text: "var(--green-700)",
+    border: "var(--green-300)",
+    dot: "var(--green-600)",
     label: "Healthy",
   },
   degraded: {
-    bg: "#fffbeb",
-    text: "#d97706",
-    border: "#fde68a",
-    dot: "#f59e0b",
+    bg: "var(--amber-050)",
+    text: "var(--urgent-ink)",
+    border: "var(--amber-100)",
+    dot: "var(--amber-500)",
     label: "Degraded",
   },
   down: {
-    bg: "#fef2f2",
-    text: "#dc2626",
-    border: "#fca5a5",
-    dot: "#ef4444",
+    bg: "var(--coral-050)",
+    text: "var(--critical-ink)",
+    border: "var(--coral-100)",
+    dot: "var(--coral-500)",
     label: "Down",
   },
 };
@@ -131,63 +130,63 @@ const FAILURE_CONFIG: Record<
   duplicate: {
     label: "Duplicate",
     icon: CopyIcon,
-    color: "#9333ea",
-    bg: "#faf5ff",
-    border: "#e9d5ff",
+    color: "var(--violet-500)",
+    bg: "var(--violet-050)",
+    border: "var(--violet-100)",
     reason: "A record with this ID already exists.",
     fix: "Use a unique recordId per event.",
   },
   timeout: {
     label: "Timeout",
     icon: Clock,
-    color: "#d97706",
-    bg: "#fffbeb",
-    border: "#fde68a",
+    color: "var(--urgent-ink)",
+    bg: "var(--amber-050)",
+    border: "var(--amber-100)",
     reason: "Fabric did not respond within 12 seconds.",
     fix: "Retry or check peer load.",
   },
   peer_unreachable: {
     label: "Peer Unreachable",
     icon: WifiOff,
-    color: "#dc2626",
-    bg: "#fef2f2",
-    border: "#fecaca",
+    color: "var(--critical-ink)",
+    bg: "var(--coral-050)",
+    border: "var(--coral-100)",
     reason: "Could not connect to the peer.",
     fix: "Check Fabric network is running.",
   },
   peer_timeout: {
     label: "Peer Timeout",
     icon: Clock,
-    color: "#dc2626",
-    bg: "#fef2f2",
-    border: "#fecaca",
+    color: "var(--critical-ink)",
+    bg: "var(--coral-050)",
+    border: "var(--coral-100)",
     reason: "Peer exceeded gRPC deadline.",
     fix: "Check peer logs.",
   },
   unauthorized: {
     label: "Unauthorized",
     icon: Lock,
-    color: "#dc2626",
-    bg: "#fef2f2",
-    border: "#fecaca",
+    color: "var(--critical-ink)",
+    bg: "var(--coral-050)",
+    border: "var(--coral-100)",
     reason: "MSP not permitted.",
     fix: "Check identity MSP.",
   },
   endorsement_failed: {
     label: "Endorsement Failed",
     icon: AlertOctagon,
-    color: "#dc2626",
-    bg: "#fef2f2",
-    border: "#fecaca",
+    color: "var(--critical-ink)",
+    bg: "var(--coral-050)",
+    border: "var(--coral-100)",
     reason: "Endorsement policy not met.",
     fix: "Check required peers running.",
   },
   unknown: {
     label: "Unknown",
     icon: AlertTriangle,
-    color: "#6b7280",
-    bg: "#f9fafb",
-    border: "#e5e7eb",
+    color: "var(--text-secondary)",
+    bg: "var(--surface-sunken)",
+    border: "var(--hc-border)",
     reason: "Unclassified error.",
     fix: "Check backend logs.",
   },
@@ -201,8 +200,8 @@ function shortHash(h: string, n = 10) {
 function StatCard({ icon: Icon, label, value, color, bg }: any) {
   return (
     <div
-      className="rounded-2xl border px-4 py-4"
-      style={{ background: bg, borderColor: `${color}33` }}
+      className="rounded-[var(--r-lg)] border px-4 py-4"
+      style={{ background: bg, borderColor: `color-mix(in srgb, ${color} 20%, transparent)` }}
     >
       <div className="flex items-center justify-between mb-2">
         <p
@@ -245,33 +244,33 @@ function HistoryModal({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(10,14,26,0.6)", backdropFilter: "blur(4px)" }}
+      style={{ background: "var(--scrim)", backdropFilter: "blur(4px)" }}
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden"
+        className="bg-[var(--surface-card)] rounded-[var(--r-lg)] shadow-[var(--elev-3)] w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+        <div className="px-6 py-4 border-b border-[var(--border-faint)] flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{ background: "linear-gradient(135deg,#dcfce7,#bbf7d0)" }}
+              className="w-10 h-10 rounded-[var(--r-sm)] flex items-center justify-center"
+              style={{ background: "var(--green-100)" }}
             >
-              <History className="w-5 h-5 text-green-700" />
+              <History className="w-5 h-5 text-[var(--green-700)]" />
             </div>
             <div>
-              <h2 className="text-base font-bold text-gray-900">
+              <h2 className="text-base font-bold text-[var(--text-primary)]">
                 Record Version History
               </h2>
-              <p className="text-xs text-gray-400 mt-0.5">
+              <p className="text-xs text-[var(--text-muted)] mt-0.5">
                 Every change to this record from the ledger's key history
               </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 hover:text-gray-700"
+            className="p-2 rounded-[var(--r-xs)] hover:bg-[var(--surface-sunken)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
           >
             <XCircle className="w-5 h-5" />
           </button>
@@ -280,27 +279,27 @@ function HistoryModal({
         <div className="flex-1 overflow-y-auto">
           {loading && (
             <div className="p-12 text-center">
-              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-3 text-green-600" />
-              <p className="text-sm text-gray-400">Querying ledger history…</p>
+              <Loader2 className="w-6 h-6 animate-spin mx-auto mb-3 text-[var(--green-700)]" />
+              <p className="text-sm text-[var(--text-muted)]">Querying ledger history…</p>
             </div>
           )}
 
           {error && (
             <div className="p-6">
-              <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-red-50 border border-red-100">
-                <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
-                <p className="text-sm text-red-700">{error}</p>
+              <div className="flex items-center gap-2.5 px-4 py-3 rounded-[var(--r-sm)] bg-[var(--coral-050)] border border-[var(--coral-100)]">
+                <AlertTriangle className="w-4 h-4 text-[var(--coral-500)] flex-shrink-0" />
+                <p className="text-sm text-[var(--critical-ink)]">{error}</p>
               </div>
             </div>
           )}
 
           {!loading && !error && data && data.history.length === 0 && (
             <div className="p-12 text-center">
-              <AlertTriangle className="w-8 h-8 text-amber-400 mx-auto mb-3" />
-              <p className="text-sm font-bold text-gray-700">
+              <AlertTriangle className="w-8 h-8 text-[var(--amber-500)] mx-auto mb-3" />
+              <p className="text-sm font-bold text-[var(--text-secondary)]">
                 No history found
               </p>
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-xs text-[var(--text-muted)] mt-1">
                 This record may not exist on the ledger.
               </p>
             </div>
@@ -308,27 +307,27 @@ function HistoryModal({
 
           {!loading && !error && data && data.history.length > 0 && (
             <div className="px-6 py-5">
-              <div className="flex items-center gap-4 mb-5 p-4 rounded-xl bg-gray-50 border border-gray-100">
+              <div className="flex items-center gap-4 mb-5 p-4 rounded-[var(--r-sm)] bg-[var(--surface-sunken)] border border-[var(--border-faint)]">
                 <div className="flex-1 min-w-0">
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-0.5">
                     Record ID
                   </p>
-                  <p className="text-xs font-mono text-gray-700 break-all">
+                  <p className="text-xs font-mono text-[var(--text-secondary)] break-all">
                     {data.recordId}
                   </p>
                 </div>
-                <div className="text-center px-3 border-l border-gray-200 flex-shrink-0">
-                  <p className="text-2xl font-extrabold text-green-700 tabular-nums">
+                <div className="text-center px-3 border-l border-[var(--hc-border)] flex-shrink-0">
+                  <p className="text-2xl font-extrabold text-[var(--green-700)] tabular-nums">
                     {data.totalVersions}
                   </p>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-gray-400">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)]">
                     Versions
                   </p>
                 </div>
               </div>
 
               <div className="relative">
-                <div className="absolute left-[15px] top-2 bottom-2 w-0.5 bg-gradient-to-b from-green-200 via-green-100 to-transparent" />
+                <div className="absolute left-[15px] top-2 bottom-2 w-0.5 bg-[var(--green-200)]" />
 
                 {data.history.map((entry, i) => {
                   const isLatest = i === 0;
@@ -341,43 +340,43 @@ function HistoryModal({
                       <div
                         className="absolute left-0 top-1 w-8 h-8 rounded-full flex items-center justify-center border-2"
                         style={{
-                          background: isLatest ? "#16a34a" : "#fff",
-                          borderColor: isLatest ? "#16a34a" : "#86efac",
+                          background: isLatest ? "var(--green-600)" : "var(--white)",
+                          borderColor: isLatest ? "var(--green-600)" : "var(--green-300)",
                         }}
                       >
                         {entry.isDelete ? (
                           <XCircle
                             className="w-4 h-4"
-                            style={{ color: isLatest ? "#fff" : "#dc2626" }}
+                            style={{ color: isLatest ? "var(--white)" : "var(--critical-ink)" }}
                           />
                         ) : (
                           <GitCommit
                             className="w-4 h-4"
-                            style={{ color: isLatest ? "#fff" : "#15803d" }}
+                            style={{ color: isLatest ? "var(--white)" : "var(--green-700)" }}
                           />
                         )}
                       </div>
 
-                      <div className="bg-white rounded-xl border border-gray-100 shadow-sm overflow-hidden">
-                        <div className="px-4 py-3 border-b border-gray-50 flex items-center justify-between flex-wrap gap-2">
+                      <div className="bg-[var(--surface-card)] rounded-[var(--r-sm)] border border-[var(--border-faint)] shadow-[var(--elev-1)] overflow-hidden">
+                        <div className="px-4 py-3 border-b border-[var(--border-faint)] flex items-center justify-between flex-wrap gap-2">
                           <div className="flex items-center gap-2">
                             <span
                               className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full"
                               style={{
-                                background: isLatest ? "#dcfce7" : "#f3f4f6",
-                                color: isLatest ? "#15803d" : "#6b7280",
+                                background: isLatest ? "var(--green-100)" : "var(--surface-sunken)",
+                                color: isLatest ? "var(--green-700)" : "var(--text-secondary)",
                               }}
                             >
                               {isLatest ? "Latest" : `Version ${versionNum}`}
                             </span>
                             {entry.isDelete && (
-                              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-red-50 text-red-700">
+                              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[var(--coral-050)] text-[var(--critical-ink)]">
                                 Deleted
                               </span>
                             )}
                           </div>
                           {entry.timestamp && (
-                            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                            <div className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
                               <Clock className="w-3 h-3" />
                               <span>
                                 {format(
@@ -394,51 +393,51 @@ function HistoryModal({
                             <>
                               {entry.value.recordType && (
                                 <div className="flex items-baseline gap-2">
-                                  <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 w-20 flex-shrink-0">
+                                  <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] w-20 flex-shrink-0">
                                     Type
                                   </span>
-                                  <span className="text-xs text-gray-700">
+                                  <span className="text-xs text-[var(--text-secondary)]">
                                     {entry.value.recordType}
                                   </span>
                                 </div>
                               )}
                               {entry.value.creatorMSP && (
                                 <div className="flex items-baseline gap-2">
-                                  <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 w-20 flex-shrink-0">
+                                  <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] w-20 flex-shrink-0">
                                     By MSP
                                   </span>
-                                  <span className="text-xs text-gray-700">
+                                  <span className="text-xs text-[var(--text-secondary)]">
                                     {entry.value.creatorMSP}
                                   </span>
                                 </div>
                               )}
                               {entry.value.sha256Hash && (
                                 <div className="flex items-baseline gap-2">
-                                  <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 w-20 flex-shrink-0">
+                                  <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] w-20 flex-shrink-0">
                                     Hash
                                   </span>
-                                  <span className="text-xs font-mono text-gray-600 break-all">
+                                  <span className="text-xs font-mono text-[var(--text-secondary)] break-all">
                                     {entry.value.sha256Hash}
                                   </span>
                                 </div>
                               )}
                               {entry.value.version && (
                                 <div className="flex items-baseline gap-2">
-                                  <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 w-20 flex-shrink-0">
+                                  <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] w-20 flex-shrink-0">
                                     Version
                                   </span>
-                                  <span className="text-xs text-gray-700 font-mono">
+                                  <span className="text-xs text-[var(--text-secondary)] font-mono">
                                     v{entry.value.version}
                                   </span>
                                 </div>
                               )}
                             </>
                           )}
-                          <div className="flex items-baseline gap-2 pt-1 border-t border-gray-50">
-                            <span className="text-[10px] font-bold uppercase tracking-widest text-gray-400 w-20 flex-shrink-0">
+                          <div className="flex items-baseline gap-2 pt-1 border-t border-[var(--border-faint)]">
+                            <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] w-20 flex-shrink-0">
                               Tx ID
                             </span>
-                            <span className="text-[10px] font-mono text-gray-500 break-all">
+                            <span className="text-[10px] font-mono text-[var(--text-secondary)] break-all">
                               {entry.txId}
                             </span>
                           </div>
@@ -449,9 +448,9 @@ function HistoryModal({
                 })}
               </div>
 
-              <div className="mt-5 p-3 rounded-xl bg-green-50 border border-green-100 flex items-start gap-2">
-                <ShieldCheck className="w-4 h-4 text-green-700 flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-green-800 leading-relaxed">
+              <div className="mt-5 p-3 rounded-[var(--r-sm)] bg-[var(--brand-tint)] border border-[var(--green-100)] flex items-start gap-2">
+                <ShieldCheck className="w-4 h-4 text-[var(--green-700)] flex-shrink-0 mt-0.5" />
+                <p className="text-xs text-[var(--green-800)] leading-relaxed">
                   This timeline comes directly from Hyperledger Fabric's
                   built-in key history. Every entry is signed by the original
                   writer's MSP and cannot be modified retroactively.
@@ -620,16 +619,13 @@ export default function BlockchainDashboard() {
   const totalFailures = failures.length;
 
   return (
-    <div style={{ fontFamily: "'DM Sans', sans-serif" }} className="space-y-5">
+    <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <h1
-            className="text-2xl font-bold text-gray-900"
-            style={{ fontFamily: "'Playfair Display', serif" }}
-          >
+          <h1 style={{ margin: 0, font: "700 27px/1.1 var(--font-sans)", letterSpacing: "var(--ls-tight)", color: "var(--text-primary)" }}>
             Blockchain Network
           </h1>
-          <p className="text-sm text-gray-400 mt-1">
+          <p className="text-sm text-[var(--text-muted)] mt-1">
             Hyperledger Fabric · {overview?.channel.name ?? "channel"} ·{" "}
             {overview?.channel.chaincode ?? "chaincode"}
           </p>
@@ -637,7 +633,7 @@ export default function BlockchainDashboard() {
         <div className="flex items-center gap-3">
           {overview && (
             <div
-              className="flex items-center gap-2 px-3 py-2 rounded-xl border"
+              className="flex items-center gap-2 px-3 py-2 rounded-[var(--r-sm)] border"
               style={{
                 background: healthCfg.bg,
                 borderColor: healthCfg.border,
@@ -664,7 +660,7 @@ export default function BlockchainDashboard() {
           <button
             onClick={() => load(true)}
             disabled={refreshing}
-            className="p-2.5 rounded-xl border border-gray-200 text-gray-400 hover:text-gray-600 hover:bg-white disabled:opacity-40"
+            className="p-2.5 rounded-[var(--r-sm)] border border-[var(--hc-border)] text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--surface-card)] disabled:opacity-40"
           >
             <RefreshCw
               className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
@@ -674,9 +670,9 @@ export default function BlockchainDashboard() {
       </div>
 
       {error && (
-        <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-red-50 border border-red-100">
-          <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
-          <p className="text-sm text-red-700">{error}</p>
+        <div className="flex items-center gap-2.5 px-4 py-3 rounded-[var(--r-sm)] bg-[var(--coral-050)] border border-[var(--coral-100)]">
+          <AlertTriangle className="w-4 h-4 text-[var(--coral-500)] flex-shrink-0" />
+          <p className="text-sm text-[var(--critical-ink)]">{error}</p>
         </div>
       )}
 
@@ -687,15 +683,15 @@ export default function BlockchainDashboard() {
           value={
             loading ? "…" : (overview?.health.blockHeight ?? 0).toLocaleString()
           }
-          color="#166534"
-          bg="linear-gradient(135deg,#f0fdf4,#dcfce7)"
+          color="var(--green-800)"
+          bg="var(--brand-tint)"
         />
         <StatCard
           icon={Link2}
           label="On-Chain Txs"
           value={loading ? "…" : (stats?.anchoredTxs ?? 0).toLocaleString()}
-          color="#1d4ed8"
-          bg="linear-gradient(135deg,#eff6ff,#dbeafe)"
+          color="var(--info-ink)"
+          bg="var(--info-tint)"
         />
         <StatCard
           icon={Server}
@@ -705,8 +701,8 @@ export default function BlockchainDashboard() {
               ? "…"
               : `${overview?.health.onlinePeers ?? 0}/${overview?.health.totalPeers ?? 0}`
           }
-          color="#7c3aed"
-          bg="linear-gradient(135deg,#faf5ff,#ede9fe)"
+          color="var(--accent-ink)"
+          bg="var(--violet-050)"
         />
         <StatCard
           icon={Users}
@@ -718,23 +714,23 @@ export default function BlockchainDashboard() {
                   (stats?.patients ?? 0) + (stats?.practitioners ?? 0)
                 ).toLocaleString()
           }
-          color="#d97706"
-          bg="linear-gradient(135deg,#fffbeb,#fef3c7)"
+          color="var(--urgent-ink)"
+          bg="var(--amber-050)"
         />
         <StatCard
           icon={AlertOctagon}
           label="Anchor Failures"
           value={loading ? "…" : totalFailures.toLocaleString()}
-          color={totalFailures > 0 ? "#dc2626" : "#6b7280"}
+          color={totalFailures > 0 ? "var(--critical-ink)" : "var(--text-secondary)"}
           bg={
             totalFailures > 0
-              ? "linear-gradient(135deg,#fef2f2,#fee2e2)"
-              : "linear-gradient(135deg,#f9fafb,#f3f4f6)"
+              ? "var(--coral-050)"
+              : "var(--surface-sunken)"
           }
         />
       </div>
 
-      <div className="flex gap-1 p-1 rounded-xl bg-gray-100/80 w-fit">
+      <div className="flex gap-1 p-1 rounded-[var(--r-sm)] bg-[var(--surface-sunken)] w-fit">
         {(
           [
             { key: "overview", label: "Network" },
@@ -750,22 +746,22 @@ export default function BlockchainDashboard() {
           <button
             key={t.key}
             onClick={() => setTab(t.key)}
-            className="px-4 py-1.5 rounded-lg text-xs font-semibold transition-all relative"
+            className="px-4 py-1.5 rounded-[var(--r-xs)] text-xs font-semibold transition-all relative"
             style={
               tab === t.key
                 ? {
-                    background: "#fff",
+                    background: "var(--white)",
                     color:
                       t.key === "failures" && totalFailures > 0
-                        ? "#dc2626"
-                        : "#166534",
-                    boxShadow: "0 1px 3px rgba(0,0,0,0.08)",
+                        ? "var(--critical-ink)"
+                        : "var(--green-800)",
+                    boxShadow: "var(--elev-1)",
                   }
                 : {
                     color:
                       t.key === "failures" && totalFailures > 0
-                        ? "#dc2626"
-                        : "#6b7280",
+                        ? "var(--critical-ink)"
+                        : "var(--text-secondary)",
                   }
             }
           >
@@ -773,7 +769,7 @@ export default function BlockchainDashboard() {
             {t.key === "failures" &&
               totalFailures > 0 &&
               tab !== "failures" && (
-                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[var(--coral-500)] animate-pulse" />
               )}
           </button>
         ))}
@@ -782,17 +778,17 @@ export default function BlockchainDashboard() {
       {/* Network tab */}
       {tab === "overview" && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-gray-100 flex items-center gap-2">
-              <Server className="w-4 h-4 text-gray-400" />
-              <p className="text-sm font-bold text-gray-700">Peer Status</p>
+          <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-[var(--border-faint)] flex items-center gap-2">
+              <Server className="w-4 h-4 text-[var(--text-muted)]" />
+              <p className="text-sm font-bold text-[var(--text-secondary)]">Peer Status</p>
             </div>
-            <div className="divide-y divide-gray-50">
+            <div className="divide-y divide-[var(--border-faint)]">
               {loading
                 ? [...Array(3)].map((_, i) => (
                     <div key={i} className="px-5 py-4 animate-pulse">
-                      <div className="h-3 w-32 bg-gray-100 rounded mb-2" />
-                      <div className="h-2 w-56 bg-gray-100 rounded" />
+                      <div className="h-3 w-32 bg-[var(--surface-sunken)] rounded mb-2" />
+                      <div className="h-2 w-56 bg-[var(--surface-sunken)] rounded" />
                     </div>
                   ))
                 : overview?.peers.map((p) => {
@@ -804,26 +800,26 @@ export default function BlockchainDashboard() {
                             <span
                               className="w-2 h-2 rounded-full"
                               style={{
-                                background: isOnline ? "#16a34a" : "#ef4444",
+                                background: isOnline ? "var(--green-600)" : "var(--coral-500)",
                               }}
                             />
-                            <p className="text-sm font-bold text-gray-800">
+                            <p className="text-sm font-bold text-[var(--text-primary)]">
                               {p.label}
                             </p>
                           </div>
-                          <span className="text-xs font-mono text-gray-400">
+                          <span className="text-xs font-mono text-[var(--text-muted)]">
                             {isOnline ? `${p.latencyMs}ms` : "offline"}
                           </span>
                         </div>
-                        <p className="text-xs text-gray-500 font-mono">
+                        <p className="text-xs text-[var(--text-secondary)] font-mono">
                           {p.endpoint}
                         </p>
-                        <p className="text-[10px] text-gray-400 mt-1">
+                        <p className="text-[10px] text-[var(--text-muted)] mt-1">
                           MSP: {p.mspId}
                         </p>
                         {p.error && (
                           <p
-                            className="text-[10px] text-red-500 mt-1 truncate"
+                            className="text-[10px] text-[var(--coral-500)] mt-1 truncate"
                             title={p.error}
                           >
                             ⚠ {p.error}
@@ -836,69 +832,69 @@ export default function BlockchainDashboard() {
           </div>
 
           <div className="space-y-4">
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-5">
               <div className="flex items-center gap-2 mb-3">
-                <Database className="w-4 h-4 text-gray-400" />
-                <p className="text-sm font-bold text-gray-700">Channel</p>
+                <Database className="w-4 h-4 text-[var(--text-muted)]" />
+                <p className="text-sm font-bold text-[var(--text-secondary)]">Channel</p>
               </div>
               <div className="space-y-3">
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-0.5">
                     Name
                   </p>
-                  <p className="text-sm font-mono font-semibold text-gray-800">
+                  <p className="text-sm font-mono font-semibold text-[var(--text-primary)]">
                     {overview?.channel.name ?? "—"}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-0.5">
                     Chaincode
                   </p>
-                  <p className="text-sm font-mono font-semibold text-gray-800">
+                  <p className="text-sm font-mono font-semibold text-[var(--text-primary)]">
                     {overview?.channel.chaincode ?? "—"}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-0.5">
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] mb-0.5">
                     Current Height
                   </p>
-                  <p className="text-2xl font-extrabold text-green-700 tabular-nums">
+                  <p className="text-2xl font-extrabold text-[var(--green-700)] tabular-nums">
                     {overview?.channel.height.toLocaleString() ?? 0}
                   </p>
                 </div>
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+            <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-5">
               <div className="flex items-center gap-2 mb-3">
-                <TrendingUp className="w-4 h-4 text-gray-400" />
-                <p className="text-sm font-bold text-gray-700">System</p>
+                <TrendingUp className="w-4 h-4 text-[var(--text-muted)]" />
+                <p className="text-sm font-bold text-[var(--text-secondary)]">System</p>
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="text-center">
-                  <Users className="w-4 h-4 text-gray-400 mx-auto mb-1" />
-                  <p className="text-lg font-extrabold text-gray-800">
+                  <Users className="w-4 h-4 text-[var(--text-muted)] mx-auto mb-1" />
+                  <p className="text-lg font-extrabold text-[var(--text-primary)]">
                     {stats?.patients ?? 0}
                   </p>
-                  <p className="text-[10px] text-gray-400 font-semibold">
+                  <p className="text-[10px] text-[var(--text-muted)] font-semibold">
                     Patients
                   </p>
                 </div>
                 <div className="text-center">
-                  <Stethoscope className="w-4 h-4 text-gray-400 mx-auto mb-1" />
-                  <p className="text-lg font-extrabold text-gray-800">
+                  <Stethoscope className="w-4 h-4 text-[var(--text-muted)] mx-auto mb-1" />
+                  <p className="text-lg font-extrabold text-[var(--text-primary)]">
                     {stats?.practitioners ?? 0}
                   </p>
-                  <p className="text-[10px] text-gray-400 font-semibold">
+                  <p className="text-[10px] text-[var(--text-muted)] font-semibold">
                     Staff
                   </p>
                 </div>
                 <div className="text-center">
-                  <Building2 className="w-4 h-4 text-gray-400 mx-auto mb-1" />
-                  <p className="text-lg font-extrabold text-gray-800">
+                  <Building2 className="w-4 h-4 text-[var(--text-muted)] mx-auto mb-1" />
+                  <p className="text-lg font-extrabold text-[var(--text-primary)]">
                     {stats?.institutions ?? 0}
                   </p>
-                  <p className="text-[10px] text-gray-400 font-semibold">
+                  <p className="text-[10px] text-[var(--text-muted)] font-semibold">
                     Hospitals
                   </p>
                 </div>
@@ -910,47 +906,47 @@ export default function BlockchainDashboard() {
 
       {/* Blocks tab */}
       {tab === "blocks" && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
+        <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-[var(--border-faint)] flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Box className="w-4 h-4 text-gray-400" />
-              <p className="text-sm font-bold text-gray-700">Recent Blocks</p>
+              <Box className="w-4 h-4 text-[var(--text-muted)]" />
+              <p className="text-sm font-bold text-[var(--text-secondary)]">Recent Blocks</p>
             </div>
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-[var(--text-muted)]">
               Latest {blocks.length} blocks
             </span>
           </div>
           {loading ? (
-            <div className="p-5 text-sm text-gray-400">Loading blocks…</div>
+            <div className="p-5 text-sm text-[var(--text-muted)]">Loading blocks…</div>
           ) : blocks.length === 0 ? (
-            <div className="p-10 text-center text-sm text-gray-400">
+            <div className="p-10 text-center text-sm text-[var(--text-muted)]">
               No blocks queryable.
             </div>
           ) : (
             <table className="w-full text-sm">
-              <thead className="bg-gray-50/60">
+              <thead className="bg-[var(--surface-sunken)]">
                 <tr>
-                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-5 py-3">
+                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] px-5 py-3">
                     Block #
                   </th>
-                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-5 py-3">
+                  <th className="text-left text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] px-5 py-3">
                     Data Hash
                   </th>
-                  <th className="text-right text-[10px] font-bold uppercase tracking-widest text-gray-400 px-5 py-3">
+                  <th className="text-right text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] px-5 py-3">
                     Size
                   </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-[var(--border-faint)]">
                 {blocks.map((b) => (
-                  <tr key={b.blockNumber} className="hover:bg-gray-50/40">
-                    <td className="px-5 py-3 font-mono font-bold text-gray-800">
+                  <tr key={b.blockNumber} className="hover:bg-[var(--surface-sunken)]">
+                    <td className="px-5 py-3 font-mono font-bold text-[var(--text-primary)]">
                       #{b.blockNumber}
                     </td>
-                    <td className="px-5 py-3 font-mono text-xs text-gray-500">
+                    <td className="px-5 py-3 font-mono text-xs text-[var(--text-secondary)]">
                       {shortHash(b.dataHash, 16)}
                     </td>
-                    <td className="px-5 py-3 text-right text-xs text-gray-500">
+                    <td className="px-5 py-3 text-right text-xs text-[var(--text-secondary)]">
                       {(b.sizeBytes / 1024).toFixed(2)} KB
                     </td>
                   </tr>
@@ -963,52 +959,52 @@ export default function BlockchainDashboard() {
 
       {/* Transactions tab */}
       {tab === "transactions" && (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-gray-100 flex items-center justify-between">
+        <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-[var(--border-faint)] flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Link2 className="w-4 h-4 text-gray-400" />
-              <p className="text-sm font-bold text-gray-700">
+              <Link2 className="w-4 h-4 text-[var(--text-muted)]" />
+              <p className="text-sm font-bold text-[var(--text-secondary)]">
                 On-Chain Transactions
               </p>
             </div>
-            <span className="text-xs text-gray-400">Last {txs.length}</span>
+            <span className="text-xs text-[var(--text-muted)]">Last {txs.length}</span>
           </div>
           {loading ? (
-            <div className="p-5 text-sm text-gray-400">Loading…</div>
+            <div className="p-5 text-sm text-[var(--text-muted)]">Loading…</div>
           ) : txs.length === 0 ? (
-            <div className="p-10 text-center text-sm text-gray-400">
+            <div className="p-10 text-center text-sm text-[var(--text-muted)]">
               No anchored transactions yet.
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-gray-50/60">
+                <thead className="bg-[var(--surface-sunken)]">
                   <tr>
-                    <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-5 py-3">
+                    <th className="text-left text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] px-5 py-3">
                       Time
                     </th>
-                    <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-5 py-3">
+                    <th className="text-left text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] px-5 py-3">
                       Action
                     </th>
-                    <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-5 py-3">
+                    <th className="text-left text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] px-5 py-3">
                       Resource
                     </th>
-                    <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-5 py-3">
+                    <th className="text-left text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] px-5 py-3">
                       Actor
                     </th>
-                    <th className="text-left text-[10px] font-bold uppercase tracking-widest text-gray-400 px-5 py-3">
+                    <th className="text-left text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] px-5 py-3">
                       Tx ID
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-50">
+                <tbody className="divide-y divide-[var(--border-faint)]">
                   {txs.map((t) => (
-                    <tr key={t.id} className="hover:bg-gray-50/40">
+                    <tr key={t.id} className="hover:bg-[var(--surface-sunken)]">
                       <td className="px-5 py-3 whitespace-nowrap">
-                        <p className="text-xs font-semibold text-gray-700">
+                        <p className="text-xs font-semibold text-[var(--text-secondary)]">
                           {format(new Date(t.createdAt), "HH:mm:ss")}
                         </p>
-                        <p className="text-[10px] text-gray-400">
+                        <p className="text-[10px] text-[var(--text-muted)]">
                           {formatDistanceToNow(new Date(t.createdAt), {
                             addSuffix: true,
                           })}
@@ -1017,21 +1013,21 @@ export default function BlockchainDashboard() {
                       <td className="px-5 py-3">
                         <span
                           className="text-xs font-bold px-2 py-0.5 rounded-full capitalize"
-                          style={{ background: "#eff6ff", color: "#1d4ed8" }}
+                          style={{ background: "var(--info-tint)", color: "var(--info-ink)" }}
                         >
                           {t.actionType}
                         </span>
                       </td>
-                      <td className="px-5 py-3 text-xs text-gray-600 font-mono">
+                      <td className="px-5 py-3 text-xs text-[var(--text-secondary)] font-mono">
                         {t.resourceType}
-                        <p className="text-[10px] text-gray-400 truncate max-w-[160px]">
+                        <p className="text-[10px] text-[var(--text-muted)] truncate max-w-[160px]">
                           {t.resourceId}
                         </p>
                       </td>
-                      <td className="px-5 py-3 text-xs text-gray-500 capitalize">
+                      <td className="px-5 py-3 text-xs text-[var(--text-secondary)] capitalize">
                         {t.userType}
                       </td>
-                      <td className="px-5 py-3 font-mono text-[10px] text-gray-400">
+                      <td className="px-5 py-3 font-mono text-[10px] text-[var(--text-muted)]">
                         {shortHash(t.blockchainTxId, 8)}
                       </td>
                     </tr>
@@ -1047,16 +1043,16 @@ export default function BlockchainDashboard() {
       {tab === "verify" && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-1">
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-              <div className="px-4 py-3 border-b border-gray-100">
-                <p className="text-xs font-bold uppercase tracking-widest text-gray-500 mb-2">
+            <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] overflow-hidden">
+              <div className="px-4 py-3 border-b border-[var(--border-faint)]">
+                <p className="text-xs font-bold uppercase tracking-widest text-[var(--text-secondary)] mb-2">
                   Anchored Records
                 </p>
                 <div className="relative">
                   <select
                     value={recordTypeFilter}
                     onChange={(e) => setRecordTypeFilter(e.target.value)}
-                    className="w-full appearance-none px-3 py-2 pr-8 rounded-lg border border-gray-200 text-xs font-semibold text-gray-700 bg-white focus:outline-none focus:border-green-500"
+                    className="w-full appearance-none px-3 py-2 pr-8 rounded-[var(--r-xs)] border border-[var(--hc-border)] text-xs font-semibold text-[var(--text-secondary)] bg-[var(--surface-card)] focus:outline-none focus:border-[var(--brand)]"
                   >
                     <option value="">All types</option>
                     {recordTypes.map((t) => (
@@ -1065,17 +1061,17 @@ export default function BlockchainDashboard() {
                       </option>
                     ))}
                   </select>
-                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-400 pointer-events-none" />
+                  <ChevronDown className="absolute right-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-[var(--text-muted)] pointer-events-none" />
                 </div>
               </div>
               <div className="max-h-[480px] overflow-y-auto">
                 {loadingRecords ? (
-                  <div className="p-5 text-sm text-gray-400 text-center">
+                  <div className="p-5 text-sm text-[var(--text-muted)] text-center">
                     <Loader2 className="w-4 h-4 animate-spin mx-auto mb-2" />{" "}
                     Loading…
                   </div>
                 ) : searchableRecords.length === 0 ? (
-                  <div className="p-8 text-center text-xs text-gray-400">
+                  <div className="p-8 text-center text-xs text-[var(--text-muted)]">
                     No records anchored yet.
                   </div>
                 ) : (
@@ -1083,24 +1079,24 @@ export default function BlockchainDashboard() {
                     <button
                       key={r.recordId + r.txId}
                       onClick={() => pickRecord(r)}
-                      className={`w-full text-left px-4 py-3 border-b border-gray-50 last:border-0 hover:bg-green-50/40 transition-colors ${verifyRecordId === r.recordId ? "bg-green-50" : ""}`}
+                      className={`w-full text-left px-4 py-3 border-b border-[var(--border-faint)] last:border-0 hover:bg-[var(--brand-tint)] transition-colors ${verifyRecordId === r.recordId ? "bg-[var(--brand-tint)]" : ""}`}
                     >
                       <div className="flex items-center gap-2 mb-1">
                         <span
                           className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full"
-                          style={{ background: "#dbeafe", color: "#1d4ed8" }}
+                          style={{ background: "var(--blue-100)", color: "var(--info-ink)" }}
                         >
                           {r.recordType}
                         </span>
                         {r.anchoredAt && (
-                          <span className="text-[10px] text-gray-400">
+                          <span className="text-[10px] text-[var(--text-muted)]">
                             {formatDistanceToNow(new Date(r.anchoredAt), {
                               addSuffix: true,
                             })}
                           </span>
                         )}
                       </div>
-                      <p className="text-[11px] font-mono text-gray-700 break-all leading-tight">
+                      <p className="text-[11px] font-mono text-[var(--text-secondary)] break-all leading-tight">
                         {r.recordId}
                       </p>
                     </button>
@@ -1110,31 +1106,31 @@ export default function BlockchainDashboard() {
             </div>
           </div>
 
-          <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
+          <div className="lg:col-span-2 bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-6">
             <div className="flex items-center gap-2 mb-1">
-              <ShieldCheck className="w-5 h-5 text-green-600" />
-              <h2 className="text-base font-bold text-gray-800">
+              <ShieldCheck className="w-5 h-5 text-[var(--green-700)]" />
+              <h2 className="text-base font-bold text-[var(--text-primary)]">
                 Verify Record Integrity
               </h2>
             </div>
-            <p className="text-xs text-gray-500 mb-5">
+            <p className="text-xs text-[var(--text-secondary)] mb-5">
               Click a record on the left to verify it. Records are identified by
               their UUID — not by national ID or visit number.
             </p>
             <div className="space-y-4">
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] block mb-1.5">
                   Record ID *
                 </label>
                 <input
                   value={verifyRecordId}
                   onChange={(e) => setVerifyRecordId(e.target.value)}
                   placeholder="Click a record on the left, or paste a UUID"
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-mono text-gray-900 outline-none focus:border-green-500"
+                  className="w-full px-4 py-2.5 rounded-[var(--r-sm)] border border-[var(--hc-border)] text-sm font-mono text-[var(--text-primary)] outline-none focus:border-[var(--brand)]"
                 />
               </div>
               <div>
-                <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)] block mb-1.5">
                   SHA-256 Hash{" "}
                   <span className="normal-case font-normal">(optional)</span>
                 </label>
@@ -1142,16 +1138,16 @@ export default function BlockchainDashboard() {
                   value={verifyHash}
                   onChange={(e) => setVerifyHash(e.target.value)}
                   placeholder="64-char hex hash"
-                  className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm font-mono text-gray-900 outline-none focus:border-green-500"
+                  className="w-full px-4 py-2.5 rounded-[var(--r-sm)] border border-[var(--hc-border)] text-sm font-mono text-[var(--text-primary)] outline-none focus:border-[var(--brand)]"
                 />
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={() => handleVerify()}
                   disabled={verifying || !verifyRecordId.trim()}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white disabled:opacity-50"
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-[var(--r-sm)] text-sm font-bold text-[var(--white)] disabled:opacity-50"
                   style={{
-                    background: "linear-gradient(135deg,#166534,#15803d)",
+                    background: "var(--brand)",
                   }}
                 >
                   {verifying ? (
@@ -1164,7 +1160,7 @@ export default function BlockchainDashboard() {
                 {verifyResult?.found && (
                   <button
                     onClick={handleViewHistory}
-                    className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold border border-green-200 text-green-700 bg-green-50 hover:bg-green-100 transition-colors"
+                    className="flex items-center gap-2 px-4 py-2.5 rounded-[var(--r-sm)] text-sm font-bold border border-[var(--green-200)] text-[var(--green-700)] bg-[var(--brand-tint)] hover:bg-[var(--green-100)] transition-colors"
                   >
                     <History className="w-4 h-4" />
                     View History
@@ -1174,55 +1170,55 @@ export default function BlockchainDashboard() {
 
               {verifyResult && (
                 <div
-                  className="mt-4 rounded-xl border overflow-hidden"
+                  className="mt-4 rounded-[var(--r-sm)] border overflow-hidden"
                   style={{
                     borderColor: verifyResult.error
-                      ? "#fecaca"
+                      ? "var(--coral-100)"
                       : !verifyResult.found
-                        ? "#fde68a"
+                        ? "var(--amber-100)"
                         : verifyResult.matches === false
-                          ? "#fecaca"
-                          : "#bbf7d0",
+                          ? "var(--coral-100)"
+                          : "var(--green-100)",
                   }}
                 >
                   <div
                     className="px-4 py-3 border-b"
                     style={{
                       background: verifyResult.error
-                        ? "#fef2f2"
+                        ? "var(--coral-050)"
                         : !verifyResult.found
-                          ? "#fffbeb"
+                          ? "var(--amber-050)"
                           : verifyResult.matches === false
-                            ? "#fef2f2"
-                            : "#f0fdf4",
+                            ? "var(--coral-050)"
+                            : "var(--brand-tint)",
                       borderColor: "transparent",
                     }}
                   >
                     {verifyResult.error ? (
                       <div className="flex items-center gap-2">
-                        <XCircle className="w-4 h-4 text-red-600" />
-                        <p className="text-sm font-bold text-red-800">
+                        <XCircle className="w-4 h-4 text-[var(--critical-ink)]" />
+                        <p className="text-sm font-bold text-[var(--critical-ink)]">
                           Error: {verifyResult.error}
                         </p>
                       </div>
                     ) : !verifyResult.found ? (
                       <div className="flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4 text-amber-600" />
-                        <p className="text-sm font-bold text-amber-800">
+                        <AlertTriangle className="w-4 h-4 text-[var(--urgent-ink)]" />
+                        <p className="text-sm font-bold text-[var(--urgent-ink)]">
                           Record not found on ledger
                         </p>
                       </div>
                     ) : verifyResult.matches === false ? (
                       <div className="flex items-center gap-2">
-                        <XCircle className="w-4 h-4 text-red-600" />
-                        <p className="text-sm font-bold text-red-800">
+                        <XCircle className="w-4 h-4 text-[var(--critical-ink)]" />
+                        <p className="text-sm font-bold text-[var(--critical-ink)]">
                           Hash mismatch — record may be tampered
                         </p>
                       </div>
                     ) : (
                       <div className="flex items-center gap-2">
-                        <CheckCircle2 className="w-4 h-4 text-green-600" />
-                        <p className="text-sm font-bold text-green-800">
+                        <CheckCircle2 className="w-4 h-4 text-[var(--green-700)]" />
+                        <p className="text-sm font-bold text-[var(--green-800)]">
                           {verifyResult.matches === true
                             ? "Record verified — hash matches"
                             : "Record found on ledger"}
@@ -1231,42 +1227,42 @@ export default function BlockchainDashboard() {
                     )}
                   </div>
                   {verifyResult.record && (
-                    <div className="px-4 py-3 bg-white space-y-2 text-xs font-mono">
+                    <div className="px-4 py-3 bg-[var(--surface-card)] space-y-2 text-xs font-mono">
                       <div>
-                        <span className="text-gray-400">Patient ID: </span>
-                        <span className="text-gray-700">
+                        <span className="text-[var(--text-muted)]">Patient ID: </span>
+                        <span className="text-[var(--text-secondary)]">
                           {verifyResult.record.patientId}
                         </span>
                       </div>
                       <div>
-                        <span className="text-gray-400">Type: </span>
-                        <span className="text-gray-700">
+                        <span className="text-[var(--text-muted)]">Type: </span>
+                        <span className="text-[var(--text-secondary)]">
                           {verifyResult.record.recordType}
                         </span>
                       </div>
                       <div>
-                        <span className="text-gray-400">Created: </span>
-                        <span className="text-gray-700">
+                        <span className="text-[var(--text-muted)]">Created: </span>
+                        <span className="text-[var(--text-secondary)]">
                           {verifyResult.record.timestamp}
                         </span>
                       </div>
                       <div>
-                        <span className="text-gray-400">By MSP: </span>
-                        <span className="text-gray-700">
+                        <span className="text-[var(--text-muted)]">By MSP: </span>
+                        <span className="text-[var(--text-secondary)]">
                           {verifyResult.record.creatorMSP}
                         </span>
                       </div>
                       {verifyResult.record.version && (
                         <div>
-                          <span className="text-gray-400">Version: </span>
-                          <span className="text-gray-700">
+                          <span className="text-[var(--text-muted)]">Version: </span>
+                          <span className="text-[var(--text-secondary)]">
                             v{verifyResult.record.version}
                           </span>
                         </div>
                       )}
                       <div className="break-all">
-                        <span className="text-gray-400">On-chain hash: </span>
-                        <span className="text-gray-700">
+                        <span className="text-[var(--text-muted)]">On-chain hash: </span>
+                        <span className="text-[var(--text-secondary)]">
                           {verifyResult.record.sha256Hash}
                         </span>
                       </div>
@@ -1284,10 +1280,10 @@ export default function BlockchainDashboard() {
         <div className="space-y-4">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
-              <h2 className="text-lg font-bold text-gray-900">
+              <h2 className="text-lg font-bold text-[var(--text-primary)]">
                 Anchor Failures
               </h2>
-              <p className="text-xs text-gray-500 mt-0.5">
+              <p className="text-xs text-[var(--text-secondary)] mt-0.5">
                 Records that failed to be written to the ledger, with the
                 reason.
               </p>
@@ -1295,7 +1291,7 @@ export default function BlockchainDashboard() {
             {failures.length > 0 && (
               <button
                 onClick={clearFailures}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-red-700 border border-red-200 bg-red-50 hover:bg-red-100"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-[var(--r-sm)] text-xs font-bold text-[var(--critical-ink)] border border-[var(--coral-100)] bg-[var(--coral-050)] hover:bg-[var(--coral-100)]"
               >
                 <Trash2 className="w-3.5 h-3.5" /> Clear Log
               </button>
@@ -1306,18 +1302,18 @@ export default function BlockchainDashboard() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               <button
                 onClick={() => setFailureFilter("")}
-                className="px-3 py-2.5 rounded-xl border text-left transition-all"
+                className="px-3 py-2.5 rounded-[var(--r-sm)] border text-left transition-all"
                 style={
                   !failureFilter
                     ? {
-                        background: "#0a0e1a",
-                        borderColor: "#0a0e1a",
-                        color: "#fff",
+                        background: "var(--ink-900)",
+                        borderColor: "var(--ink-900)",
+                        color: "var(--white)",
                       }
                     : {
-                        background: "#fff",
-                        borderColor: "#e5e7eb",
-                        color: "#374151",
+                        background: "var(--white)",
+                        borderColor: "var(--hc-border)",
+                        color: "var(--text-secondary)",
                       }
                 }
               >
@@ -1332,13 +1328,13 @@ export default function BlockchainDashboard() {
                   <button
                     key={cat}
                     onClick={() => setFailureFilter(cat)}
-                    className="px-3 py-2.5 rounded-xl border text-left transition-all"
+                    className="px-3 py-2.5 rounded-[var(--r-sm)] border text-left transition-all"
                     style={
                       isSelected
                         ? {
                             background: cfg.color,
                             borderColor: cfg.color,
-                            color: "#fff",
+                            color: "var(--white)",
                           }
                         : {
                             background: cfg.bg,
@@ -1360,20 +1356,20 @@ export default function BlockchainDashboard() {
             </div>
           )}
 
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+          <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] overflow-hidden">
             {failures.length === 0 ? (
               <div className="p-10 text-center">
-                <CheckCircle2 className="w-10 h-10 text-green-300 mx-auto mb-3" />
-                <p className="text-sm font-semibold text-gray-500">
+                <CheckCircle2 className="w-10 h-10 text-[var(--green-300)] mx-auto mb-3" />
+                <p className="text-sm font-semibold text-[var(--text-secondary)]">
                   No failures — all writes successful
                 </p>
               </div>
             ) : filteredFailures.length === 0 ? (
-              <div className="p-10 text-center text-sm text-gray-400">
+              <div className="p-10 text-center text-sm text-[var(--text-muted)]">
                 No failures matching this filter.
               </div>
             ) : (
-              <div className="divide-y divide-gray-50">
+              <div className="divide-y divide-[var(--border-faint)]">
                 {filteredFailures.map((f, i) => {
                   const cfg =
                     FAILURE_CONFIG[f.category] ?? FAILURE_CONFIG.unknown;
@@ -1382,7 +1378,7 @@ export default function BlockchainDashboard() {
                     <div key={i} className="px-5 py-4">
                       <div className="flex items-start gap-3">
                         <div
-                          className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0"
+                          className="w-8 h-8 rounded-[var(--r-sm)] flex items-center justify-center flex-shrink-0"
                           style={{ background: cfg.bg, color: cfg.color }}
                         >
                           <Icon className="w-4 h-4" />
@@ -1399,35 +1395,35 @@ export default function BlockchainDashboard() {
                             >
                               {cfg.label}
                             </span>
-                            <span className="text-[10px] font-bold text-gray-700 bg-gray-100 px-1.5 py-0.5 rounded-full uppercase tracking-wider">
+                            <span className="text-[10px] font-bold text-[var(--text-secondary)] bg-[var(--surface-sunken)] px-1.5 py-0.5 rounded-full uppercase tracking-wider">
                               {f.recordType}
                             </span>
-                            <span className="text-[10px] text-gray-400">
+                            <span className="text-[10px] text-[var(--text-muted)]">
                               {formatDistanceToNow(new Date(f.timestamp), {
                                 addSuffix: true,
                               })}
                             </span>
                           </div>
-                          <p className="text-[11px] font-mono text-gray-700 break-all mb-1.5">
+                          <p className="text-[11px] font-mono text-[var(--text-secondary)] break-all mb-1.5">
                             {f.recordId}
                           </p>
-                          <p className="text-xs text-gray-600 mb-1.5">
-                            <span className="font-semibold text-gray-800">
+                          <p className="text-xs text-[var(--text-secondary)] mb-1.5">
+                            <span className="font-semibold text-[var(--text-primary)]">
                               Why:{" "}
                             </span>
                             {cfg.reason}
                           </p>
-                          <p className="text-xs text-gray-600 mb-2">
-                            <span className="font-semibold text-gray-800">
+                          <p className="text-xs text-[var(--text-secondary)] mb-2">
+                            <span className="font-semibold text-[var(--text-primary)]">
                               Fix:{" "}
                             </span>
                             {cfg.fix}
                           </p>
                           <details className="cursor-pointer">
-                            <summary className="text-[10px] text-gray-400 hover:text-gray-600 select-none">
+                            <summary className="text-[10px] text-[var(--text-muted)] hover:text-[var(--text-secondary)] select-none">
                               Show raw error
                             </summary>
-                            <p className="mt-1.5 text-[10px] font-mono text-gray-500 bg-gray-50 p-2 rounded border border-gray-100 break-all">
+                            <p className="mt-1.5 text-[10px] font-mono text-[var(--text-secondary)] bg-[var(--surface-sunken)] p-2 rounded border border-[var(--border-faint)] break-all">
                               {f.message}
                             </p>
                           </details>

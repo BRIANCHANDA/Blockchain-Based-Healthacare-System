@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
-import { patientApi, visitApi } from "@/lib/api";
+import { patientApi } from "@/lib/api";
 import {
   Search,
   X,
@@ -11,68 +10,132 @@ import {
   Activity,
   CheckCircle2,
   Clock,
-  Droplets,
   AlertCircle,
   ArrowLeft,
   Heart,
   Thermometer,
   Wind,
   Gauge,
+  Weight,
+  User,
+  Droplets,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import { format, formatDistanceToNow } from "date-fns";
 
+// ── Constants ─────────────────────────────────────────────────────────────────
+
 const BLOOD_COLOR: Record<string, string> = {
-  "A+": "#3b82f6",
-  "A-": "#6366f1",
-  "B+": "#8b5cf6",
-  "B-": "#ec4899",
-  "AB+": "#f59e0b",
-  "AB-": "#ef4444",
-  "O+": "#10b981",
-  "O-": "#14b8a6",
+  "A+": "var(--blue-500)", "A-": "var(--blue-600)", "B+": "var(--violet-500)", "B-": "var(--coral-500)",
+  "AB+": "var(--amber-500)", "AB-": "var(--coral-500)", "O+": "var(--green-600)", "O-": "var(--green-600)",
 };
 
-const PRIORITY: Record<string, { color: string; bg: string; label: string }> = {
-  critical: { color: "#dc2626", bg: "#fef2f2", label: "Critical" },
-  emergency: { color: "#ea580c", bg: "#fff7ed", label: "Emergency" },
-  urgent: { color: "#d97706", bg: "#fffbeb", label: "Urgent" },
-  routine: { color: "#16a34a", bg: "#f0fdf4", label: "Routine" },
+const PRIORITY: Record<string, { color: string; bg: string; border: string; dot: string; label: string }> = {
+  critical:  { color: "var(--critical-ink)", bg: "var(--coral-050)", border: "var(--coral-100)", dot: "var(--coral-500)",  label: "Critical"  },
+  emergency: { color: "var(--critical-ink)", bg: "var(--coral-050)", border: "var(--coral-100)", dot: "var(--coral-500)",  label: "Emergency" },
+  urgent:    { color: "var(--urgent-ink)", bg: "var(--amber-050)", border: "var(--amber-100)", dot: "var(--amber-500)",  label: "Urgent"    },
+  routine:   { color: "var(--success-ink)", bg: "var(--brand-tint)", border: "var(--green-100)", dot: "var(--green-600)",  label: "Routine"   },
 };
+
+const VISIT_TYPE: Record<string, { label: string; color: string }> = {
+  outpatient:   { label: "Outpatient",   color: "var(--info-ink)" },
+  inpatient:    { label: "Inpatient",    color: "var(--green-800)" },
+  emergency:    { label: "Emergency",    color: "var(--critical-ink)" },
+  consultation: { label: "Consultation", color: "var(--accent-ink)" },
+};
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function calcAge(dob?: string) {
   if (!dob) return null;
-  return Math.floor(
-    (Date.now() - new Date(dob).getTime()) / (1000 * 60 * 60 * 24 * 365.25),
-  );
+  return Math.floor((Date.now() - new Date(dob).getTime()) / (1000 * 60 * 60 * 24 * 365.25));
 }
+
+function vitalRange(key: string, val?: number | null): "normal" | "warning" | "critical" | "empty" {
+  if (val == null) return "empty";
+  const r: Record<string, [number, number, number, number]> = {
+    temperature:           [35.5, 37.5, 34.0, 39.0],
+    bloodPressureSystolic: [90,   140,  80,   180  ],
+    pulseRate:             [60,   100,  40,   140  ],
+    respiratoryRate:       [12,   20,   8,    30   ],
+    oxygenSaturation:      [95,   100,  90,   100  ],
+  };
+  const range = r[key];
+  if (!range) return "normal";
+  const [lo, hi, cLo, cHi] = range;
+  if (val < cLo || val > cHi) return "critical";
+  if (val < lo  || val > hi)  return "warning";
+  return "normal";
+}
+
+const RANGE_STYLE = {
+  normal:   { color: "var(--green-800)", bg: "var(--brand-tint)", border: "var(--green-100)" },
+  warning:  { color: "var(--urgent-ink)", bg: "var(--amber-050)", border: "var(--amber-100)" },
+  critical: { color: "var(--critical-ink)", bg: "var(--coral-050)", border: "var(--coral-100)" },
+  empty:    { color: "var(--text-disabled)", bg: "var(--surface-sunken)", border: "var(--surface-sunken)" },
+};
+
+// ── Skeleton ──────────────────────────────────────────────────────────────────
 
 function SkeletonRow() {
   return (
-    <tr className="border-b border-gray-50">
-      {[1, 2, 3, 4, 5].map((i) => (
-        <td key={i} className="py-4 px-4">
-          <div
-            className="h-4 bg-gray-100 rounded animate-pulse"
-            style={{ width: i === 1 ? "70%" : "50%" }}
-          />
+    <tr style={{ borderBottom: "1px solid var(--surface-sunken)" }}>
+      {[160, 60, 80, 70, 30].map((w, i) => (
+        <td key={i} style={{ padding: "14px 16px" }}>
+          <div style={{
+            height: 13, width: w, borderRadius: 6,
+            background: "var(--surface-sunken)", animation: "pulse 1.4s ease infinite",
+            animationDelay: `${i * 0.08}s`,
+          }} />
         </td>
       ))}
     </tr>
   );
 }
 
-// ── Patient detail panel ──────────────────────────────────────────────────────
-function PatientDetailPanel({
-  patientId,
-  onClose,
-}: {
-  patientId: string;
-  onClose: () => void;
+// ── Mini vital card ───────────────────────────────────────────────────────────
+
+function MiniVital({ icon: Icon, label, value, rangeKey, iconColor }: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  rangeKey: string;
+  iconColor: string;
 }) {
-  const [patient, setPatient] = useState<any>(null);
-  const [history, setHistory] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const raw  = parseFloat(value);
+  const stat = vitalRange(rangeKey, isNaN(raw) ? null : raw);
+  const sc   = RANGE_STYLE[stat];
+  const empty = stat === "empty";
+
+  return (
+    <div style={{
+      padding: "12px 14px", borderRadius: 12,
+      background: empty ? "var(--surface-sunken)" : sc.bg,
+      border: `1px solid ${empty ? "var(--surface-sunken)" : sc.border}`,
+      opacity: empty ? 0.5 : 1,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 6 }}>
+        <Icon size={12} style={{ color: empty ? "var(--text-disabled)" : iconColor }} />
+        <span style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          {label}
+        </span>
+      </div>
+      <p style={{ fontSize: 17, fontWeight: 800, color: empty ? "var(--text-disabled)" : sc.color, margin: 0, lineHeight: 1 }}>
+        {empty ? "—" : value}
+      </p>
+    </div>
+  );
+}
+
+// ── Patient Detail Panel ──────────────────────────────────────────────────────
+
+function PatientDetailPanel({ patientId, onClose }: { patientId: string; onClose: () => void }) {
+  const [patient,  setPatient]  = useState<any>(null);
+  const [history,  setHistory]  = useState<any>(null);
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState("");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     (async () => {
@@ -83,6 +146,9 @@ function PatientDetailPanel({
         ]);
         setPatient(pRes.data.data);
         setHistory(hRes.data.data);
+        // Auto-expand first visit
+        const firstId = hRes.data.data?.ownVisits?.[0]?.visit?.id;
+        if (firstId) setExpanded(new Set([firstId]));
       } catch {
         setError("Could not load patient data.");
       } finally {
@@ -91,535 +157,710 @@ function PatientDetailPanel({
     })();
   }, [patientId]);
 
-  // Extract triage-relevant data: vitals + nursing assessments from all visits
-  const triageHistory =
-    history?.ownVisits?.map((v: any) => ({
-      visit: v.visit,
-      vitals: v.vitals ?? [],
-      nursingAssessment: v.nursingAssessment ?? null,
-    })) ?? [];
+  const toggleExpand = (id: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const triageHistory = history?.ownVisits?.map((v: any) => ({
+    visit:             v.visit,
+    vitals:            v.vitals ?? [],
+    nursingAssessment: v.nursingAssessment ?? null,
+  })) ?? [];
 
   const age = calcAge(patient?.dateOfBirth);
 
-  if (loading)
-    return (
-      <div className="flex items-center justify-center h-64 gap-3">
-        <div className="w-5 h-5 border-2 border-green-600 border-t-transparent rounded-full animate-spin" />
-        <p className="text-sm text-gray-500">Loading patient…</p>
-      </div>
-    );
+  // ── Loading ────────────────────────────────────────────────────────────────
+  if (loading) return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 280, gap: 10, color: "var(--text-muted)" }}>
+      <div style={{
+        width: 22, height: 22, borderRadius: "50%",
+        border: "2.5px solid var(--green-600)", borderTopColor: "transparent",
+        animation: "spin 0.8s linear infinite",
+      }} />
+      <span style={{ fontSize: 14 }}>Loading patient…</span>
+    </div>
+  );
 
-  if (error)
-    return (
-      <div className="flex items-center gap-3 p-4 rounded-xl bg-red-50 border border-red-100">
-        <AlertCircle className="w-4 h-4 text-red-500" />
-        <p className="text-sm text-red-700">{error}</p>
+  if (error) return (
+    <div>
+      <button onClick={onClose} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: "var(--text-secondary)", background: "none", border: "none", cursor: "pointer", marginBottom: 20 }}>
+        <ArrowLeft size={15} /> Back
+      </button>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "16px 20px", borderRadius: 12, background: "var(--coral-050)", border: "1px solid var(--coral-100)" }}>
+        <AlertCircle size={16} style={{ color: "var(--coral-500)", flexShrink: 0 }} />
+        <p style={{ fontSize: 13, color: "var(--critical-ink)", margin: 0 }}>{error}</p>
       </div>
-    );
+    </div>
+  );
+
+  const lastVisit = triageHistory[0]?.visit;
 
   return (
     <div>
-      {/* Back */}
+
+      {/* Back button */}
       <button
         onClick={onClose}
-        className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-5 transition-colors"
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 6,
+          fontSize: 13, fontWeight: 600, color: "var(--text-secondary)",
+          background: "none", border: "none", cursor: "pointer",
+          marginBottom: 20, padding: 0,
+          transition: "color 0.12s",
+        }}
+        onMouseEnter={(e) => e.currentTarget.style.color = "var(--text-primary)"}
+        onMouseLeave={(e) => e.currentTarget.style.color = "var(--text-secondary)"}
       >
-        <ArrowLeft className="w-4 h-4" /> Back to all patients
+        <ArrowLeft size={15} /> Back to all patients
       </button>
 
-      {/* Patient header */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 mb-5">
-        <div className="flex items-center gap-4">
-          <div
-            className="w-14 h-14 rounded-2xl flex items-center justify-center text-lg font-bold text-white flex-shrink-0"
-            style={{
-              background:
-                patient?.gender === "female"
-                  ? "linear-gradient(135deg,#ec4899,#db2777)"
-                  : "linear-gradient(135deg,#166534,#15803d)",
-            }}
-          >
-            {patient?.firstName?.[0]}
-            {patient?.lastName?.[0]}
-          </div>
-          <div className="flex-1">
-            <h2
-              className="text-xl font-bold text-gray-900"
-              style={{ fontFamily: "'Playfair Display',serif" }}
-            >
-              {patient?.firstName} {patient?.lastName}
-            </h2>
-            <div className="flex flex-wrap gap-3 mt-1.5">
-              {age !== null && (
-                <span className="text-sm text-gray-500">{age} yrs</span>
-              )}
-              {patient?.gender && (
-                <span className="text-sm text-gray-500 capitalize">
-                  {patient.gender}
-                </span>
-              )}
-              {patient?.bloodType && patient.bloodType !== "unknown" && (
-                <span
-                  className="text-xs font-bold px-2 py-0.5 rounded-full text-white"
-                  style={{
-                    background: BLOOD_COLOR[patient.bloodType] ?? "#6b7280",
-                  }}
-                >
-                  {patient.bloodType}
-                </span>
-              )}
+      {/* ── Patient Header Card ─────────────────────────────────────────────── */}
+      <div style={{
+        borderRadius: 18, overflow: "hidden", marginBottom: 24,
+        boxShadow: "var(--elev-2)",
+        border: "1px solid var(--hc-border)",
+      }}>
+        {/* Top gradient section */}
+        <div style={{
+          background: patient?.gender === "female"
+            ? "var(--sidebar-bg)"
+            : "var(--sidebar-bg)",
+          padding: "28px 28px 24px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 18 }}>
+            {/* Avatar */}
+            <div style={{
+              width: 64, height: 64, borderRadius: 18, flexShrink: 0,
+              background: "var(--on-dark-raise)", border: "2.5px solid var(--on-dark-line)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 22, fontWeight: 800, color: "var(--white)",
+            }}>
+              {patient?.firstName?.[0]}{patient?.lastName?.[0]}
             </div>
+
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <h2 style={{ fontSize: 22, fontWeight: 800, color: "var(--white)", margin: "0 0 6px", lineHeight: 1.2 }}>
+                {patient?.firstName} {patient?.lastName}
+              </h2>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                {age !== null && (
+                  <span style={{ fontSize: 13, color: "var(--on-dark-text)" }}>{age} yrs</span>
+                )}
+                {patient?.gender && (
+                  <>
+                    <span style={{ color: "var(--on-dark-text-dim)", fontSize: 12 }}>·</span>
+                    <span style={{ fontSize: 13, color: "var(--on-dark-text)", textTransform: "capitalize" }}>{patient.gender}</span>
+                  </>
+                )}
+                {patient?.dateOfBirth && (
+                  <>
+                    <span style={{ color: "var(--on-dark-text-dim)", fontSize: 12 }}>·</span>
+                    <span style={{ fontSize: 13, color: "var(--on-dark-text)" }}>
+                      DOB: {format(new Date(patient.dateOfBirth), "dd MMM yyyy")}
+                    </span>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Blood type badge */}
+            {patient?.bloodType && patient.bloodType !== "unknown" && (
+              <div style={{
+                padding: "8px 16px", borderRadius: 12,
+                background: BLOOD_COLOR[patient.bloodType] ?? "var(--text-secondary)",
+                boxShadow: "var(--elev-2)",
+                textAlign: "center", flexShrink: 0,
+              }}>
+                <p style={{ fontSize: 9, fontWeight: 700, color: "var(--on-dark-text)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 1px" }}>Blood</p>
+                <p style={{ fontSize: 18, fontWeight: 900, color: "var(--white)", margin: 0, lineHeight: 1 }}>{patient.bloodType}</p>
+              </div>
+            )}
           </div>
-          <div className="text-right">
-            <p className="text-xs text-gray-400 font-semibold uppercase tracking-wide">
-              Total Visits
-            </p>
-            <p className="text-2xl font-bold text-gray-900">
-              {triageHistory.length}
-            </p>
-          </div>
+        </div>
+
+        {/* Stats row */}
+        <div style={{
+          display: "grid", gridTemplateColumns: "repeat(4, 1fr)",
+          background: "var(--white)", borderTop: "1px solid var(--border-faint)",
+        }}>
+          {[
+            { label: "Total Visits",  value: triageHistory.length,                                           color: "var(--green-800)" },
+            { label: "Last Visit",    value: lastVisit?.admissionDate ? format(new Date(lastVisit.admissionDate), "dd MMM yyyy") : "—", color: "var(--text-secondary)" },
+            { label: "Last Priority", value: lastVisit ? (PRIORITY[lastVisit.priority]?.label ?? lastVisit.priority) : "—", color: lastVisit ? (PRIORITY[lastVisit.priority]?.color ?? "var(--text-secondary)") : "var(--text-muted)" },
+            { label: "Last Complaint", value: lastVisit?.chiefComplaint ?? "—",                              color: "var(--text-secondary)" },
+          ].map(({ label, value, color }, i, arr) => (
+            <div key={label} style={{
+              padding: "14px 20px",
+              borderRight: i < arr.length - 1 ? "1px solid var(--surface-sunken)" : "none",
+            }}>
+              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 4px" }}>
+                {label}
+              </p>
+              <p style={{
+                fontSize: i === 0 ? 24 : 13, fontWeight: 700, color,
+                margin: 0, lineHeight: 1.3,
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}>
+                {value}
+              </p>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* Triage history */}
-      <h3 className="text-sm font-bold text-gray-500 uppercase tracking-wide mb-3">
-        Triage & Nursing History
-      </h3>
+      {/* ── Visit History ───────────────────────────────────────────────────── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: 8, background: "var(--brand-tint)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <Activity size={13} style={{ color: "var(--success-ink)" }} />
+          </div>
+          <p style={{ fontSize: 13, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
+            Triage &amp; Nursing History
+          </p>
+          {triageHistory.length > 0 && (
+            <span style={{
+              fontSize: 11, fontWeight: 800, padding: "2px 8px", borderRadius: 999,
+              background: "var(--surface-sunken)", color: "var(--text-secondary)",
+            }}>
+              {triageHistory.length} visit{triageHistory.length !== 1 ? "s" : ""}
+            </span>
+          )}
+        </div>
+      </div>
 
       {triageHistory.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm py-12 text-center">
-          <Activity className="w-8 h-8 text-gray-200 mx-auto mb-3" />
-          <p className="text-sm font-semibold text-gray-400">
-            No triage history found
-          </p>
+        <div style={{
+          background: "var(--white)", borderRadius: 14, border: "1px solid var(--border-faint)",
+          padding: "48px 24px", textAlign: "center",
+        }}>
+          <div style={{
+            width: 44, height: 44, borderRadius: 12, background: "var(--surface-sunken)",
+            margin: "0 auto 14px", display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <Activity size={20} style={{ color: "var(--text-disabled)" }} />
+          </div>
+          <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-secondary)", margin: "0 0 4px" }}>No triage history</p>
+          <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>This patient has not been triaged yet</p>
         </div>
       ) : (
-        <div className="space-y-4">
-          {triageHistory.map((item: any, i: number) => {
-            const v = item.visit;
-            const p = PRIORITY[v?.priority] ?? PRIORITY.routine;
-            const latestVitals = item.vitals?.[0];
-            const na = item.nursingAssessment;
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {triageHistory.map((item: any, idx: number) => {
+            const v    = item.visit;
+            const vit  = item.vitals?.[0];
+            const na   = item.nursingAssessment;
+            const pri  = PRIORITY[v?.priority] ?? PRIORITY.routine;
+            const vt   = VISIT_TYPE[v?.visitType];
+            const open = expanded.has(v?.id);
+            const hasData = !!vit || !!na;
 
             return (
-              <div
-                key={v?.id ?? i}
-                className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden"
-              >
-                {/* Visit header */}
-                <div
-                  className="px-5 py-3 border-b border-gray-50 flex items-center justify-between"
-                  style={{ background: p.bg }}
+              <div key={v?.id ?? idx} style={{
+                background: "var(--white)", borderRadius: 14,
+                border: "1px solid var(--border-faint)",
+                boxShadow: "var(--elev-1)",
+                overflow: "hidden",
+              }}>
+                {/* Visit header — always visible */}
+                <button
+                  onClick={() => toggleExpand(v?.id)}
+                  style={{
+                    width: "100%", display: "flex", alignItems: "center", gap: 14,
+                    padding: "14px 18px", background: "none", border: "none", cursor: "pointer",
+                    textAlign: "left",
+                    borderBottom: open ? "1px solid var(--surface-sunken)" : "none",
+                    transition: "background 0.12s",
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = "var(--surface-app)"}
+                  onMouseLeave={(e) => e.currentTarget.style.background = "none"}
                 >
-                  <div className="flex items-center gap-3">
-                    <span
-                      className="text-xs font-bold px-2.5 py-1 rounded-full"
-                      style={{ background: "#fff", color: p.color }}
-                    >
-                      {p.label}
+                  {/* Priority dot */}
+                  <span style={{
+                    width: 8, height: 8, borderRadius: "50%",
+                    background: pri.dot, flexShrink: 0,
+                    boxShadow: `0 0 0 3px ${pri.bg}`,
+                  }} />
+
+                  {/* Visit number */}
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "var(--text-secondary)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>
+                    {v?.visitNumber}
+                  </span>
+
+                  {/* Priority badge */}
+                  <span style={{
+                    fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
+                    background: pri.bg, color: pri.color, border: `1px solid ${pri.border}`,
+                    flexShrink: 0,
+                  }}>
+                    {pri.label}
+                  </span>
+
+                  {/* Visit type */}
+                  {vt && (
+                    <span style={{ fontSize: 11.5, fontWeight: 600, color: vt.color, flexShrink: 0 }}>
+                      {vt.label}
                     </span>
-                    <span className="text-sm font-semibold text-gray-700 font-mono">
-                      {v?.visitNumber}
+                  )}
+
+                  {/* Chief complaint */}
+                  {v?.chiefComplaint && (
+                    <span style={{
+                      fontSize: 12.5, color: "var(--text-secondary)", flex: 1, minWidth: 0,
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}>
+                      {v.chiefComplaint}
                     </span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {item.vitals?.length > 0 ? (
-                      <span className="flex items-center gap-1 text-xs font-semibold text-green-700">
-                        <CheckCircle2 className="w-3.5 h-3.5" /> Triaged
+                  )}
+
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0, marginLeft: "auto" }}>
+                    {/* Triage status */}
+                    {hasData ? (
+                      <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 600, color: "var(--success-ink)" }}>
+                        <CheckCircle2 size={12} /> Triaged
                       </span>
                     ) : (
-                      <span className="flex items-center gap-1 text-xs font-semibold text-amber-600">
-                        <Clock className="w-3.5 h-3.5" /> Not triaged
+                      <span style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11.5, fontWeight: 600, color: "var(--urgent-ink)" }}>
+                        <Clock size={12} /> Pending
                       </span>
                     )}
+
+                    {/* Date */}
                     {v?.admissionDate && (
-                      <span className="text-xs text-gray-500">
+                      <span style={{ fontSize: 12, color: "var(--text-muted)" }}>
                         {format(new Date(v.admissionDate), "dd MMM yyyy")}
                       </span>
                     )}
+
+                    {open ? <ChevronUp size={15} style={{ color: "var(--text-muted)" }} /> : <ChevronDown size={15} style={{ color: "var(--text-muted)" }} />}
                   </div>
-                </div>
+                </button>
 
-                <div className="p-5">
-                  {/* Chief complaint */}
-                  {v?.chiefComplaint && (
-                    <div className="mb-4">
-                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
-                        Chief Complaint
+                {/* Expanded content */}
+                {open && (
+                  <div style={{ padding: "18px 20px" }}>
+                    {!hasData ? (
+                      <p style={{ fontSize: 13, color: "var(--text-muted)", textAlign: "center", padding: "20px 0", margin: 0 }}>
+                        No triage data recorded for this visit
                       </p>
-                      <p className="text-sm text-gray-700">
-                        {v.chiefComplaint}
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Latest vitals */}
-                  {latestVitals && (
-                    <div className="mb-4">
-                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
-                        Latest Vitals
-                      </p>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {[
-                          {
-                            icon: Heart,
-                            label: "Heart Rate",
-                            value: latestVitals.heartRate,
-                            unit: "bpm",
-                          },
-                          {
-                            icon: Thermometer,
-                            label: "Temperature",
-                            value: latestVitals.temperature,
-                            unit: "°C",
-                          },
-                          {
-                            icon: Wind,
-                            label: "Respiratory",
-                            value: latestVitals.respiratoryRate,
-                            unit: "/min",
-                          },
-                          {
-                            icon: Gauge,
-                            label: "Blood Pressure",
-                            value: latestVitals.bloodPressureSystolic
-                              ? `${latestVitals.bloodPressureSystolic}/${latestVitals.bloodPressureDiastolic}`
-                              : null,
-                            unit: "mmHg",
-                          },
-                        ]
-                          .filter((f) => f.value)
-                          .map((f) => (
-                            <div
-                              key={f.label}
-                              className="bg-gray-50 rounded-xl p-3 border border-gray-100"
-                            >
-                              <div className="flex items-center gap-1.5 mb-1">
-                                <f.icon className="w-3 h-3 text-gray-400" />
-                                <p className="text-xs text-gray-400 font-semibold">
-                                  {f.label}
-                                </p>
+                    ) : (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 220px", gap: 20, alignItems: "start" }}>
+                        {/* Left: vitals */}
+                        <div>
+                          {vit && (
+                            <>
+                              <p style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 10px" }}>
+                                Vital Signs
+                              </p>
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginBottom: 12 }}>
+                                <MiniVital
+                                  icon={Thermometer}
+                                  label="Temp"
+                                  value={vit.temperature != null ? `${vit.temperature}°C` : ""}
+                                  rangeKey="temperature"
+                                  iconColor="var(--coral-500)"
+                                />
+                                <MiniVital
+                                  icon={Gauge}
+                                  label="BP"
+                                  value={vit.bloodPressureSystolic != null ? `${vit.bloodPressureSystolic}/${vit.bloodPressureDiastolic}` : ""}
+                                  rangeKey="bloodPressureSystolic"
+                                  iconColor="var(--blue-500)"
+                                />
+                                <MiniVital
+                                  icon={Heart}
+                                  label="Pulse"
+                                  value={vit.pulseRate != null ? `${vit.pulseRate} bpm` : (vit.heartRate != null ? `${vit.heartRate} bpm` : "")}
+                                  rangeKey="pulseRate"
+                                  iconColor="var(--coral-500)"
+                                />
+                                <MiniVital
+                                  icon={Wind}
+                                  label="Resp."
+                                  value={vit.respiratoryRate != null ? `${vit.respiratoryRate}/min` : ""}
+                                  rangeKey="respiratoryRate"
+                                  iconColor="var(--green-600)"
+                                />
                               </div>
-                              <p className="text-base font-bold text-gray-800">
-                                {f.value}{" "}
-                                <span className="text-xs font-normal text-gray-400">
-                                  {f.unit}
-                                </span>
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
+                                <MiniVital
+                                  icon={Droplets}
+                                  label="SpO₂"
+                                  value={vit.oxygenSaturation != null ? `${vit.oxygenSaturation}%` : ""}
+                                  rangeKey="oxygenSaturation"
+                                  iconColor="var(--blue-500)"
+                                />
+                                {vit.weight != null && (
+                                  <MiniVital icon={Weight} label="Weight" value={`${vit.weight} kg`} rangeKey="weight" iconColor="var(--amber-500)" />
+                                )}
+                                {vit.height != null && (
+                                  <MiniVital icon={User} label="Height" value={`${vit.height} cm`} rangeKey="height" iconColor="var(--violet-500)" />
+                                )}
+                                {vit.painLevel != null && (
+                                  <div style={{
+                                    padding: "12px 14px", borderRadius: 12,
+                                    background: vit.painLevel >= 7 ? "var(--coral-050)" : vit.painLevel >= 4 ? "var(--amber-050)" : "var(--brand-tint)",
+                                    border: `1px solid ${vit.painLevel >= 7 ? "var(--coral-100)" : vit.painLevel >= 4 ? "var(--amber-100)" : "var(--green-100)"}`,
+                                  }}>
+                                    <p style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 6px" }}>
+                                      Pain
+                                    </p>
+                                    <p style={{
+                                      fontSize: 17, fontWeight: 800, margin: 0, lineHeight: 1,
+                                      color: vit.painLevel >= 7 ? "var(--critical-ink)" : vit.painLevel >= 4 ? "var(--urgent-ink)" : "var(--green-600)",
+                                    }}>
+                                      {vit.painLevel}/10
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                              {vit.recordedAt && (
+                                <p style={{ fontSize: 11.5, color: "var(--text-muted)", marginTop: 10, display: "flex", alignItems: "center", gap: 4 } as any}>
+                                  <Clock size={11} style={{ display: "inline" }} />
+                                  Recorded {formatDistanceToNow(new Date(vit.recordedAt), { addSuffix: true })}
+                                </p>
+                              )}
+                            </>
+                          )}
+
+                          {/* Nurse notes */}
+                          {vit?.nurseNotes && (
+                            <div style={{ marginTop: 16, padding: "12px 16px", borderRadius: 10, background: "var(--surface-sunken)", border: "1px solid var(--surface-sunken)" }}>
+                              <p style={{ fontSize: 10, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 6px" }}>
+                                Nurse Notes
+                              </p>
+                              <p style={{ fontSize: 13, color: "var(--text-secondary)", margin: 0, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+                                {vit.nurseNotes}
                               </p>
                             </div>
-                          ))}
-                      </div>
-                      {latestVitals.oxygenSaturation && (
-                        <div className="mt-2 flex items-center gap-2">
-                          <span className="text-xs text-gray-400">SpO₂:</span>
-                          <span
-                            className={`text-sm font-bold ${latestVitals.oxygenSaturation < 95 ? "text-red-600" : "text-green-600"}`}
-                          >
-                            {latestVitals.oxygenSaturation}%
-                          </span>
+                          )}
                         </div>
-                      )}
-                      <p className="text-xs text-gray-400 mt-1">
-                        Recorded{" "}
-                        {latestVitals.recordedAt
-                          ? formatDistanceToNow(
-                              new Date(latestVitals.recordedAt),
-                              { addSuffix: true },
-                            )
-                          : "—"}
-                      </p>
-                    </div>
-                  )}
 
-                  {/* Nursing assessment */}
-                  {na && (
-                    <div>
-                      <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
-                        Nursing Assessment
-                      </p>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-                        {[
-                          {
-                            label: "Pain Scale",
-                            value:
-                              na.painScale !== undefined
-                                ? `${na.painScale}/10`
-                                : null,
-                          },
-                          {
-                            label: "Consciousness",
-                            value: na.consciousnessLevel,
-                          },
-                          { label: "Skin Condition", value: na.skinCondition },
-                          { label: "Mobility", value: na.mobilityStatus },
-                        ]
-                          .filter((f) => f.value)
-                          .map((f) => (
-                            <div
-                              key={f.label}
-                              className="flex justify-between bg-gray-50 rounded-lg px-3 py-2 border border-gray-100"
-                            >
-                              <span className="text-xs text-gray-500 font-semibold">
-                                {f.label}
-                              </span>
-                              <span className="text-xs text-gray-800 font-bold capitalize">
-                                {f.value}
-                              </span>
+                        {/* Right: nursing assessment */}
+                        {na && (
+                          <div>
+                            <p style={{ fontSize: 10, fontWeight: 800, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 10px" }}>
+                              Nursing Assessment
+                            </p>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                              {[
+                                { label: "Pain Scale",     value: na.painScale != null ? `${na.painScale}/10` : null },
+                                { label: "Consciousness",  value: na.consciousnessLevel },
+                                { label: "Skin Condition", value: na.skinCondition },
+                                { label: "Mobility",       value: na.mobilityStatus },
+                              ].filter(f => f.value).map(({ label, value }) => (
+                                <div key={label} style={{
+                                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                                  padding: "8px 12px", borderRadius: 9,
+                                  background: "var(--surface-sunken)", border: "1px solid var(--surface-sunken)",
+                                }}>
+                                  <span style={{ fontSize: 12, color: "var(--text-muted)", fontWeight: 600 }}>{label}</span>
+                                  <span style={{ fontSize: 12, color: "var(--text-primary)", fontWeight: 700, textTransform: "capitalize" }}>{value}</span>
+                                </div>
+                              ))}
+                              {na.notes && (
+                                <div style={{ padding: "10px 12px", borderRadius: 9, background: "var(--brand-tint)", border: "1px solid var(--green-100)", marginTop: 4 }}>
+                                  <p style={{ fontSize: 11, fontWeight: 700, color: "var(--text-muted)", textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 4px" }}>
+                                    Notes
+                                  </p>
+                                  <p style={{ fontSize: 12.5, color: "var(--text-secondary)", margin: 0, lineHeight: 1.5, fontStyle: "italic" }}>{na.notes}</p>
+                                </div>
+                              )}
                             </div>
-                          ))}
+                          </div>
+                        )}
                       </div>
-                      {na.notes && (
-                        <p className="text-xs text-gray-500 italic mt-2 bg-gray-50 rounded-lg p-3">
-                          {na.notes}
-                        </p>
-                      )}
-                    </div>
-                  )}
-
-                  {!latestVitals && !na && (
-                    <p className="text-sm text-gray-400 italic">
-                      No triage data recorded for this visit.
-                    </p>
-                  )}
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
       )}
+
+      <style>{`
+        @keyframes spin  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+      `}</style>
     </div>
   );
 }
 
 // ── Main patients list ────────────────────────────────────────────────────────
+
 export default function NursePatientsPage() {
-  const [patients, setPatients] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [patients,   setPatients]   = useState<any[]>([]);
+  const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [inputVal, setInputVal] = useState("");
-  const [search, setSearch] = useState("");
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
+  const [inputVal,   setInputVal]   = useState("");
+  const [search,     setSearch]     = useState("");
+  const [total,      setTotal]      = useState(0);
+  const [page,       setPage]       = useState(1);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const PER_PAGE = 20;
 
-  const load = useCallback(
-    async (silent = false) => {
-      if (silent) setRefreshing(true);
-      else setLoading(true);
-      try {
-        const res = await patientApi.searchPaginated({
-          q: search,
-          limit: PER_PAGE,
-          offset: (page - 1) * PER_PAGE,
-        });
-        setPatients(res.data.data?.patients ?? []);
-        setTotal(res.data.data?.total ?? 0);
-      } catch {
-        setPatients([]);
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
-    [search, page],
-  );
+  const load = useCallback(async (silent = false) => {
+    if (silent) setRefreshing(true); else setLoading(true);
+    try {
+      const res = await patientApi.searchPaginated({ q: search, limit: PER_PAGE, offset: (page - 1) * PER_PAGE });
+      setPatients(res.data.data?.patients ?? []);
+      setTotal(res.data.data?.total ?? 0);
+    } catch {
+      setPatients([]);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [search, page]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
-  useEffect(() => {
-    setPage(1);
-  }, [search]);
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => { setPage(1); }, [search]);
 
   const totalPages = Math.ceil(total / PER_PAGE);
 
   if (selectedId)
-    return (
-      <PatientDetailPanel
-        patientId={selectedId}
-        onClose={() => setSelectedId(null)}
-      />
-    );
+    return <PatientDetailPanel patientId={selectedId} onClose={() => setSelectedId(null)} />;
 
   return (
-    <div style={{ fontFamily: "'DM Sans',sans-serif" }}>
-      <div className="flex items-center justify-between mb-6">
+    <div>
+
+      {/* Page header */}
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 24 }}>
         <div>
-          <h1
-            className="text-2xl font-bold text-gray-900"
-            style={{ fontFamily: "'Playfair Display',serif" }}
-          >
-            All Patients
-          </h1>
-          <p className="text-sm text-gray-400 mt-0.5">
-            Search and view patient triage history
-          </p>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
+            <div style={{
+              width: 34, height: 34, borderRadius: 10, background: "var(--brand-tint)",
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}>
+              <Users size={16} style={{ color: "var(--green-800)" }} />
+            </div>
+            <h1 style={{ fontSize: 20, fontWeight: 800, color: "var(--text-primary)", margin: 0 }}>All Patients</h1>
+          </div>
+          <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>Search and view patient triage history</p>
         </div>
         <button
           onClick={() => load(true)}
           disabled={refreshing}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors disabled:opacity-40"
+          style={{
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "8px 14px", borderRadius: 10, border: "1px solid var(--hc-border)",
+            background: "var(--white)", fontSize: 13, fontWeight: 600, color: "var(--text-secondary)",
+            cursor: refreshing ? "not-allowed" : "pointer", opacity: refreshing ? 0.6 : 1,
+          }}
         >
-          <RefreshCw
-            className={`w-4 h-4 ${refreshing ? "animate-spin" : ""}`}
-          />
+          <RefreshCw size={14} style={{ animation: refreshing ? "spin 0.8s linear infinite" : "none" }} />
+          Refresh
         </button>
       </div>
 
-      {/* Search */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-4 mb-4">
-        <div className="flex gap-3">
-          <div className="flex-1 relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+      {/* Search bar */}
+      <div style={{ background: "var(--white)", borderRadius: 14, border: "1px solid var(--border-faint)", padding: "14px 16px", marginBottom: 16, boxShadow: "var(--elev-1)" }}>
+        <div style={{ display: "flex", gap: 10 }}>
+          <div style={{ flex: 1, position: "relative" }}>
+            <Search size={15} style={{ position: "absolute", left: 13, top: "50%", transform: "translateY(-50%)", color: "var(--text-muted)", pointerEvents: "none" }} />
             <input
               value={inputVal}
               onChange={(e) => setInputVal(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && setSearch(inputVal.trim())}
               placeholder="Search by name or patient ID…"
-              className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm outline-none focus:border-green-600 focus:ring-2 focus:ring-green-600/10 focus:bg-white transition-all"
+              style={{
+                width: "100%", boxSizing: "border-box",
+                padding: "10px 36px 10px 38px", borderRadius: 10,
+                border: "1px solid var(--hc-border)", background: "var(--surface-sunken)",
+                fontSize: 13.5, color: "var(--text-primary)", outline: "none",
+                fontFamily: "inherit", transition: "border-color 0.15s, background 0.15s",
+              }}
+              onFocus={(e) => { e.target.style.borderColor = "var(--green-600)"; e.target.style.background = "var(--white)"; e.target.style.boxShadow = "0 0 0 3px var(--focus-ring)"; }}
+              onBlur={(e)  => { e.target.style.borderColor = "var(--hc-border)"; e.target.style.background = "var(--surface-sunken)"; e.target.style.boxShadow = "none"; }}
             />
             {inputVal && (
               <button
-                onClick={() => {
-                  setInputVal("");
-                  setSearch("");
-                }}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                onClick={() => { setInputVal(""); setSearch(""); }}
+                style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: "var(--text-muted)", display: "flex" }}
               >
-                <X className="w-4 h-4" />
+                <X size={14} />
               </button>
             )}
           </div>
           <button
             onClick={() => setSearch(inputVal.trim())}
-            className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:shadow-md"
-            style={{ background: "linear-gradient(135deg,#166534,#15803d)" }}
+            style={{
+              padding: "10px 22px", borderRadius: 10, border: "none",
+              background: "var(--brand)",
+              fontSize: 13, fontWeight: 700, color: "var(--white)", cursor: "pointer",
+              boxShadow: "var(--elev-brand)",
+            }}
           >
             Search
           </button>
         </div>
+        {search && (
+          <p style={{ fontSize: 12, color: "var(--text-muted)", margin: "10px 0 0" }}>
+            Results for "<strong style={{ color: "var(--text-secondary)" }}>{search}</strong>" · {total} found
+          </p>
+        )}
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
+      <div style={{ background: "var(--white)", borderRadius: 16, border: "1px solid var(--border-faint)", overflow: "hidden", boxShadow: "var(--elev-1)" }}>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
-              <tr className="border-b border-gray-100">
+              <tr style={{ background: "var(--surface-sunken)", borderBottom: "1px solid var(--border-faint)" }}>
                 {["Patient", "Age", "Gender", "Blood Type", ""].map((h, i) => (
-                  <th
-                    key={i}
-                    className={`py-3 text-xs font-semibold text-gray-400 uppercase tracking-wide ${i === 0 ? "pl-5 pr-3" : i === 4 ? "pl-3 pr-5" : "px-3"}`}
-                  >
+                  <th key={i} style={{
+                    padding: "11px 16px", textAlign: "left",
+                    fontSize: 11, fontWeight: 800, color: "var(--text-muted)",
+                    textTransform: "uppercase", letterSpacing: "0.07em",
+                    paddingLeft: i === 0 ? 20 : 16,
+                    paddingRight: i === 4 ? 20 : 16,
+                  }}>
                     {h}
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {loading ? (
-                Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
-              ) : patients.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="py-16 text-center">
-                    <Users className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-                    <p className="text-sm font-semibold text-gray-400">
-                      {search
-                        ? "No patients found"
-                        : "Search for a patient above"}
-                    </p>
-                  </td>
-                </tr>
-              ) : (
-                patients.map((p) => {
+              {loading
+                ? Array.from({ length: 8 }).map((_, i) => <SkeletonRow key={i} />)
+                : patients.length === 0
+                ? (
+                  <tr>
+                    <td colSpan={5} style={{ padding: "60px 24px", textAlign: "center" }}>
+                      <div style={{
+                        width: 44, height: 44, borderRadius: 12, background: "var(--surface-sunken)",
+                        margin: "0 auto 14px", display: "flex", alignItems: "center", justifyContent: "center",
+                      }}>
+                        <Users size={20} style={{ color: "var(--text-disabled)" }} />
+                      </div>
+                      <p style={{ fontSize: 14, fontWeight: 700, color: "var(--text-secondary)", margin: "0 0 4px" }}>
+                        {search ? "No patients found" : "Search for a patient above"}
+                      </p>
+                      <p style={{ fontSize: 13, color: "var(--text-muted)", margin: 0 }}>
+                        {search ? `No results for "${search}"` : "Enter a name or patient ID to search"}
+                      </p>
+                    </td>
+                  </tr>
+                )
+                : patients.map((p, i) => {
                   const age = calcAge(p.dateOfBirth);
+                  const isFemale = p.gender === "female";
                   return (
                     <tr
                       key={p.id}
                       onClick={() => setSelectedId(p.id)}
-                      className="border-b border-gray-50 hover:bg-gray-50/60 transition-colors cursor-pointer group"
+                      style={{
+                        borderBottom: i < patients.length - 1 ? "1px solid var(--surface-sunken)" : "none",
+                        cursor: "pointer", transition: "background 0.1s",
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = "var(--surface-sunken)"}
+                      onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}
                     >
-                      <td className="py-3.5 pl-5 pr-3">
-                        <div className="flex items-center gap-3">
-                          <div
-                            className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-                            style={{
-                              background:
-                                p.gender === "female"
-                                  ? "linear-gradient(135deg,#ec4899,#db2777)"
-                                  : "linear-gradient(135deg,#166534,#15803d)",
-                            }}
-                          >
-                            {p.firstName?.[0]}
-                            {p.lastName?.[0]}
+                      <td style={{ padding: "13px 16px 13px 20px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                          <div style={{
+                            width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+                            background: isFemale
+                              ? "var(--coral-600)"
+                              : "var(--brand)",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            fontSize: 12, fontWeight: 800, color: "var(--white)",
+                          }}>
+                            {p.firstName?.[0]}{p.lastName?.[0]}
                           </div>
                           <div>
-                            <p className="text-sm font-semibold text-gray-800">
+                            <p style={{ fontSize: 13.5, fontWeight: 700, color: "var(--text-primary)", margin: 0 }}>
                               {p.firstName} {p.lastName}
                             </p>
-                            <p className="text-xs text-gray-400 font-mono">
+                            <p style={{ fontSize: 11.5, color: "var(--text-muted)", margin: 0, fontFamily: "var(--font-mono)" }}>
                               {p.id?.slice(0, 8)}…
                             </p>
                           </div>
                         </div>
                       </td>
-                      <td className="py-3.5 px-3 text-sm text-gray-600">
-                        {age !== null ? `${age} yrs` : "—"}
+                      <td style={{ padding: "13px 16px" }}>
+                        <span style={{ fontSize: 13.5, color: "var(--text-secondary)" }}>
+                          {age !== null ? `${age} yrs` : "—"}
+                        </span>
                       </td>
-                      <td className="py-3.5 px-3">
-                        <span className="text-xs font-semibold px-2.5 py-1 rounded-full capitalize bg-gray-100 text-gray-600">
+                      <td style={{ padding: "13px 16px" }}>
+                        <span style={{
+                          fontSize: 11.5, fontWeight: 600, padding: "3px 10px", borderRadius: 999,
+                          background: isFemale ? "var(--coral-050)" : "var(--brand-tint)",
+                          color: isFemale ? "var(--critical-ink)" : "var(--green-800)",
+                          textTransform: "capitalize",
+                        }}>
                           {p.gender ?? "—"}
                         </span>
                       </td>
-                      <td className="py-3.5 px-3">
+                      <td style={{ padding: "13px 16px" }}>
                         {p.bloodType && p.bloodType !== "unknown" ? (
-                          <span
-                            className="text-xs font-bold px-2.5 py-1 rounded-full text-white"
-                            style={{
-                              background: BLOOD_COLOR[p.bloodType] ?? "#6b7280",
-                            }}
-                          >
+                          <span style={{
+                            fontSize: 12, fontWeight: 800, padding: "3px 10px", borderRadius: 999,
+                            background: BLOOD_COLOR[p.bloodType] ?? "var(--text-secondary)", color: "var(--white)",
+                          }}>
                             {p.bloodType}
                           </span>
                         ) : (
-                          <span className="text-xs text-gray-400">—</span>
+                          <span style={{ fontSize: 13, color: "var(--text-disabled)" }}>—</span>
                         )}
                       </td>
-                      <td className="py-3.5 pl-3 pr-5">
-                        <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-gray-500 transition-colors ml-auto" />
+                      <td style={{ padding: "13px 20px 13px 16px", textAlign: "right" }}>
+                        <ChevronRight size={15} style={{ color: "var(--text-disabled)" }} />
                       </td>
                     </tr>
                   );
                 })
-              )}
+              }
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100">
-            <p className="text-xs text-gray-400">
-              Page {page} of {totalPages} · {total} total
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "12px 20px", borderTop: "1px solid var(--surface-sunken)",
+          }}>
+            <p style={{ fontSize: 12.5, color: "var(--text-muted)", margin: 0 }}>
+              Page {page} of {totalPages} · <strong style={{ color: "var(--text-secondary)" }}>{total}</strong> patients
             </p>
-            <div className="flex gap-2">
-              <button
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-                className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 disabled:opacity-40 hover:bg-gray-50"
-              >
-                Previous
-              </button>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages}
-                className="px-3 py-1.5 rounded-lg border border-gray-200 text-xs font-medium text-gray-600 disabled:opacity-40 hover:bg-gray-50"
-              >
-                Next
-              </button>
+            <div style={{ display: "flex", gap: 6 }}>
+              {[
+                { label: "Previous", disabled: page === 1,         action: () => setPage(p => Math.max(1, p - 1)) },
+                { label: "Next",     disabled: page === totalPages, action: () => setPage(p => Math.min(totalPages, p + 1)) },
+              ].map(({ label, disabled, action }) => (
+                <button
+                  key={label}
+                  onClick={action}
+                  disabled={disabled}
+                  style={{
+                    padding: "6px 14px", borderRadius: 8, border: "1px solid var(--hc-border)",
+                    fontSize: 12.5, fontWeight: 600, color: "var(--text-secondary)", background: "var(--white)",
+                    cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1,
+                    transition: "all 0.12s",
+                  }}
+                  onMouseEnter={(e) => { if (!disabled) e.currentTarget.style.background = "var(--surface-sunken)"; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.background = "var(--white)"; }}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
           </div>
         )}
       </div>
+
+      <style>{`
+        @keyframes spin  { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+      `}</style>
     </div>
   );
 }

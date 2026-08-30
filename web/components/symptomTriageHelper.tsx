@@ -27,35 +27,44 @@ interface SymptomTriageHelperProps {
 }
 
 // ── Priority config ───────────────────────────────────────────────────────────
+// Tones match the app-wide priority mapping in the role vocab modules
+// (routine=success, urgent=urgent, emergency=critical, critical=accent), so a
+// suggestion here is the same colour as the priority it would set.
+// `tint` exists because the old code built washes by string-appending "15" to a
+// hex value — that trick cannot work once the colour is a var().
 const PRIORITY_CONFIG = {
   routine: {
-    color: "#166534",
-    bg: "#f0fdf4",
-    border: "#bbf7d0",
+    color: "var(--success-ink)",
+    bg: "var(--green-050)",
+    border: "var(--green-200)",
+    tint: "var(--brand-tint)",
     label: "Routine",
     icon: CheckCircle2,
     desc: "Can wait — schedule normally",
   },
   urgent: {
-    color: "#d97706",
-    bg: "#fffbeb",
-    border: "#fde68a",
+    color: "var(--urgent-ink)",
+    bg: "var(--amber-050)",
+    border: "var(--urgent-tint)",
+    tint: "var(--urgent-tint)",
     label: "Urgent",
     icon: AlertTriangle,
     desc: "See within 1–2 hours",
   },
   emergency: {
-    color: "#dc2626",
-    bg: "#fef2f2",
-    border: "#fecaca",
+    color: "var(--critical-ink)",
+    bg: "var(--coral-050)",
+    border: "var(--critical-tint)",
+    tint: "var(--critical-tint)",
     label: "Emergency",
     icon: AlertCircle,
     desc: "Immediate attention required",
   },
   critical: {
-    color: "#7c3aed",
-    bg: "#fdf4ff",
-    border: "#ddd6fe",
+    color: "var(--accent-ink)",
+    bg: "var(--violet-050)",
+    border: "var(--accent-tint)",
+    tint: "var(--accent-tint)",
     label: "Critical",
     icon: Zap,
     desc: "Life-threatening — resuscitation bay",
@@ -135,18 +144,18 @@ Be conservative — when in doubt, escalate.`;
   const PriorityIcon = cfg?.icon ?? CheckCircle2;
 
   return (
-    <div className="space-y-4" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+    <div className="space-y-4" style={{ fontFamily: "var(--font-sans)" }}>
       {/* ── Header ───────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2.5">
         <div
-          className="w-8 h-8 rounded-xl flex items-center justify-center"
-          style={{ background: "linear-gradient(135deg,#052e16,#166534)" }}
+          className="w-8 h-8 rounded-[var(--r-sm)] flex items-center justify-center"
+          style={{ background: "var(--brand-deep)" }}
         >
-          <Activity className="w-4 h-4 text-green-300" />
+          <Activity className="w-4 h-4 text-[var(--green-300)]" />
         </div>
         <div>
-          <p className="text-sm font-bold text-gray-900">Triage Assistant</p>
-          <p className="text-[11px] text-gray-400">
+          <p className="text-sm font-bold text-[var(--text-primary)]">Triage Assistant</p>
+          <p className="text-[11px] text-[var(--text-muted)]">
             Enter chief complaint to get suggested priority
           </p>
         </div>
@@ -154,7 +163,7 @@ Be conservative — when in doubt, escalate.`;
 
       {/* ── Common complaints ────────────────────────────────────────────── */}
       <div>
-        <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-2">
+        <p className="text-[10px] font-bold uppercase tracking-[var(--ls-caps)] text-[var(--text-muted)] mb-2">
           Common Complaints
         </p>
         <div className="flex flex-wrap gap-1.5">
@@ -162,11 +171,11 @@ Be conservative — when in doubt, escalate.`;
             <button
               key={c}
               onClick={() => setComplaint(c)}
-              className="px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors"
+              className="px-2.5 py-1 rounded-[var(--r-xs)] text-xs font-semibold border transition-colors"
               style={{
-                background: complaint === c ? "#f0fdf4" : "#fff",
-                borderColor: complaint === c ? "#bbf7d0" : "#e5e7eb",
-                color: complaint === c ? "#166534" : "#6b7280",
+                background: complaint === c ? "var(--brand-tint)" : "var(--surface-card)",
+                borderColor: complaint === c ? "var(--green-200)" : "var(--hc-border)",
+                color: complaint === c ? "var(--success-ink)" : "var(--text-secondary)",
               }}
             >
               {c}
@@ -178,7 +187,7 @@ Be conservative — when in doubt, escalate.`;
       {/* ── Input ────────────────────────────────────────────────────────── */}
       <div className="space-y-2.5">
         <div>
-          <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-1.5">
+          <label className="text-[10px] font-bold uppercase tracking-[var(--ls-caps)] text-[var(--text-muted)] block mb-1.5">
             Chief Complaint
           </label>
           <textarea
@@ -186,26 +195,26 @@ Be conservative — when in doubt, escalate.`;
             onChange={(e) => setComplaint(e.target.value)}
             rows={2}
             placeholder="Describe the patient's main symptoms…"
-            className="w-full px-4 py-3 rounded-xl border border-gray-200 text-sm text-gray-800 bg-gray-50 focus:outline-none focus:border-green-400 focus:bg-white transition-colors resize-none"
+            className="w-full px-4 py-3 rounded-[var(--r-sm)] border border-[var(--hc-border)] text-sm text-[var(--text-primary)] bg-[var(--surface-inset)] focus:outline-none focus:border-[var(--brand)] focus:bg-[var(--surface-card)] transition-colors resize-none"
           />
         </div>
         <div>
-          <label className="text-[10px] font-bold uppercase tracking-widest text-gray-400 block mb-1.5">
+          <label className="text-[10px] font-bold uppercase tracking-[var(--ls-caps)] text-[var(--text-muted)] block mb-1.5">
             Duration (optional)
           </label>
           <input
             value={duration}
             onChange={(e) => setDuration(e.target.value)}
             placeholder="e.g. 2 days, since this morning, 1 week"
-            className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm text-gray-800 bg-gray-50 focus:outline-none focus:border-green-400 focus:bg-white transition-colors"
+            className="w-full px-4 py-2.5 rounded-[var(--r-sm)] border border-[var(--hc-border)] text-sm text-[var(--text-primary)] bg-[var(--surface-inset)] focus:outline-none focus:border-[var(--brand)] focus:bg-[var(--surface-card)] transition-colors"
           />
         </div>
 
         <button
           onClick={generate}
           disabled={generating || !complaint.trim()}
-          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-50"
-          style={{ background: "linear-gradient(135deg,#052e16,#166534)" }}
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-[var(--r-sm)] text-sm font-bold transition-all disabled:opacity-50"
+          style={{ background: "var(--brand)", color: "var(--on-brand)" }}
         >
           {generating ? (
             <>
@@ -221,17 +230,17 @@ Be conservative — when in doubt, escalate.`;
 
       {/* ── Error ────────────────────────────────────────────────────────── */}
       {error && (
-        <div className="flex items-center gap-2.5 p-3 rounded-xl bg-red-50 border border-red-200">
-          <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-          <p className="text-xs font-semibold text-red-700">{error}</p>
+        <div className="flex items-center gap-2.5 p-3 rounded-[var(--r-sm)] bg-[var(--coral-050)] border border-[var(--coral-100)]">
+          <AlertCircle className="w-4 h-4 text-[var(--critical)] flex-shrink-0" />
+          <p className="text-xs font-semibold text-[var(--critical-ink)]">{error}</p>
         </div>
       )}
 
       {/* ── Generating ───────────────────────────────────────────────────── */}
       {generating && (
-        <div className="flex items-center gap-3 p-4 rounded-xl bg-green-50 border border-green-100">
-          <div className="w-5 h-5 border-2 border-green-300 border-t-green-600 rounded-full animate-spin flex-shrink-0" />
-          <p className="text-sm font-semibold text-green-700">
+        <div className="flex items-center gap-3 p-4 rounded-[var(--r-sm)] bg-[var(--brand-tint)] border border-[var(--green-100)]">
+          <div className="w-5 h-5 border-2 border-[var(--green-300)] border-t-[var(--brand)] rounded-full animate-spin flex-shrink-0" />
+          <p className="text-sm font-semibold text-[var(--success-ink)]">
             Assessing priority level…
           </p>
         </div>
@@ -242,13 +251,13 @@ Be conservative — when in doubt, escalate.`;
         <div className="space-y-3">
           {/* Priority banner */}
           <div
-            className="relative rounded-2xl overflow-hidden p-4 border"
+            className="relative rounded-[var(--r-lg)] overflow-hidden p-4 border"
             style={{ background: cfg.bg, borderColor: cfg.border }}
           >
             <div className="flex items-center gap-3">
               <div
-                className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
-                style={{ background: `${cfg.color}15` }}
+                className="w-12 h-12 rounded-[var(--r-lg)] flex items-center justify-center flex-shrink-0"
+                style={{ background: cfg.tint }}
               >
                 <PriorityIcon
                   className="w-6 h-6"
@@ -265,7 +274,7 @@ Be conservative — when in doubt, escalate.`;
                   </p>
                   <span
                     className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                    style={{ background: `${cfg.color}15`, color: cfg.color }}
+                    style={{ background: cfg.tint, color: cfg.color }}
                   >
                     {result.confidence} confidence
                   </span>
@@ -284,7 +293,7 @@ Be conservative — when in doubt, escalate.`;
               className="mt-3 pt-3 border-t"
               style={{ borderColor: cfg.border }}
             >
-              <p className="text-xs text-gray-700 leading-relaxed">
+              <p className="text-xs text-[var(--text-secondary)] leading-relaxed">
                 {result.reasoning}
               </p>
             </div>
@@ -292,15 +301,15 @@ Be conservative — when in doubt, escalate.`;
 
           {/* Red flags */}
           {result.redFlags?.length > 0 && (
-            <div className="p-3.5 rounded-xl bg-red-50 border border-red-200">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-red-600 mb-2">
+            <div className="p-3.5 rounded-[var(--r-sm)] bg-[var(--coral-050)] border border-[var(--coral-100)]">
+              <p className="text-[10px] font-bold uppercase tracking-[var(--ls-caps)] text-[var(--critical-ink)] mb-2">
                 ⚠ Red Flags Detected
               </p>
               <div className="space-y-1">
                 {result.redFlags.map((flag, i) => (
                   <div key={i} className="flex items-center gap-2">
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 flex-shrink-0" />
-                    <p className="text-xs font-semibold text-red-700">{flag}</p>
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--critical)] flex-shrink-0" />
+                    <p className="text-xs font-semibold text-[var(--critical-ink)]">{flag}</p>
                   </div>
                 ))}
               </div>
@@ -308,16 +317,16 @@ Be conservative — when in doubt, escalate.`;
           )}
 
           {/* Recommendation */}
-          <div className="flex items-start gap-3 p-3.5 rounded-xl bg-gray-50 border border-gray-100">
-            <ChevronRight className="w-4 h-4 text-gray-400 flex-shrink-0 mt-0.5" />
+          <div className="flex items-start gap-3 p-3.5 rounded-[var(--r-sm)] bg-[var(--surface-inset)] border border-[var(--border-faint)]">
+            <ChevronRight className="w-4 h-4 text-[var(--text-muted)] flex-shrink-0 mt-0.5" />
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-1">
+              <p className="text-[10px] font-bold uppercase tracking-[var(--ls-caps)] text-[var(--text-muted)] mb-1">
                 Recommendation
               </p>
-              <p className="text-sm font-semibold text-gray-800">
+              <p className="text-sm font-semibold text-[var(--text-primary)]">
                 {result.recommendation}
               </p>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-[var(--text-secondary)] mt-1">
                 Suggested visit type:{" "}
                 <span className="font-semibold capitalize">
                   {result.suggestedVisitType}
@@ -327,9 +336,9 @@ Be conservative — when in doubt, escalate.`;
           </div>
 
           {/* Disclaimer */}
-          <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-100">
-            <AlertCircle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5" />
-            <p className="text-[11px] text-amber-700 leading-relaxed">
+          <div className="flex items-start gap-2 p-3 rounded-[var(--r-sm)] bg-[var(--amber-050)] border border-[var(--urgent-tint)]">
+            <AlertCircle className="w-3.5 h-3.5 text-[var(--urgent)] flex-shrink-0 mt-0.5" />
+            <p className="text-[11px] text-[var(--urgent-ink)] leading-relaxed">
               AI suggestion only. Always defer to clinical staff for final
               triage decisions. Do not use as sole basis for priority
               assignment.

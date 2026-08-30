@@ -1,9 +1,8 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { patientApi, labApi } from "@/lib/api";
 import PatientBanner from "@/components/PatientBanner";
-import { use } from "react";
 import {
   Scan,
   ArrowLeft,
@@ -11,19 +10,30 @@ import {
   ChevronDown,
   ChevronUp,
   FileText,
+  Loader2,
 } from "lucide-react";
 import { format } from "date-fns";
+import {
+  Page,
+  Card,
+  CardHeader,
+  Pill as Badge,
+  Button,
+  Banner,
+  EmptyState,
+  SectionLabel,
+  hoverRow,
+  TONES,
+} from "@/components/dashboard/ui";
+import { getStatus, getModality } from "../../vocab";
 
-const STATUS_COLORS: Record<
-  string,
-  { bg: string; color: string; label: string }
-> = {
-  ordered: { bg: "#fef3c7", color: "#d97706", label: "Ordered" },
-  scheduled: { bg: "#eff6ff", color: "#2563eb", label: "Scheduled" },
-  completed: { bg: "#f0fdf4", color: "#16a34a", label: "Completed" },
-  reported: { bg: "#faf5ff", color: "#7c3aed", label: "Reported" },
-  cancelled: { bg: "#f3f4f6", color: "#6b7280", label: "Cancelled" },
-};
+/* ==========================================================================
+   Patient imaging history (radiology view).
+
+   Two independent loads: the patient record + visit history, and the shared
+   clinical-context banner. They fail separately on purpose — a missing
+   context banner should not hide the imaging history, and vice versa.
+   ========================================================================== */
 
 export default function RadiologyPatientDetailPage({
   params,
@@ -68,13 +78,14 @@ export default function RadiologyPatientDetailPage({
       .then((res) => setContext(res.data?.data ?? null))
       .catch((err: any) =>
         setCtxError(
-          err.response?.data?.error?.message ??
-            "Failed to load patient details",
+          err.response?.data?.error?.message ?? "Failed to load patient details",
         ),
       )
       .finally(() => setCtxLoading(false));
   }, [id]);
 
+  /* History is nested per visit; imaging orders are what this page is about,
+     so flatten them out and carry the visit identity onto each one. */
   const allImagingOrders =
     history?.ownVisits?.flatMap((v: any) =>
       (v.imagingOrders ?? []).map((o: any) => ({
@@ -86,123 +97,184 @@ export default function RadiologyPatientDetailPage({
 
   if (loading)
     return (
-      <div className="flex items-center justify-center h-64 gap-3">
-        <div className="w-6 h-6 border-2 border-purple-600 border-t-transparent rounded-full animate-spin" />
-        <p className="text-sm text-gray-500">Loading patient data…</p>
+      <div
+        className="flex items-center justify-center"
+        style={{ height: 256, gap: 12 }}
+      >
+        <Loader2 className="w-6 h-6 animate-spin" style={{ color: "var(--brand)" }} />
+        <p
+          style={{
+            margin: 0,
+            font: "400 13px/1 var(--font-sans)",
+            color: "var(--text-muted)",
+          }}
+        >
+          Loading patient data…
+        </p>
       </div>
     );
 
   if (error)
     return (
-      <div className="flex items-center gap-3 p-4 rounded-xl bg-red-50 border border-red-100">
-        <AlertCircle className="w-4 h-4 text-red-500" />
-        <p className="text-sm text-red-700">{error}</p>
-      </div>
+      <Page maxWidth={900}>
+        <Button
+          variant="ghost"
+          icon={ArrowLeft}
+          onClick={() => router.back()}
+          style={{ alignSelf: "flex-start" }}
+        >
+          Back to patients
+        </Button>
+        <Banner tone="critical" icon={AlertCircle}>
+          {error}
+        </Banner>
+      </Page>
     );
 
   return (
-    <div style={{ maxWidth: 900, fontFamily: "'DM Sans',sans-serif" }}>
-      <button
+    <Page maxWidth={900}>
+      <Button
+        variant="ghost"
+        icon={ArrowLeft}
         onClick={() => router.back()}
-        className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700 mb-6 transition-colors"
+        style={{ alignSelf: "flex-start" }}
       >
-        <ArrowLeft className="w-4 h-4" /> Back to patients
-      </button>
+        Back to patients
+      </Button>
 
       {/* ── Patient banner — name, age, allergies, conditions, diagnoses ── */}
-      <div className="mb-6">
-        <PatientBanner
-          context={context}
-          loading={ctxLoading}
-          error={ctxError}
-        />
-      </div>
-
-      {/* Imaging summary chip row */}
-      <div className="flex items-center justify-end mb-6">
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-purple-50 border border-purple-200">
-          <Scan className="w-4 h-4 text-purple-600" />
-          <span className="text-sm font-bold text-purple-700">
-            {allImagingOrders.length} imaging order
-            {allImagingOrders.length !== 1 ? "s" : ""}
-          </span>
-        </div>
-      </div>
+      <PatientBanner context={context} loading={ctxLoading} error={ctxError} />
 
       {/* Imaging orders */}
-      <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-base font-bold text-gray-900">Imaging History</h2>
-          <span className="text-xs font-semibold text-gray-400">
-            {allImagingOrders.length} orders total
-          </span>
-        </div>
+      <Card>
+        <CardHeader
+          icon={Scan}
+          title="Imaging history"
+          subtitle="All studies across this patient's visits"
+          right={
+            <Badge tone="accent">
+              {allImagingOrders.length} order
+              {allImagingOrders.length !== 1 ? "s" : ""}
+            </Badge>
+          }
+        />
 
         {allImagingOrders.length === 0 ? (
-          <div className="py-16 text-center">
-            <Scan className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-            <p className="text-sm font-semibold text-gray-400">
-              No imaging orders found for this patient
-            </p>
-          </div>
+          <EmptyState
+            icon={Scan}
+            title="No imaging orders"
+            message="This patient has no imaging studies on record."
+            tone="neutral"
+            pad={64}
+          />
         ) : (
           allImagingOrders.map((order: any, i: number) => {
-            const st = STATUS_COLORS[order.status] ?? STATUS_COLORS.ordered;
-            const isOpen = expanded === (order.id ?? i.toString());
+            const key = order.id ?? i.toString();
+            const st = getStatus(order.status);
+            const stTone = TONES[st.tone];
+            const isOpen = expanded === key;
+
             return (
               <div
-                key={order.id ?? i}
-                className="border-b border-gray-50 last:border-0"
+                key={key}
+                style={{ borderBottom: "1px solid var(--border-faint)" }}
               >
                 <button
-                  onClick={() =>
-                    setExpanded(isOpen ? null : (order.id ?? i.toString()))
-                  }
-                  className="w-full flex items-center gap-4 px-6 py-4 hover:bg-gray-50 transition-colors text-left"
+                  onClick={() => setExpanded(isOpen ? null : key)}
+                  className="w-full flex items-center text-left"
+                  style={{
+                    gap: 14,
+                    padding: "14px 20px",
+                    border: "none",
+                    background: "transparent",
+                    cursor: "pointer",
+                    transition: "background var(--dur-fast) var(--ease-standard)",
+                  }}
+                  {...hoverRow}
                 >
-                  <div
-                    className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: st.bg }}
+                  <span
+                    className="inline-flex items-center justify-center flex-shrink-0"
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: "var(--r-sm)",
+                      background: stTone.tint,
+                      color: stTone.ink,
+                    }}
                   >
-                    <Scan className="w-4 h-4" style={{ color: st.color }} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-gray-800">
+                    <Scan className="w-4 h-4" />
+                  </span>
+
+                  <span className="flex-1 min-w-0 flex flex-col" style={{ gap: 5 }}>
+                    <span
+                      className="truncate"
+                      style={{
+                        font: "600 13.5px/1 var(--font-sans)",
+                        color: "var(--text-primary)",
+                      }}
+                    >
                       {order.imagingType ||
                         order.imaging_type ||
-                        "Imaging Study"}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-0.5 font-mono">
+                        (order.modality ? getModality(order.modality).label : "") ||
+                        "Imaging study"}
+                    </span>
+                    <span
+                      style={{
+                        font: "400 11.5px/1 var(--font-mono)",
+                        color: "var(--text-muted)",
+                      }}
+                    >
                       {order.visitNumber} ·{" "}
                       {order.visitDate
                         ? format(new Date(order.visitDate), "dd MMM yyyy")
                         : "—"}
-                    </p>
-                  </div>
-                  <span
-                    className="text-xs font-bold px-2.5 py-1 rounded-full"
-                    style={{ background: st.bg, color: st.color }}
-                  >
-                    {st.label}
+                    </span>
                   </span>
+
+                  <Badge tone={st.tone}>{st.label}</Badge>
+
                   {isOpen ? (
-                    <ChevronUp className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    <ChevronUp
+                      className="w-4 h-4 flex-shrink-0"
+                      style={{ color: "var(--text-muted)" }}
+                    />
                   ) : (
-                    <ChevronDown className="w-4 h-4 text-gray-400 flex-shrink-0" />
+                    <ChevronDown
+                      className="w-4 h-4 flex-shrink-0"
+                      style={{ color: "var(--text-muted)" }}
+                    />
                   )}
                 </button>
 
                 {isOpen && (
-                  <div className="px-6 pb-4 bg-gray-50/50">
-                    <div className="grid grid-cols-2 gap-3 text-sm mb-3">
+                  <div
+                    style={{
+                      padding: "0 20px 16px",
+                      background: "var(--surface-sunken)",
+                    }}
+                  >
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                        gap: 10,
+                        paddingTop: 14,
+                        marginBottom: order.report ? 12 : 0,
+                      }}
+                    >
                       {[
                         {
-                          label: "Body Part",
+                          label: "Body part",
                           value: order.bodyPart || order.body_part || "—",
                         },
-                        { label: "Modality", value: order.modality || "—" },
                         {
-                          label: "Ordered At",
+                          label: "Modality",
+                          value: order.modality
+                            ? getModality(order.modality).label
+                            : "—",
+                        },
+                        {
+                          label: "Ordered at",
                           value:
                             order.orderedAt || order.ordered_at
                               ? format(
@@ -212,57 +284,113 @@ export default function RadiologyPatientDetailPage({
                               : "—",
                         },
                         {
-                          label: "Clinical Notes",
-                          value:
-                            order.clinicalNotes || order.clinical_notes || "—",
+                          label: "Clinical notes",
+                          value: order.clinicalNotes || order.clinical_notes || "—",
                         },
                       ].map((f) => (
                         <div
                           key={f.label}
-                          className="bg-white rounded-lg p-3 border border-gray-100"
+                          style={{
+                            padding: 12,
+                            borderRadius: "var(--r-sm)",
+                            background: "var(--surface-card)",
+                            border: "1px solid var(--border-faint)",
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 5,
+                          }}
                         >
-                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">
-                            {f.label}
-                          </p>
-                          <p className="text-sm font-semibold text-gray-700">
+                          <SectionLabel>{f.label}</SectionLabel>
+                          <span
+                            style={{
+                              font: "500 13px/1.4 var(--font-sans)",
+                              color: "var(--text-primary)",
+                            }}
+                          >
                             {f.value}
-                          </p>
+                          </span>
                         </div>
                       ))}
                     </div>
 
-                    {/* Report */}
+                    {/* The report is the payload — it gets its own surface. */}
                     {order.report && (
-                      <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
-                        <div className="flex items-center gap-2 mb-3">
-                          <FileText className="w-4 h-4 text-purple-600" />
-                          <p className="text-sm font-bold text-purple-800">
-                            Radiology Report
+                      <div
+                        style={{
+                          padding: 16,
+                          borderRadius: "var(--r-sm)",
+                          background: "var(--accent-tint)",
+                          border: "1px solid var(--violet-100)",
+                        }}
+                      >
+                        <div
+                          className="flex items-center"
+                          style={{ gap: 8, marginBottom: 12 }}
+                        >
+                          <FileText
+                            className="w-4 h-4"
+                            style={{ color: "var(--accent-ink)" }}
+                          />
+                          <p
+                            style={{
+                              margin: 0,
+                              font: "700 13.5px/1 var(--font-sans)",
+                              color: "var(--accent-ink)",
+                            }}
+                          >
+                            Radiology report
                           </p>
                         </div>
+
                         {order.report.findings && (
-                          <div className="mb-2">
-                            <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide mb-1">
+                          <div
+                            className="flex flex-col"
+                            style={{ gap: 5, marginBottom: 10 }}
+                          >
+                            <SectionLabel style={{ color: "var(--accent-ink)" }}>
                               Findings
-                            </p>
-                            <p className="text-sm text-gray-700 leading-relaxed">
+                            </SectionLabel>
+                            <p
+                              style={{
+                                margin: 0,
+                                font: "400 13px/1.6 var(--font-sans)",
+                                color: "var(--text-secondary)",
+                              }}
+                            >
                               {order.report.findings}
                             </p>
                           </div>
                         )}
+
                         {order.report.impression && (
-                          <div className="mb-2">
-                            <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide mb-1">
+                          <div
+                            className="flex flex-col"
+                            style={{ gap: 5, marginBottom: 10 }}
+                          >
+                            <SectionLabel style={{ color: "var(--accent-ink)" }}>
                               Impression
-                            </p>
-                            <p className="text-sm text-gray-700 leading-relaxed">
+                            </SectionLabel>
+                            <p
+                              style={{
+                                margin: 0,
+                                font: "400 13px/1.6 var(--font-sans)",
+                                color: "var(--text-secondary)",
+                              }}
+                            >
                               {order.report.impression}
                             </p>
                           </div>
                         )}
+
                         {order.report.reportedAt && (
-                          <p className="text-xs text-gray-400 mt-2">
-                            Reported:{" "}
+                          <p
+                            style={{
+                              margin: 0,
+                              font: "400 11.5px/1 var(--font-mono)",
+                              color: "var(--text-muted)",
+                            }}
+                          >
+                            Reported{" "}
                             {format(
                               new Date(order.report.reportedAt),
                               "dd MMM yyyy HH:mm",
@@ -277,7 +405,7 @@ export default function RadiologyPatientDetailPage({
             );
           })
         )}
-      </div>
-    </div>
+      </Card>
+    </Page>
   );
 }
