@@ -5,7 +5,8 @@
     "dev": "bun run --hot src/index.ts",
     "start": "bun run src/index.ts",
     "build": "bun build src/index.ts --outdir dist",
-    "seed": "bun run src/db/seed.ts"
+    "seed": "bun run src/db/seed.ts",
+    "test": "bun test"
   },
   "dependencies": {
     "@grpc/grpc-js": "latest",

@@ -1,0 +1,4 @@
+[test]
+# Sets AES_SECRET_KEY before services/crypto.ts is imported. That module reads
+# the variable at load time, so it cannot be set from inside a test file.
+preload = ["./tests/setup.ts"]
