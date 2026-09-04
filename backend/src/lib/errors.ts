@@ -1,4 +1,5 @@
 import type { Context } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 
 // ── AppError ──────────────────────────────────────────────────────────────────
 // Throw this anywhere in route handlers when you want a specific, safe message
@@ -64,6 +65,19 @@ const USER_MESSAGES: Record<ReturnType<typeof classify>, string> = {
 // Drop-in replacement for the raw `c.json({ error: { message: err.message } }, 500)`
 // pattern. Logs the real error server-side; sends only a safe message to the client.
 export function handleError(err: unknown, c: Context) {
+  // Hono raises HTTPException for problems it detects before a handler runs —
+  // a malformed JSON body, an unsupported media type. Those are the CLIENT's
+  // fault and already carry the right status, so preserve it. Without this they
+  // fell through to the generic branch below and were reported as 500, telling
+  // the caller the server had failed when their request was simply malformed.
+  if (err instanceof HTTPException) {
+    console.error('[HTTP]', err.status, err.message);
+    return c.json(
+      { success: false, error: { message: err.message || 'Invalid request.' } },
+      err.status as any,
+    );
+  }
+
   const kind = classify(err);
 
   // Always log the full error on the server

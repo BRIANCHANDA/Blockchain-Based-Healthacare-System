@@ -8,7 +8,7 @@ import { authMiddleware } from '../middleware/auth';
 import { grantPermission, revokePermission, checkPermission, getPatientPermissions } from '../services/fabric';
 import { createEmergencyAccess, grantCrossInstitutionAccess } from '../services/cross-institution';
 import { decrypt } from '../services/crypto';
-import { sendPushNotification } from '../services/notifications'; // FIX 4: push notifications
+import { notifyUser, pushToUser } from '../services/notifications';
 import { isClinicalRole } from '../constants/roles';             // FIX 5: shared roles constant
 
 const errorSchema = z.object({
@@ -362,6 +362,16 @@ export const permissionRouter = createRouter()
         return c.json({ success: false, error: { message: 'Request already pending' } }, 409);
       }
 
+      // The patient must exist before we insert. Without this the foreign key
+      // rejects the row and the caller receives a 500 — a server error for what
+      // is plainly a bad request. A mistyped or stale patient id is a client
+      // mistake and should read as one.
+      const [targetPatient] = await db.select({ id: patients.id })
+        .from(patients).where(eq(patients.id, body.patientId)).limit(1);
+      if (!targetPatient) {
+        return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
+      }
+
       const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000);
 
       const result = await db.insert(accessRequests).values({
@@ -375,10 +385,32 @@ export const permissionRouter = createRouter()
         expiresAt,
       }).returning({ id: accessRequests.id });
 
-      // Route push notification: to primary guardian if patient is minor, else to patient directly
+      // Route the notification: to the primary guardian if the patient is a
+      // minor, else to the patient directly.
+      //
+      // TWO CHANNELS, ON PURPOSE. notifyUser() reaches an open SSE connection —
+      // instant, but only for someone already looking at the app. pushToUser()
+      // reaches a phone that is locked and in a pocket, which is the case that
+      // matters here: a clinician is waiting on a decision only the patient can
+      // make. Sending both is intentional; the mobile app suppresses the
+      // duplicate when it is already in the foreground.
       try {
         const [patRow] = await db.select({ isMinor: patients.isMinor, firstNameEncrypted: patients.firstNameEncrypted, lastNameEncrypted: patients.lastNameEncrypted })
           .from(patients).where(eq(patients.id, body.patientId)).limit(1);
+
+        // Who is asking — the patient needs a name to make a consent decision
+        // about, not a practitioner id. Decrypted here because practitioner
+        // names are stored encrypted like every other personal field.
+        const [reqRow] = await db.select({
+          firstNameEncrypted: practitioners.firstNameEncrypted,
+          lastNameEncrypted: practitioners.lastNameEncrypted,
+          role: practitioners.role,
+        }).from(practitioners).where(eq(practitioners.id, requesterId)).limit(1);
+
+        const requesterName = reqRow
+          ? `${decrypt(reqRow.firstNameEncrypted)} ${decrypt(reqRow.lastNameEncrypted)}`
+          : 'A clinician';
+        const requesterRole = (reqRow?.role ?? 'practitioner').replace(/_/g, ' ');
 
         const notifyTarget = async () => {
           if (patRow?.isMinor) {
@@ -392,19 +424,31 @@ export const permissionRouter = createRouter()
               )).limit(1);
             if (primaryGuardianLink) {
               const minorName = `${decrypt(patRow.firstNameEncrypted)} ${decrypt(patRow.lastNameEncrypted)}`;
-              const { notifyUser } = await import('../services/notifications');
-              await notifyUser(primaryGuardianLink.guardianPatientId, 'access_request_for_minor', {
+              notifyUser(primaryGuardianLink.guardianPatientId, 'access_request_for_minor', {
                 requestId: result[0].id,
-                message: `A clinician is requesting access to ${minorName}'s records`,
+                message: `${requesterName} is requesting access to ${minorName}'s records`,
                 minorPatientId: body.patientId,
                 minorName,
+              });
+              await pushToUser(primaryGuardianLink.guardianPatientId, {
+                title: 'Access request',
+                body: `${requesterName} (${requesterRole}) wants to access ${minorName}'s records`,
+                // `screen` is what the app's notification-tap handler routes on.
+                data: { screen: 'Access', requestId: result[0].id },
               });
               return;
             }
           }
-          // Self (adult patient or no guardian found)
-          const { notifyUser } = await import('../services/notifications');
-          await notifyUser(body.patientId, 'access_request', { requestId: result[0].id });
+          // Self (adult patient, or a minor with no consenting guardian on file)
+          notifyUser(body.patientId, 'access_request', {
+            requestId: result[0].id,
+            message: `${requesterName} is requesting access to your records`,
+          });
+          await pushToUser(body.patientId, {
+            title: 'Access request',
+            body: `${requesterName} (${requesterRole}) wants to access your records`,
+            data: { screen: 'Access', requestId: result[0].id },
+          });
         };
         notifyTarget().catch(() => {});
       } catch { /* non-blocking */ }
