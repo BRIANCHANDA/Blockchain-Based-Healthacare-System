@@ -1,3 +1,25 @@
+/**
+ * MedLink API — application entry point.
+ *
+ * Composes every route module onto one Hono app and starts the Bun server.
+ * Read this file to find out WHERE something lives; read the route module to
+ * find out how it works.
+ *
+ * Order matters here. Middleware is applied before routers, so the sequence
+ * below is also the order a request passes through:
+ *
+ *   logger      →  request line, for tracing a call through the logs
+ *   cors        →  the web portal and the mobile app are separate origins
+ *   rateLimit   →  applied globally; login has its own tighter limit
+ *   routers     →  the mounted feature modules
+ *   errorHandler→  last, so anything thrown anywhere lands in one place and
+ *                  returns a shaped error instead of a stack trace
+ *
+ * Every router is mounted under /api. The OpenAPI document and the Scalar
+ * reference UI are generated from the same zod schemas the routes validate
+ * with, so the docs cannot drift from the implementation.
+ */
+
 import { OpenAPIHono } from '@hono/zod-openapi';
 import { apiReference } from '@scalar/hono-api-reference';
 import { cors } from 'hono/cors';
@@ -38,8 +60,39 @@ import { securityRouter } from './routes/security';
 const app = new OpenAPIHono();
 
 // ── CORS — must be before all routes ─────────────────────────────────────────
+/*
+ * CORS.
+ *
+ * This previously reflected whatever Origin the caller sent, with credentials
+ * enabled — which is to say any website could make authenticated requests to
+ * this API on a signed-in user's behalf. In development that is convenient; in
+ * production it is an open door.
+ *
+ * Behaviour now depends on the environment:
+ *   development — any origin, so the web portal, Expo and a phone on the LAN
+ *                 all work without configuration;
+ *   production  — only the origins listed in CORS_ORIGINS (comma-separated).
+ *
+ * The mobile app is unaffected either way: native requests send no Origin
+ * header, so CORS does not apply to them.
+ */
+const allowedOrigins = (process.env.CORS_ORIGINS ?? '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+if (process.env.NODE_ENV === 'production' && allowedOrigins.length === 0) {
+  console.warn(
+    '[cors] NODE_ENV=production but CORS_ORIGINS is empty — every browser ' +
+    'origin will be refused. Set it to your web portal URL.',
+  );
+}
+
 app.use('*', cors({
-  origin: (_origin) => _origin ?? '*',   // allow all origins; tighten in production if needed
+  origin: (origin) => {
+    if (process.env.NODE_ENV !== 'production') return origin ?? '*';
+    return allowedOrigins.includes(origin) ? origin : null;
+  },
   allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization', 'X-Acting-As-Patient'],
   credentials: true,

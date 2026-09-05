@@ -21,10 +21,16 @@ import { describe, expect, test, beforeAll, afterAll } from "bun:test";
 import app from "../../src/index";
 import { seedWorld, TEST_PASSWORD, type World } from "../helpers/fixtures";
 import { api, loginStaff } from "../helpers/api";
+import { databaseAvailable } from "../helpers/db-available";
 
 let world: World;
-beforeAll(async () => { world = await seedWorld(); });
-afterAll(async () => { await world.cleanup(); });
+/** Resolved before any suite is declared, so the suites can skip cleanly. */
+const dbUp = await databaseAvailable();
+
+beforeAll(async () => {
+  if (dbUp) world = await seedWorld();
+});
+afterAll(async () => { if (world) await world.cleanup(); });
 
 /** POST a JSON body to the app and return status plus parsed body. */
 async function post(path: string, body: unknown, token?: string) {
@@ -47,7 +53,7 @@ const login = (licenseNumber: string, password: string) =>
 
 // ── the happy path ───────────────────────────────────────────────────────────
 
-describe("staff login", () => {
+describe.skipIf(!dbUp)("staff login", () => {
   test("a correct password issues a one-time code, NOT a token", async () => {
     // Two-factor authentication: the password alone is not enough. A stolen
     // password without access to the practitioner's mailbox gets nowhere.
@@ -98,7 +104,7 @@ describe("staff login", () => {
 
 // ── rejections ───────────────────────────────────────────────────────────────
 
-describe("credentials", () => {
+describe.skipIf(!dbUp)("credentials", () => {
   test("rejects a wrong password", async () => {
     const res = await login(world.doctor.licenseNumber, "NotThePassword1!");
     expect(res.status).toBe(401);
@@ -126,7 +132,7 @@ describe("credentials", () => {
 
 // ── the verification gate ────────────────────────────────────────────────────
 
-describe("administrative gates", () => {
+describe.skipIf(!dbUp)("administrative gates", () => {
   test("an unverified practitioner cannot sign in, even with correct credentials", async () => {
     // The check backing "only licensed clinicians can request a patient's
     // consent". Downstream consent routes do not re-check isVerified.
@@ -154,7 +160,7 @@ describe("administrative gates", () => {
 
 // ── input validation ─────────────────────────────────────────────────────────
 
-describe("input handling", () => {
+describe.skipIf(!dbUp)("input handling", () => {
   test("rejects a missing licence number or password", async () => {
     for (const body of [{}, { licenseNumber: world.doctor.licenseNumber }, { password: TEST_PASSWORD }]) {
       const res = await post("/api/auth/login/staff", body);
@@ -190,7 +196,7 @@ describe("input handling", () => {
 
 // ── protected routes ─────────────────────────────────────────────────────────
 
-describe("route protection", () => {
+describe.skipIf(!dbUp)("route protection", () => {
   test("a protected route refuses an absent token", async () => {
     const res = await (app as any).fetch(new Request("http://localhost/api/permissions/mine"));
     expect([401, 403]).toContain(res.status);

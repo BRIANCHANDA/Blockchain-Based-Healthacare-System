@@ -24,15 +24,20 @@ import { db } from "../../src/db";
 import { accessRequests } from "../../src/db/schema";
 import { seedWorld, TEST_PASSWORD, type World } from "../helpers/fixtures";
 import { api, loginStaff } from "../helpers/api";
+import { databaseAvailable } from "../helpers/db-available";
 
 let world: World;
 let doctorToken: string;
 
+/** Resolved before any suite is declared, so the suites can skip cleanly. */
+const dbUp = await databaseAvailable();
+
 beforeAll(async () => {
+  if (!dbUp) return;
   world = await seedWorld();
   doctorToken = await loginStaff(world.doctor.licenseNumber, TEST_PASSWORD);
 });
-afterAll(async () => { await world.cleanup(); });
+afterAll(async () => { if (world) await world.cleanup(); });
 
 /** Remove any requests left by a test, so each starts from a clean slate. */
 async function clearRequests(patientId: string) {
@@ -49,7 +54,7 @@ const requestAccess = (patientId: string, token: string, overrides: Record<strin
 
 // ── requesting access ────────────────────────────────────────────────────────
 
-describe("requesting access", () => {
+describe.skipIf(!dbUp)("requesting access", () => {
   test("a verified clinician can raise a request", async () => {
     await clearRequests(world.patient.id);
     const res = await requestAccess(world.patient.id, doctorToken);
@@ -119,7 +124,7 @@ describe("requesting access", () => {
 
 // ── validation ───────────────────────────────────────────────────────────────
 
-describe("request validation", () => {
+describe.skipIf(!dbUp)("request validation", () => {
   test("rejects an empty permissions list", async () => {
     await clearRequests(world.patient.id);
     const res = await requestAccess(world.patient.id, doctorToken, { requestedPermissions: [] });
@@ -153,7 +158,7 @@ describe("request validation", () => {
 
 // ── listing ──────────────────────────────────────────────────────────────────
 
-describe("listing requests", () => {
+describe.skipIf(!dbUp)("listing requests", () => {
   test("a patient sees a request raised against them", async () => {
     await clearRequests(world.patient.id);
     await requestAccess(world.patient.id, doctorToken);
@@ -184,7 +189,7 @@ describe("listing requests", () => {
 
 // ── who may decide ───────────────────────────────────────────────────────────
 
-describe("only the patient decides", () => {
+describe.skipIf(!dbUp)("only the patient decides", () => {
   test("the requesting clinician cannot approve their own request", async () => {
     // The property objective 3 rests on. If a clinician could approve their own
     // request, consent would be decorative.
@@ -234,7 +239,7 @@ describe("only the patient decides", () => {
 
 // ── reading records requires consent ─────────────────────────────────────────
 
-describe("consent gates access", () => {
+describe.skipIf(!dbUp)("consent gates access", () => {
   test("a clinician with no grant cannot read the patient's permissions", async () => {
     const res = await api.get(`/api/permissions/patient/${world.patient.id}`, doctorToken);
     // Either refused outright, or an empty set — never another patient's data.

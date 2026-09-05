@@ -26,7 +26,7 @@ import {
 import { sessionMiddleware } from '../middleware/session';
 import crypto from 'crypto';
 
-const JWT_SECRET = (process.env.JWT_SECRET || 'healthcare_jwt_secret') as string;
+import { JWT_SECRET } from '../lib/env';
 const JWT_EXPIRES_IN = '24h';
 const DEFAULT_PASSWORD = 'test1234';
 
