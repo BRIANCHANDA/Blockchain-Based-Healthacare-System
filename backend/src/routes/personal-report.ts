@@ -1,3 +1,20 @@
+/**
+ * The patient's own health summary — one endpoint that assembles everything.
+ *
+ * A single GET gathers visits, diagnoses, prescriptions, lab and imaging results
+ * and vitals trends into the document the patient reads in the app and exports
+ * as a PDF. It is one round trip on purpose: the app is used on Zambian mobile
+ * data, where ten sequential requests is a visibly slower experience than one
+ * larger response.
+ *
+ * The consent model does not apply here in the usual direction. A patient is
+ * always entitled to their own record, so this route authorises on identity —
+ * the caller must BE the patient (or their registered guardian, via the
+ * X-Acting-As-Patient header) — rather than checking the ledger for a grant.
+ * The permission machinery exists to control who else may read; it never stands
+ * between patients and their own data.
+ */
+
 import { handleError } from '../lib/errors';
 // src/routes/personal-report.ts
 // GET /api/reports/personal?from=...&to=...&format=json|pdf

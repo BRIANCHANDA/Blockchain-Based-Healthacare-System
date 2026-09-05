@@ -1,3 +1,23 @@
+/**
+ * Institutions, departments and wards — the organisational tree.
+ *
+ * Three levels, nested: an institution owns departments, a department owns
+ * wards. The routes reflect that nesting, which is why some paths are addressed
+ * through a parent (/:institutionId/departments) and some directly by id
+ * (/departments/:departmentId) once the client already holds one.
+ *
+ * This tree matters beyond administration: institutionId is the tenancy
+ * boundary for the entire system. Hyperledger Fabric here has a single Hospital
+ * organisation rather than one per hospital, so it is this column — not the
+ * ledger — that separates one hospital's staff and records from another's.
+ * Reaching across the boundary is a referral or an emergency override, never a
+ * plain query.
+ *
+ * Deletes are soft wherever clinical history could reference the row: an
+ * institution that has admitted patients cannot be erased without orphaning
+ * their visits, so it is deactivated instead.
+ */
+
 import { handleError } from '../lib/errors';
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and } from 'drizzle-orm';

@@ -1,3 +1,28 @@
+/**
+ * Practitioner accounts — the clinical staff of an institution.
+ *
+ * Covers both self-service (/me) and administration (verify, toggle-active,
+ * reset-password, delete). The distinction matters, because the administrative
+ * routes are the ones that decide who can reach patient data at all.
+ *
+ * VERIFICATION is the significant one. A practitioner registers with a
+ * professional registration number, but registering does not grant clinical
+ * access — an administrator must verify them first. The check is enforced at
+ * sign-in (routes/auth.ts rejects an unverified account with 403 "pending
+ * verification"), so an unverified practitioner never obtains a session at all.
+ * That is what backs the claim that only licensed clinicians can request a
+ * patient's consent. Note that isVerified is NOT re-checked on the individual
+ * consent routes; they rely on the login gate, so anything that ever issues a
+ * session by another path must apply the same check.
+ *
+ * Deactivation is preferred to deletion throughout: a practitioner's name
+ * appears on consultations, prescriptions and audit entries going back years,
+ * and those references must keep resolving.
+ *
+ * /online backs the presence indicator, derived from recent session activity in
+ * authSessions rather than from a socket connection.
+ */
+
 import { handleError } from '../lib/errors';
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and, desc, sql } from 'drizzle-orm';

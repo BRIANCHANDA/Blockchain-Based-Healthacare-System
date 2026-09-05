@@ -1,3 +1,24 @@
+/**
+ * Cross-institution record sharing and emergency access.
+ *
+ * READ THIS BEFORE ASSUMING THESE GRANTS ARE ON THE BLOCKCHAIN — they are not,
+ * and the distinction matters when describing the system.
+ *
+ *   Patient consent (accessControl chaincode) is ENFORCED by the ledger.
+ *   checkPermission() genuinely reads ledger state, so nobody can grant
+ *   themselves access by editing a database row.
+ *
+ *   The grants in THIS file are enforced by PostgreSQL. A hash of each grant
+ *   event is anchored on-chain via storeRecordHash(), so altering the row
+ *   afterwards is detectable — but the ledger only WITNESSES the grant, it
+ *   does not authorise it. A compromised backend could insert a row and anchor
+ *   a matching hash; the ledger would faithfully record that this happened.
+ *
+ * The reason for the split is availability: a clinician must be able to reach
+ * records in an emergency even if the ledger is briefly unreachable, so the
+ * authorisation path cannot depend on consensus.
+ */
+
 import { db } from '../db';
 import { eq, and, or, gte, lt, sql } from 'drizzle-orm';
 import { crossInstitutionAccess, emergencyAccessLogs, patients, visits, consultations } from '../db/schema';
@@ -19,6 +40,17 @@ export interface AccessGrant {
 }
 
 // Grant cross-institution access
+/**
+ * Grant one institution access to a patient's records held at another.
+ *
+ * Raised by a referral, a transfer, an emergency override, or explicit patient
+ * consent — the accessType field records which.
+ *
+ * The insert is idempotent by (patient, source, target): re-granting an
+ * existing pair refreshes the expiry and reason rather than accumulating
+ * duplicate rows, which matters because an override fires one grant per
+ * institution holding records and may be invoked more than once.
+ */
 export async function grantCrossInstitutionAccess(grant: AccessGrant): Promise<string> {
     const expiresAt = grant.durationHours
         ? new Date(Date.now() + grant.durationHours * 60 * 60 * 1000)
@@ -58,6 +90,8 @@ export async function grantCrossInstitutionAccess(grant: AccessGrant): Promise<s
     })
     .returning({ id: crossInstitutionAccess.id });
 
+    /* Same anchoring as an emergency override: tamper-evidence for the grant
+       row, not authorisation of it. */
     await storeRecordHash(result[0].id, grant.patientId, hash, 'cross_institution_access');
 
     return result[0].id;
@@ -149,6 +183,18 @@ export async function revokeAccess(accessId: string, revokedBy: string): Promise
 }
 
 // Create emergency access (24-hour temporary access)
+/**
+ * Record an emergency override — access taken without prior patient consent.
+ *
+ * This writes the override itself; the caller separately issues
+ * grantCrossInstitutionAccess() for each institution holding records, which is
+ * what actually opens them.
+ *
+ * The reason string is mandatory and is surfaced to the patient afterwards.
+ * That is the accountability model here: the override is not prevented, it is
+ * made undeniable — logged in PostgreSQL, flagged in the audit trail, and
+ * anchored on-chain by the storeRecordHash call below.
+ */
 export async function createEmergencyAccess(
     patientId: string,
     accessedBy: string,
@@ -175,6 +221,9 @@ export async function createEmergencyAccess(
         blockchainHash: hash,
     }).returning({ id: emergencyAccessLogs.id });
 
+    /* Anchor the override on the ledger so the log row cannot later be edited
+       undetectably. Fails soft — if the network is down the override still
+       proceeds and only the anchor is missed. */
     await storeRecordHash(result[0].id, patientId, hash, 'emergency_access');
 
     return result[0].id;

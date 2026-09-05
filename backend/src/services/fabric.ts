@@ -1,5 +1,27 @@
 // backend/src/services/fabric.ts
-// Separate identity/peer connection support.
+//
+// THE ONLY PLACE THE APPLICATION TALKS TO THE BLOCKCHAIN.
+//
+// Neither the web portal nor the mobile app holds a Fabric identity, a
+// certificate or a gRPC client. They call the REST API; this module is what
+// turns those calls into signed ledger transactions. Everything the system
+// claims about immutability ultimately passes through here.
+//
+// Three ideas explain the whole file:
+//
+//  1. IDENTITY AND PEER ARE SEPARATE CHOICES. Which organisation SIGNS a
+//     transaction is independent of which peer it is SENT THROUGH. Consent is
+//     signed by a PatientOrgMSP identity, because the chaincode requires it,
+//     but submitted via the hospital peer, because that one is reliably up.
+//
+//  2. WRITES GO THROUGH CONSENSUS, READS DO NOT. submitTransaction() is
+//     endorsed by multiple peers, ordered into a block and committed.
+//     evaluateTransaction() runs on a single peer and returns — cheap enough
+//     to sit inside a request path.
+//
+//  3. FAILURE IS ASYMMETRIC ON PURPOSE. Queries and audit writes fail soft so
+//     that infrastructure trouble never blocks clinical work; consent grants
+//     fail hard so an authorisation is never silently lost.
 //
 // The channel's endorsement policy is OutOf(2, HospitalOrgMSP.peer,
 // PractitionerOrgMSP.peer, PatientOrgMSP.peer). Endorsement plans are built by
@@ -58,6 +80,16 @@ function orgConfig(org: OrgKey): OrgConfig {
 }
 
 // ── Connection pool ───────────────────────────────────────────────────────────
+//
+// Establishing a gateway means reading certificates from disk, building a TLS
+// gRPC channel and completing a handshake — far too expensive to repeat per
+// request. Connections are cached by (identity, peer) and reused.
+//
+// The TTL exists because a cached connection can go stale in ways the client
+// does not notice, for example when the Docker network is recreated and the
+// peer comes back on a new address. Expiring every few minutes bounds how long
+// a broken connection can be reused; withTimeout() also clears the pool
+// immediately on a connection-level gRPC error.
 const POOL_TTL_MS = 5 * 60 * 1_000; // 5 minutes
 
 type PoolEntry = { client: grpc.Client; gateway: Gateway; contract: Contract; createdAt: number };
@@ -70,6 +102,10 @@ function getFirstFile(dirPath: string): string {
 }
 
 // ── getConnection: same identity and peer org ──────────────────────────────
+//
+// The common case: act as an organisation, through that organisation's own
+// peer. Used for reads and for audit writes, where the hospital identity is
+// the natural caller.
 function getConnection(org: OrgKey): PoolEntry {
   const cacheKey = org;
   const cached = pool.get(cacheKey);
@@ -82,6 +118,14 @@ function getConnection(org: OrgKey): PoolEntry {
   }
 
   const cfg = orgConfig(org);
+
+  /*
+   * HANDSHAKE 1 — TRANSPORT. Trust the peer's TLS CA and open an encrypted
+   * gRPC channel. ssl_target_name_override is required because the peer's
+   * certificate carries its DNS name (peer0.hospital.healthcare.com) in the
+   * SAN: without it, dialling by container IP fails hostname verification.
+   * This authenticates the PEER TO US. It says nothing about who we are.
+   */
   const tlsCert = fs.readFileSync(cfg.tlsCertPath);
   const credentials = grpc.credentials.createSsl(tlsCert);
   const client = new grpc.Client(cfg.peerEndpoint, credentials, {
@@ -93,11 +137,23 @@ function getConnection(org: OrgKey): PoolEntry {
     'grpc.http2.min_time_between_pings_ms': 120_000,
   });
 
+  /*
+   * HANDSHAKE 2 — IDENTITY. The X.509 certificate and private key that sign
+   * every proposal. Each peer validates this signature against the channel's
+   * MSP before executing anything, and the chaincode sees it as
+   * ctx.clientIdentity.getMSPID(). This is who we ARE.
+   */
   const certPath = getFirstFile(path.join(cfg.adminMspPath, 'signcerts'));
   const keyPath = getFirstFile(path.join(cfg.adminMspPath, 'keystore'));
   const identity: Identity = { mspId: cfg.mspId, credentials: fs.readFileSync(certPath) };
   const signer: Signer = signers.newPrivateKeySigner(crypto.createPrivateKey(fs.readFileSync(keyPath)));
 
+  /*
+   * Deadlines are per phase because they measure different things: endorsing
+   * runs the chaincode on several peers, whereas commitStatus waits for the
+   * block to be ordered and validated and is therefore given the longest
+   * allowance.
+   */
   const gateway = connect({
     client, identity, signer,
     evaluateOptions: () => ({ deadline: Date.now() + 10_000 }),
@@ -113,8 +169,15 @@ function getConnection(org: OrgKey): PoolEntry {
 }
 
 // ── getConnectionForIdentity: separate identity and peer org ──────────────
-// Useful when we need an identity from one org but want to connect through
-// a peer of another org (e.g., patient identity via hospital peer).
+//
+// This split is what keeps consent patient-sovereign without making it depend
+// on the patient organisation's own peer being online.
+//
+// The chaincode requires a PatientOrgMSP signature to grant or revoke consent,
+// so the IDENTITY must be the patient org's. But the transaction can be
+// submitted through ANY peer on the channel, so we dial the hospital peer,
+// which is the one guaranteed to be running. The signature — not the route —
+// is what the policy checks.
 function getConnectionForIdentity(identityOrg: OrgKey, peerOrg: OrgKey): PoolEntry {
   const cacheKey = `${identityOrg}:${peerOrg}`;
   const cached = pool.get(cacheKey);
@@ -159,6 +222,17 @@ function getConnectionForIdentity(identityOrg: OrgKey, peerOrg: OrgKey): PoolEnt
 }
 
 // ── Timeout helper ───────────────────────────────────────────────────────────
+//
+// Wraps a ledger call so a slow or dead peer degrades instead of hanging the
+// HTTP request behind it. Promise.race means the caller waits at most
+// timeoutMs, after which onTimeout() supplies a safe default.
+//
+// The default must FAIL CLOSED: checkPermission passes () => false, so a peer
+// outage denies access rather than granting it.
+//
+// gRPC codes 4 (DEADLINE_EXCEEDED) and 14 (UNAVAILABLE) mean the connection
+// itself is bad, not the request. The pooled gateway is then discarded so the
+// next call redials rather than reusing a broken socket.
 async function withTimeout<T>(fn: () => Promise<T>, timeoutMs: number, label: string, onTimeout: () => T): Promise<T> {
   const timer = new Promise<T>(resolve => setTimeout(() => resolve(onTimeout()), timeoutMs));
   try {
@@ -176,6 +250,13 @@ async function withTimeout<T>(fn: () => Promise<T>, timeoutMs: number, label: st
 
 // ══════════════════════════════════════════════════════════════════════════════
 // ── FAILURE TRACKING ──────────────────────────────────────────────────────────
+//
+// Because most ledger calls fail soft, a failure would otherwise vanish into a
+// log line. This in-memory ring buffer keeps the last MAX_FAILURE_LOG of them
+// so the admin Blockchain page can show what did not reach the ledger and why.
+//
+// It is deliberately in-memory: it is an operational aid, not an audit trail
+// (the audit trail is on-chain), and it resets when the process restarts.
 // ══════════════════════════════════════════════════════════════════════════════
 
 type FailureEntry = {
@@ -208,6 +289,13 @@ export function clearFailureLog() {
   failureLog.length = 0;
 }
 
+/*
+ * Turn a raw error into a small, stable vocabulary so the admin view can group
+ * failures. The distinction that matters most operationally:
+ *   peer_unreachable / peer_timeout → infrastructure, retry later
+ *   endorsement_failed              → policy or determinism, will not fix itself
+ *   unauthorized                    → the signing identity lacked permission
+ */
 function categorizeError(err: any): string {
   const reason = err?.message ?? String(err);
   if (reason.includes('already exists')) return 'duplicate';
@@ -279,6 +367,17 @@ export async function revokePermission(patientId: string, practitionerId: string
   return { ...payload, txId };
 }
 
+/**
+ * Does this practitioner currently hold patient consent?
+ *
+ * EVALUATE, not submit — a single peer answers from its world state, with no
+ * ordering or commit, which is what makes it cheap enough to call inside a
+ * request. It is the authoritative consent check: the answer comes from the
+ * ledger, not from PostgreSQL.
+ *
+ * Fails CLOSED. If the peer is unreachable the fallback is false, so an outage
+ * denies access rather than granting it.
+ */
 export async function checkPermission(patientId: string, practitionerId: string): Promise<boolean> {
   return withTimeout(
     async () => {
@@ -310,6 +409,17 @@ export async function getPatientPermissions(patientAddress: string): Promise<any
 }
 
 // ── AUDIT ─────────────────────────────────────────────────────────────────────
+/**
+ * Append an access event to the on-chain audit trail.
+ *
+ * A submit, so it goes through consensus, but wrapped in a fail-soft timeout:
+ * a ledger outage must not stop a clinician reading a record. The honest
+ * consequence is that READ auditing is best-effort.
+ *
+ * Write auditing is stronger: RecordContract.storeRecordHash writes the record
+ * hash and its audit entry in the SAME chaincode transaction, so a record
+ * cannot be committed without its audit row.
+ */
 export async function logAccess(patientId: string, recordId: string, action: string, success: boolean): Promise<object> {
   return withTimeout(
     async () => {
@@ -339,6 +449,20 @@ export async function getPatientAuditLog(patientId: string): Promise<object[]> {
 }
 
 // ── RECORDS ───────────────────────────────────────────────────────────────────
+/**
+ * Anchor a SHA-256 fingerprint of an off-chain record on the ledger.
+ *
+ * This is the tier-2 mechanism: the record itself stays in PostgreSQL, and only
+ * its hash is committed. That makes later tampering with the row DETECTABLE
+ * (verifyRecordHash recomputes and compares) without putting clinical data on
+ * a replicated ledger.
+ *
+ * Used for clinical records, emergency overrides and cross-institution grants.
+ *
+ * Fails soft and records the reason in the failure log, so a clinical action
+ * still completes if the network is down — at the cost of that particular
+ * anchor being missing. Anchoring is best-effort; consent grants are not.
+ */
 export async function storeRecordHash(
   recordId: string,
   patientId: string,
@@ -380,6 +504,14 @@ export type VerifyResult = {
   timedOut: boolean;
 };
 
+/**
+ * Tamper check: recompute a record's hash and compare with the ledger.
+ *
+ * Returns a three-state result rather than a boolean, because "no anchor
+ * found" and "anchor found but does not match" mean very different things —
+ * the first is a gap in coverage, the second is evidence of alteration. A
+ * network timeout must not be reported as tampering.
+ */
 export async function verifyRecordHash(recordId: string, sha256Hash: string): Promise<VerifyResult> {
   return withTimeout<VerifyResult>(
     async () => {
@@ -452,6 +584,11 @@ export async function getPeerStatus() {
   }));
 }
 
+/**
+ * Ledger height and current block hash, read through Fabric's own system
+ * chaincode (qscc) rather than our application chaincode. Powers the admin
+ * Blockchain page and is the quickest way to confirm peers agree on the chain.
+ */
 export async function getChannelInfo(org: OrgKey = 'hospital') {
   return withTimeout(
     async () => {

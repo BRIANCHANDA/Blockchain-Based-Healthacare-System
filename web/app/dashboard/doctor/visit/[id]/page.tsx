@@ -19,9 +19,9 @@ import {
   CheckCircle2,
   History,
   FileHeart,
-  ChevronRight,
   Bed,
   HeartPulse,
+  Clock,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Toast } from "@/components/doctor/shared/Toast";
@@ -36,7 +36,6 @@ import { DischargeTab } from "@/components/doctor/tabs/DischargeTab";
 import PatientHistoryTab from "@/components/doctor/tabs/PatientHistoryTab";
 import { ReferralTab } from "@/components/doctor/tabs/ReferralTab";
 import { MedicalProfileTab } from "@/components/doctor/tabs/MedicalProfileTab";
-import { MinorBadge, ageFromDob } from "@/components/ui/MinorBadge";
 import {
   Card,
   Field,
@@ -119,9 +118,58 @@ const NAV_GROUPS: {
   },
 ];
 
-// ── Sidebar nav item ──────────────────────────────────────────────────────────
+// ── Care progress steps ───────────────────────────────────────────────────────
 
-function NavItem({
+/**
+ * The five stages a visit moves through, in order. Each derives "done" from the
+ * record counts already loaded, so the rail never disagrees with the tabs.
+ */
+const CARE_STEPS: {
+  key: Tab;
+  label: string;
+  done: (c: Record<string, number>, completed: boolean) => boolean;
+  note: (c: Record<string, number>) => string;
+}[] = [
+  {
+    key: "consultation",
+    label: "Consultation note",
+    done: (c) => c.consultation > 0,
+    note: (c) => (c.consultation > 0 ? `${c.consultation}` : "—"),
+  },
+  {
+    key: "diagnosis",
+    label: "Diagnosis coded",
+    done: (c) => c.diagnosis > 0,
+    note: (c) => (c.diagnosis > 0 ? `${c.diagnosis} code${c.diagnosis > 1 ? "s" : ""}` : "—"),
+  },
+  {
+    key: "labs",
+    label: "Investigations",
+    done: (c) => c.labs + c.imaging > 0,
+    note: (c) => (c.labs + c.imaging > 0 ? `${c.labs + c.imaging}` : "—"),
+  },
+  {
+    key: "prescriptions",
+    label: "Treatment started",
+    done: (c) => c.prescriptions > 0,
+    note: (c) => (c.prescriptions > 0 ? `${c.prescriptions}` : "—"),
+  },
+  {
+    key: "discharge",
+    label: "Discharge summary",
+    done: (_c, completed) => completed,
+    note: () => "",
+  },
+];
+
+// ── Grouped tab ───────────────────────────────────────────────────────────────
+
+/**
+ * One tab in the grouped bar under the patient header. The active tab carries
+ * both a tinted fill and a 2px underline: the fill alone reads as "hovered" on
+ * a dense row, and the underline is what ties it to the panel below.
+ */
+function TabItem({
   item,
   active,
   count,
@@ -137,91 +185,94 @@ function NavItem({
   onClick: () => void;
 }) {
   const Icon = item.icon;
-  /* Discharge stays highlighted once done — it is the terminal step, so its
+  /* Discharge stays marked once done — it is the terminal step, so its
      completed state is worth seeing from any other tab. */
   const dischargeDone = item.key === "discharge" && isCompleted;
 
-  const bg = active
-    ? "var(--brand)"
-    : dischargeDone
-      ? "var(--brand-tint)"
-      : "transparent";
-
   return (
-    <button
-      onClick={onClick}
-      className="w-full flex items-center text-left"
-      style={{
-        gap: 10,
-        padding: "9px 12px",
-        border: "none",
-        borderRadius: "var(--r-sm)",
-        background: bg,
-        color: active
-          ? "var(--on-brand)"
-          : dischargeDone
+    <div className="relative flex" style={{ paddingBottom: 8 }}>
+      <button
+        onClick={onClick}
+        className="inline-flex items-center whitespace-nowrap"
+        style={{
+          gap: 7,
+          height: 34,
+          padding: "0 12px",
+          border: `1px solid ${active ? "var(--green-100)" : "transparent"}`,
+          borderRadius: "var(--r-sm)",
+          background: active
+            ? "var(--brand-tint)"
+            : dischargeDone
+              ? "var(--brand-tint)"
+              : "transparent",
+          color: active || dischargeDone
             ? "var(--green-800)"
             : "var(--text-secondary)",
-        font: `${active ? 600 : 500} 13px/1 var(--font-sans)`,
-        cursor: "pointer",
-        transition: "background var(--dur-fast) var(--ease-standard)",
-      }}
-      onMouseEnter={(e) => {
-        if (!active) e.currentTarget.style.background = "var(--green-050)";
-      }}
-      onMouseLeave={(e) => {
-        if (!active) e.currentTarget.style.background = bg;
-      }}
-    >
-      <Icon
-        className="w-4 h-4 flex-shrink-0"
-        style={{
-          color: active
-            ? "var(--green-200)"
-            : dischargeDone
-              ? "var(--green-700)"
-              : "var(--text-muted)",
+          font: `${active ? 600 : 500} 13px/1 var(--font-sans)`,
+          cursor: "pointer",
+          transition: "background var(--dur-fast) var(--ease-standard)",
         }}
-      />
-      <span className="flex-1 truncate">{item.label}</span>
+        onMouseEnter={(e) => {
+          if (!active && !dischargeDone)
+            e.currentTarget.style.background = "var(--surface-sunken)";
+        }}
+        onMouseLeave={(e) => {
+          if (!active && !dischargeDone)
+            e.currentTarget.style.background = "transparent";
+        }}
+      >
+        <Icon className="w-[15px] h-[15px] flex-shrink-0" />
+        {item.label}
 
-      {count > 0 && (
-        <span
-          className="inline-flex items-center justify-center flex-shrink-0"
-          style={{
-            minWidth: 19,
-            height: 17,
-            padding: "0 5px",
-            borderRadius: "var(--r-pill)",
-            background: active ? "var(--on-dark-line)" : "var(--surface-sunken)",
-            color: active ? "var(--on-brand)" : "var(--text-secondary)",
-            font: "700 10px/1 var(--font-sans)",
-          }}
-        >
-          {count}
-        </span>
-      )}
+        {count > 0 && (
+          <span
+            className="inline-flex items-center justify-center flex-shrink-0"
+            style={{
+              minWidth: 18,
+              height: 17,
+              padding: "0 5px",
+              borderRadius: "var(--r-pill)",
+              background: active ? "var(--brand)" : "var(--surface-sunken)",
+              color: active ? "var(--on-brand)" : "var(--text-secondary)",
+              font: "700 10px/1 var(--font-sans)",
+            }}
+          >
+            {count}
+          </span>
+        )}
 
-      {/* A quiet dot for "something recorded here", when there is no count. */}
-      {done && !active && count === 0 && (
+        {/* A quiet dot for "something recorded here", when there is no count. */}
+        {done && !active && count === 0 && (
+          <span
+            className="flex-shrink-0"
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: "50%",
+              background: "var(--green-600)",
+            }}
+          />
+        )}
+
+        {dischargeDone && !active && (
+          <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" />
+        )}
+      </button>
+
+      {active && (
         <span
-          className="flex-shrink-0"
           style={{
-            width: 6,
-            height: 6,
-            borderRadius: "50%",
-            background: "var(--green-600)",
+            position: "absolute",
+            left: 12,
+            right: 12,
+            bottom: 0,
+            height: 2,
+            borderRadius: "2px 2px 0 0",
+            background: "var(--brand)",
           }}
         />
       )}
-
-      {dischargeDone && !active && (
-        <CheckCircle2
-          className="w-3.5 h-3.5 flex-shrink-0"
-          style={{ color: "var(--green-700)" }}
-        />
-      )}
-    </button>
+    </div>
   );
 }
 
@@ -489,6 +540,42 @@ export default function DoctorVisitPage() {
     prescriptions: prescriptions.length,
   };
 
+  const careDone = CARE_STEPS.filter((st) => st.done(counts, isCompleted)).length;
+
+  /* Only fields the /summary endpoint actually returns. It sends firstName,
+     lastName, gender and bloodType for the patient — no date of birth, national
+     ID or next of kin — so those rows are absent rather than blank. */
+  const snapshotRows: {
+    label: string;
+    value: string;
+    mono?: boolean;
+    alert?: boolean;
+  }[] = [
+    patient?.gender && {
+      label: "Gender",
+      value: patient.gender[0].toUpperCase() + patient.gender.slice(1),
+    },
+    patient?.bloodType &&
+      patient.bloodType !== "unknown" && {
+        label: "Blood type",
+        value: patient.bloodType,
+        mono: true,
+        alert: true,
+      },
+    { label: "Visit type", value: visit.visitType, mono: false },
+    visit.wardOrRoom && { label: "Ward / room", value: visit.wardOrRoom },
+    visit.bedNumber && { label: "Bed", value: visit.bedNumber, mono: true },
+    visitData?.assignedDoctorName && {
+      label: "Attending",
+      value: `Dr. ${visitData.assignedDoctorName}`,
+    },
+    visit.admissionDate && {
+      label: "Admitted",
+      value: formatDistanceToNow(new Date(visit.admissionDate), { addSuffix: true }),
+      mono: true,
+    },
+  ].filter(Boolean) as { label: string; value: string; mono?: boolean; alert?: boolean }[];
+
   const latestConsultation = consultations[consultations.length - 1];
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -512,11 +599,12 @@ export default function DoctorVisitPage() {
       >
         <div className="flex items-center" style={{ gap: 14 }}>
           <Button
-            variant="ghost"
+            size="sm"
             icon={ChevronLeft}
             onClick={() => router.back()}
-            style={{ width: 30, padding: 0 }}
-          />
+          >
+            Queue
+          </Button>
 
           <span
             className="inline-flex items-center justify-center flex-shrink-0 select-none"
@@ -539,21 +627,13 @@ export default function DoctorVisitPage() {
               <h1
                 style={{
                   margin: 0,
-                  font: "700 17px/1.1 var(--font-sans)",
+                  font: "700 18px/1.1 var(--font-sans)",
                   letterSpacing: "var(--ls-tight)",
                   color: "var(--text-primary)",
                 }}
               >
                 {patient ? `${patient.firstName} ${patient.lastName}` : patientName}
               </h1>
-
-              {patient?.isMinor && (
-                <MinorBadge
-                  age={patient.dateOfBirth ? ageFromDob(patient.dateOfBirth) : undefined}
-                  primaryGuardianName={(patient as any).guardians?.[0]?.guardianName}
-                  primaryGuardianRelationship={(patient as any).guardians?.[0]?.relationship}
-                />
-              )}
 
               {patient?.bloodType && patient.bloodType !== "unknown" && (
                 <span
@@ -687,6 +767,12 @@ export default function DoctorVisitPage() {
                 Dr. {visit.assignedDoctorName}
               </span>
             )}
+            {/* Access is the precondition for this whole screen, so it is
+                stated in the header rather than buried in a panel. */}
+            <Badge tone="success" icon={Shield} style={{ height: 24 }}>
+              Access granted
+            </Badge>
+
             <Button
               size="sm"
               icon={RefreshCw}
@@ -695,29 +781,59 @@ export default function DoctorVisitPage() {
             >
               Refresh
             </Button>
+
+            {!isCompleted && visit?.visitType !== "inpatient" && (
+              <Button
+                size="sm"
+                icon={Bed}
+                onClick={() => setAdmitOpen(true)}
+                style={{
+                  background: "var(--amber-050)",
+                  borderColor: "var(--urgent-tint)",
+                  color: "var(--urgent-ink)",
+                  boxShadow: "none",
+                }}
+              >
+                Admit to ward
+              </Button>
+            )}
+
+            {visit?.visitType === "inpatient" && !isCompleted && (
+              <Badge tone="info" icon={Bed} style={{ height: 24 }}>
+                Admitted · inpatient
+              </Badge>
+            )}
           </div>
         </div>
       </div>
 
-      {/* ══ Body: sidebar + content ══════════════════════════════════════════ */}
-      <div className="flex flex-1 min-h-0">
+      {/* ══ Tab bar ═════════════════════════════════════════════════════════
+          Grouped by stage of care rather than listed flat: the section labels
+          are what make a ten-tab row scannable. */}
+      <div
+        className="flex-shrink-0"
+        style={{
+          background: "var(--surface-card)",
+          borderBottom: "1px solid var(--hc-border)",
+          padding: "12px 20px 0",
+        }}
+      >
+        <div className="flex items-stretch flex-wrap" style={{ rowGap: 4 }}>
+          {NAV_GROUPS.map((group, gi) => (
+            <div
+              key={group.section}
+              className="flex flex-col"
+              style={{
+                gap: 6,
+                padding: "0 14px",
+                borderLeft: gi === 0 ? "none" : "1px solid var(--border-faint)",
+              }}
+            >
+              <SectionLabel style={{ margin: "0 0 0 2px", fontSize: 9 }}>
+                {group.section}
+              </SectionLabel>
 
-        {/* ── Left sidebar navigation ── */}
-        <aside
-          className="flex-shrink-0 overflow-y-auto"
-          style={{
-            width: 210,
-            borderRight: "1px solid var(--hc-border)",
-            background: "var(--surface-card)",
-          }}
-        >
-          <div style={{ padding: 12, display: "flex", flexDirection: "column", gap: 2 }}>
-            {NAV_GROUPS.map((group, gi) => (
-              <div key={group.section} style={{ paddingTop: gi > 0 ? 10 : 0 }}>
-                <SectionLabel style={{ padding: "4px 12px 6px", fontSize: 9.5 }}>
-                  {group.section}
-                </SectionLabel>
-
+              <div className="flex items-center" style={{ gap: 4 }}>
                 {group.items.map((item) => {
                   const count = item.countKey ? (counts[item.countKey] ?? 0) : 0;
                   /* "Done" means the tab has at least one record — a quiet
@@ -730,7 +846,7 @@ export default function DoctorVisitPage() {
                     (item.key === "prescriptions" && prescriptions.length > 0);
 
                   return (
-                    <NavItem
+                    <TabItem
                       key={item.key}
                       item={item}
                       active={activeTab === item.key}
@@ -741,158 +857,23 @@ export default function DoctorVisitPage() {
                     />
                   );
                 })}
-
-                {gi < NAV_GROUPS.length - 1 && (
-                  <div
-                    style={{
-                      marginTop: 10,
-                      borderBottom: "1px solid var(--border-faint)",
-                    }}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
-
-          {/* Admit to Ward — only for active, non-inpatient visits */}
-          {!isCompleted && visit?.visitType !== "inpatient" && (
-            <div style={{ margin: "0 12px 12px" }}>
-              <Button
-                full
-                size="sm"
-                icon={Bed}
-                onClick={() => setAdmitOpen(true)}
-                style={{
-                  background: "var(--amber-050)",
-                  borderColor: "var(--amber-100)",
-                  color: "var(--urgent-ink)",
-                  boxShadow: "none",
-                }}
-              >
-                Admit to ward
-              </Button>
-            </div>
-          )}
-
-          {visit?.visitType === "inpatient" && !isCompleted && (
-            <div style={{ margin: "0 12px 12px" }}>
-              <div
-                className="text-center"
-                style={{
-                  padding: "8px 12px",
-                  borderRadius: "var(--r-sm)",
-                  background: "var(--info-tint)",
-                  border: "1px solid var(--blue-100)",
-                  font: "600 11.5px/1 var(--font-sans)",
-                  color: "var(--info-ink)",
-                }}
-              >
-                Admitted · inpatient
               </div>
             </div>
-          )}
+          ))}
+        </div>
+      </div>
 
-          {/* Latest vitals — a glanceable anchor while working in any tab. */}
-          {vitals.length > 0 &&
-            (() => {
-              const v = vitals[0];
-              /* Out-of-range readings are the only ones that earn colour. */
-              const rows = [
-                v.bloodPressureSystolic && {
-                  label: "BP",
-                  value: `${v.bloodPressureSystolic}/${v.bloodPressureDiastolic}`,
-                  alert: false,
-                },
-                v.pulseRate && {
-                  label: "HR",
-                  value: `${v.pulseRate} bpm`,
-                  alert: v.pulseRate > 100 || v.pulseRate < 50,
-                },
-                v.temperature && {
-                  label: "Temp",
-                  value: `${v.temperature}°C`,
-                  alert: parseFloat(v.temperature) >= 38,
-                },
-                v.oxygenSaturation && {
-                  label: "SpO₂",
-                  value: `${v.oxygenSaturation}%`,
-                  alert: v.oxygenSaturation < 94,
-                },
-              ].filter(Boolean) as { label: string; value: string; alert: boolean }[];
-
-              return (
-                <div style={{ margin: "0 12px 16px" }}>
-                  <Card pad={12}>
-                    <SectionLabel style={{ marginBottom: 10, fontSize: 9.5 }}>
-                      Latest vitals
-                    </SectionLabel>
-                    <div className="flex flex-col" style={{ gap: 8 }}>
-                      {rows.map((r) => (
-                        <div
-                          key={r.label}
-                          className="flex items-baseline justify-between"
-                          style={{ gap: 10 }}
-                        >
-                          <span
-                            style={{
-                              font: "400 11.5px/1 var(--font-sans)",
-                              color: "var(--text-muted)",
-                            }}
-                          >
-                            {r.label}
-                          </span>
-                          <span
-                            style={{
-                              font: "600 12px/1 var(--font-mono)",
-                              color: r.alert
-                                ? "var(--critical-ink)"
-                                : "var(--text-primary)",
-                            }}
-                          >
-                            {r.value}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </Card>
-                </div>
-              );
-            })()}
-        </aside>
-
-        {/* ── Main content area ── */}
+      {/* ══ Body: tab panel + context rail ══════════════════════════════════ */}
+      <div
+        className="flex-1 min-h-0 overflow-y-auto"
+        style={{ background: "var(--surface-bg)" }}
+      >
         <div
-          className="flex-1 min-w-0 overflow-y-auto"
-          style={{ background: "var(--surface-bg)" }}
+          className="flex items-start"
+          style={{ gap: 16, padding: "20px 24px 36px" }}
         >
-          {/* Tab label breadcrumb */}
-          <div
-            className="flex items-center"
-            style={{ gap: 7, padding: "20px 24px 8px" }}
-          >
-            <span
-              style={{
-                font: "400 11.5px/1 var(--font-sans)",
-                color: "var(--text-muted)",
-              }}
-            >
-              {NAV_GROUPS.find((g) => g.items.some((i) => i.key === activeTab))?.section}
-            </span>
-            <ChevronRight
-              className="w-3 h-3"
-              style={{ color: "var(--text-disabled)" }}
-            />
-            <span
-              style={{
-                font: "600 11.5px/1 var(--font-sans)",
-                color: "var(--text-secondary)",
-              }}
-            >
-              {NAV_GROUPS.flatMap((g) => g.items).find((i) => i.key === activeTab)?.label}
-            </span>
-          </div>
-
-          <div style={{ padding: "0 24px 32px" }}>
+          {/* ── Tab panel ── */}
+          <div className="flex-1 min-w-0">
             {activeTab === "overview" && (
               <OverviewTab
                 visit={visit}
@@ -993,6 +974,220 @@ export default function DoctorVisitPage() {
                 onError={(msg: string) => showToast(msg, "error")}
               />
             )}
+          </div>
+
+          {/* ── Context rail ──────────────────────────────────────────────
+              Everything here is derived from the visit payload already loaded;
+              nothing new is fetched. It answers "where is this visit up to"
+              without leaving whichever tab you are working in. */}
+          <div
+            className="flex-shrink-0 flex flex-col"
+            style={{ width: 316, gap: 14 }}
+          >
+            {/* Care progress */}
+            <Card pad={16}>
+              <div
+                className="flex items-baseline justify-between"
+                style={{ gap: 10, marginBottom: 14 }}
+              >
+                <p
+                  style={{
+                    margin: 0,
+                    font: "700 13.5px/1 var(--font-sans)",
+                    color: "var(--text-primary)",
+                  }}
+                >
+                  Care progress
+                </p>
+                <p
+                  style={{
+                    margin: 0,
+                    font: "600 11.5px/1 var(--font-mono)",
+                    color: "var(--text-muted)",
+                  }}
+                >
+                  {careDone} of {CARE_STEPS.length} steps
+                </p>
+              </div>
+
+              <div
+                style={{
+                  height: 5,
+                  borderRadius: 3,
+                  background: "var(--surface-sunken)",
+                  overflow: "hidden",
+                  marginBottom: 14,
+                }}
+              >
+                <div
+                  style={{
+                    height: "100%",
+                    borderRadius: 3,
+                    background: "var(--green-600)",
+                    width: `${(careDone / CARE_STEPS.length) * 100}%`,
+                    transition: "width var(--dur-base) var(--ease-out)",
+                  }}
+                />
+              </div>
+
+              <div className="flex flex-col" style={{ gap: 2 }}>
+                {CARE_STEPS.map((step) => {
+                  const done = step.done(counts, isCompleted);
+                  return (
+                    <button
+                      key={step.key}
+                      onClick={() => setActiveTab(step.key)}
+                      className="flex items-center text-left"
+                      style={{
+                        gap: 10,
+                        padding: "8px 6px",
+                        border: "none",
+                        borderRadius: "var(--r-xs)",
+                        background: "transparent",
+                        cursor: "pointer",
+                        transition: "background var(--dur-fast) var(--ease-standard)",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "var(--green-050)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "transparent";
+                      }}
+                    >
+                      <span
+                        className="inline-flex items-center justify-center flex-shrink-0"
+                        style={{
+                          width: 20,
+                          height: 20,
+                          borderRadius: "50%",
+                          background: done ? "var(--green-600)" : "var(--surface-card)",
+                          color: done ? "var(--on-brand)" : "var(--text-disabled)",
+                          border: `1px solid ${done ? "var(--green-600)" : "var(--hc-border)"}`,
+                        }}
+                      >
+                        {done ? (
+                          <CheckCircle2 className="w-[11px] h-[11px]" />
+                        ) : (
+                          <Clock className="w-[11px] h-[11px]" />
+                        )}
+                      </span>
+                      <span
+                        className="flex-1 min-w-0 truncate"
+                        style={{
+                          font: `${done ? 500 : 600} 12.5px/1 var(--font-sans)`,
+                          color: done ? "var(--text-secondary)" : "var(--text-primary)",
+                        }}
+                      >
+                        {step.label}
+                      </span>
+                      <span
+                        className="flex-shrink-0"
+                        style={{
+                          font: "500 11px/1 var(--font-mono)",
+                          color: "var(--text-disabled)",
+                        }}
+                      >
+                        {step.note(counts)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </Card>
+
+            {/* Visit snapshot — only fields the summary endpoint actually
+                returns. Anything absent is omitted rather than shown blank. */}
+            <Card>
+              <SectionLabel
+                style={{
+                  padding: "13px 18px",
+                  borderBottom: "1px solid var(--border-faint)",
+                }}
+              >
+                Visit snapshot
+              </SectionLabel>
+              <div className="flex flex-col">
+                {snapshotRows.map((row) => (
+                  <div
+                    key={row.label}
+                    className="flex items-center justify-between"
+                    style={{
+                      gap: 12,
+                      padding: "11px 18px",
+                      borderBottom: "1px solid var(--border-faint)",
+                    }}
+                  >
+                    <span
+                      style={{
+                        font: "500 12px/1 var(--font-sans)",
+                        color: "var(--text-muted)",
+                      }}
+                    >
+                      {row.label}
+                    </span>
+                    <span
+                      className="text-right"
+                      style={{
+                        font: row.mono
+                          ? "600 12.5px/1 var(--font-mono)"
+                          : "600 12.5px/1 var(--font-sans)",
+                        color: row.alert ? "var(--critical-ink)" : "var(--text-primary)",
+                      }}
+                    >
+                      {row.value}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {/* Consent — the blockchain permission this screen depends on. */}
+            <Card pad={16}>
+              <div className="flex items-center" style={{ gap: 9 }}>
+                <span
+                  className="inline-flex items-center justify-center flex-shrink-0"
+                  style={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: "var(--r-xs)",
+                    background: "var(--violet-050)",
+                    color: "var(--accent-ink)",
+                  }}
+                >
+                  <Shield className="w-[15px] h-[15px]" />
+                </span>
+                <div className="flex-1 flex flex-col" style={{ gap: 3 }}>
+                  <p
+                    style={{
+                      margin: 0,
+                      font: "700 13px/1 var(--font-sans)",
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    Consent active
+                  </p>
+                  <p
+                    style={{
+                      margin: 0,
+                      font: "500 11px/1 var(--font-sans)",
+                      color: "var(--text-muted)",
+                    }}
+                  >
+                    Granted by patient on the ledger
+                  </p>
+                </div>
+              </div>
+              <p
+                style={{
+                  margin: "12px 0 0",
+                  font: "400 11.5px/1.5 var(--font-sans)",
+                  color: "var(--text-secondary)",
+                }}
+              >
+                Records held at other institutions stay locked until the patient
+                approves a request from their app.
+              </p>
+            </Card>
           </div>
         </div>
       </div>

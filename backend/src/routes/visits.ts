@@ -1,3 +1,31 @@
+/**
+ * Visits — the clinical spine of the system.
+ *
+ * A visit is one patient encounter at one institution, and almost every other
+ * clinical record hangs off a visitId: vitals, consultations, diagnoses, lab
+ * and imaging orders, prescriptions, discharge. This is the largest route
+ * module in the codebase because it carries that whole workflow.
+ *
+ * Two things recur throughout and are worth understanding once:
+ *
+ * 1. CONSENT IS CHECKED AGAINST THE LEDGER, NOT THE DATABASE.
+ *    Handlers that expose patient data call checkPermission() from
+ *    services/fabric.ts, which queries Fabric. The accessPermissions table is a
+ *    convenience mirror for listing and filtering; it is never the authority.
+ *
+ * 2. WRITES ARE ANCHORED, AND ANCHORING IS ALLOWED TO FAIL.
+ *    After a clinical row is written, generateRecordHash() fingerprints it and
+ *    storeRecordHash() commits that digest to the ledger. Those calls are
+ *    deliberately not awaited into the response path — if the network is down
+ *    the clinical write still succeeds and the anchor is retried, because
+ *    losing a consultation note is worse than delaying its proof. See
+ *    docs/ARCHITECTURE.md §5 on asymmetric failure behaviour.
+ *
+ * Access is additionally scoped by institution: staff act within their own
+ * institution, and reaching another one's records goes through the referral or
+ * emergency-override paths in routes/cross-institution.ts.
+ */
+
 import { handleError } from '../lib/errors';
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, desc, and, sql, ne } from 'drizzle-orm';

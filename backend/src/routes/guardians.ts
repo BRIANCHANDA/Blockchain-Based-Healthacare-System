@@ -1,3 +1,21 @@
+/**
+ * Guardian links — one patient acting on another's behalf.
+ *
+ * This exists for minors and for dependent adults. A guardian is itself a
+ * patient record, so the link is patient-to-patient, and the endpoints read from
+ * both ends: /patient/:patientId lists who may act for this patient, while
+ * /guardian/:id/dependents lists who this person may act for.
+ *
+ * The link is what authorises the X-Acting-As-Patient header the mobile app
+ * sends (see mobile/src/api/client.ts). Any route honouring that header must
+ * verify an active link here — otherwise the header alone would let any patient
+ * read any other patient's record simply by naming them.
+ *
+ * Links are revocable and time-relevant: a guardianship over a minor is expected
+ * to end, so a link is deactivated rather than deleted, preserving the record of
+ * who could act, and when.
+ */
+
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and, desc } from 'drizzle-orm';
 import { db } from '../db';

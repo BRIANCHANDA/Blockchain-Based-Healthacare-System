@@ -45,19 +45,7 @@ export async function sendOTPEmail(
         <table width="480" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
 
           <!-- Header -->
-          <tr>
-            <td style="background:linear-gradient(135deg,#052e16,#166534);padding:32px 40px;text-align:center;">
-              <table cellpadding="0" cellspacing="0" style="margin:0 auto 16px;">
-                <tr>
-                  <td style="background:rgba(255,255,255,0.12);border-radius:12px;padding:10px 14px;border:1px solid rgba(255,255,255,0.15);">
-                    <span style="font-size:20px;font-weight:800;color:#ffffff;letter-spacing:-0.5px;">+</span>
-                  </td>
-                </tr>
-              </table>
-              <h1 style="margin:0;font-size:20px;font-weight:800;color:#ffffff;letter-spacing:-0.3px;">MedLink </h1>
-              <p style="margin:4px 0 0;font-size:11px;color:rgba(255,255,255,0.5);letter-spacing:2px;text-transform:uppercase;">EMR · Zambia</p>
-            </td>
-          </tr>
+         
 
           <!-- Body -->
           <tr>

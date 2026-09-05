@@ -1,3 +1,15 @@
+/**
+ * Root layout — wraps every page in the portal.
+ *
+ * Import order of the two stylesheets matters: design-tokens.css defines the
+ * custom properties (--brand, --text-primary, --r-md, --elev-1 and the rest)
+ * that globals.css and every component then consume, so it must come first.
+ *
+ * Colours, radii, shadows and fonts are referenced only as var(--token)
+ * throughout the portal. Adding a raw hex value anywhere downstream breaks that
+ * single source of truth — add a token here instead.
+ */
+
 import type { Metadata } from "next";
 import "./design-tokens.css";
 import "./globals.css";

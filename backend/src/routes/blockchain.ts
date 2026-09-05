@@ -1,3 +1,22 @@
+/**
+ * Admin-facing blockchain explorer endpoints.
+ *
+ * This is the READ side of the ledger — what the admin dashboard's Blockchain
+ * page renders. It exists so an administrator (or an examiner) can see that the
+ * chain is real: blocks, transactions, permission state, and the outcome of
+ * verifying a record against its anchored hash.
+ *
+ * Nothing here writes clinical data. The only mutating endpoint is
+ * DELETE /failures, which clears the retry queue of ledger writes that did not
+ * commit.
+ *
+ * On /verify: verification recomputes generateRecordHash() over the supplied
+ * record and compares it with the digest committed on-chain. A mismatch means
+ * the PostgreSQL row changed after it was anchored. Note the three-way result —
+ * valid, invalid, or "could not reach the ledger" — because a network timeout
+ * must never be reported to a clinician as a failed integrity check.
+ */
+
 import { handleError } from '../lib/errors';
 // backend/src/routes/admin/blockchain.ts
 

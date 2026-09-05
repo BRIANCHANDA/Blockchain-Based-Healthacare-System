@@ -1,3 +1,15 @@
+/**
+ * Audit log — who accessed which patient's records, and when.
+ *
+ * Entries originate from the AuditContract on-chain, so this is an append-only
+ * record: nothing on this page can edit or delete an entry, and the institution
+ * that produced a log cannot rewrite it. That is what makes the log evidence
+ * rather than a report.
+ *
+ * Filtering and paging happen server-side because the log grows without bound —
+ * every read of every record adds a row.
+ */
+
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { api, institutionApi } from "@/lib/api";

@@ -99,7 +99,7 @@ async function main() {
   console.log('🌱 Seeding medication stock...\n');
 
   // All institutions
-  const allInstitutions = await db.select({ id: institutions.id }).from(institutions);
+  const allInstitutions = await db.select({ id: institutions.id, name: institutions.institutionName }).from(institutions);
   if (!allInstitutions.length) {
     console.error('No institutions found. Nothing to seed.');
     process.exit(1);

@@ -1,3 +1,26 @@
+/**
+ * Aggregate reporting for the admin dashboard.
+ *
+ * Three views over the same data, separated by audience rather than by table:
+ *
+ *   /clinical       — case mix, diagnoses, outcomes: what was treated
+ *   /operational    — throughput, occupancy, waiting times: how the place ran
+ *   /administrative — staffing and institution-level totals
+ *
+ * NO ENDPOINT HERE RETURNS AN IDENTIFIABLE PATIENT — only counts and
+ * aggregates. That is what allows these to be read by administrators who hold no
+ * consent to any individual record. Adding a patient name or identifier to a
+ * response here would quietly turn a statistics endpoint into a way around the
+ * consent model, so treat that as the invariant when extending this file.
+ *
+ * Practitioner names are a deliberate exception: /clinical decrypts and returns
+ * the treating doctor for per-doctor breakdowns. Staff attribution is
+ * administrative information, not patient data.
+ *
+ * Queries are scoped to the caller's institution unless they are a system
+ * administrator.
+ */
+
 import { handleError } from '../lib/errors';
 // src/routes/reports.ts
 // Mount as: app.route('/api/reports', reportsRouter)

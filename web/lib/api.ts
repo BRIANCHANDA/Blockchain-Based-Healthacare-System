@@ -1,3 +1,28 @@
+/**
+ * The web portal's API layer — one axios instance plus a typed module per
+ * backend resource (authApi, patientApi, visitApi, permissionApi, ...).
+ *
+ * Components never call axios directly. Grouping calls here means a changed
+ * endpoint is edited in one place, and every request automatically carries the
+ * session token and the shared error handling below.
+ *
+ * REQUEST: the bearer token is read from localStorage on each call rather than
+ * captured once, so a token refreshed in another tab is picked up immediately.
+ *
+ * RESPONSE: a 401 that is genuinely a dead session — the backend says "Session
+ * expired", "Invalid token" or "Unauthorized" — clears the stored credentials
+ * and sends the browser to /login. Two details are deliberate:
+ *
+ *   · The message is inspected, not just the status. A 401 also comes back when
+ *     a clinician lacks CONSENT for a particular patient, and that must render
+ *     as "you do not have access to this record", not as a forced sign-out.
+ *   · _redirecting latches, so a page firing several requests at once produces
+ *     one redirect instead of several competing navigations.
+ *
+ * The rejection is re-thrown after handling, so callers still see the failure
+ * and can show their own message.
+ */
+
 import axios from 'axios';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
@@ -15,10 +40,19 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
+let _redirecting = false;
 api.interceptors.response.use(
     (res) => res,
     (err) => {
-        if (err.response?.status === 401 && typeof window !== 'undefined') {
+        const status = err.response?.status;
+        const msg: string = err.response?.data?.error?.message ?? '';
+        const isSessionError = status === 401 && (
+            msg.includes('Session expired') ||
+            msg.includes('Invalid token') ||
+            msg.includes('Unauthorized')
+        );
+        if (isSessionError && typeof window !== 'undefined' && !_redirecting) {
+            _redirecting = true;
             localStorage.removeItem('hc_token');
             localStorage.removeItem('hc_user');
             window.location.href = '/login';

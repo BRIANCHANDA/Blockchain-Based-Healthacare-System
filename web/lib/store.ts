@@ -1,3 +1,17 @@
+/**
+ * Client-side session state for the web portal (zustand).
+ *
+ * localStorage under hc_token / hc_user is the durable copy that lib/api.ts
+ * reads on every request; this store is the in-memory copy React renders from.
+ * Both must be updated together — a mismatch produces a page that looks signed
+ * in but authenticates nothing, or the reverse.
+ *
+ * `type` on the user is the role the dashboards branch on, and its values are
+ * exactly the user_type enum in backend/src/db/schema.ts. Changing one without
+ * the other silently breaks role routing, which is why backend/tests/roles.test.ts
+ * guards that list.
+ */
+
 import { create } from 'zustand';
 
 export interface User {

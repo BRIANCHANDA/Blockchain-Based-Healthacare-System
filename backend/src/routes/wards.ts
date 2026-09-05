@@ -1,3 +1,21 @@
+/**
+ * Wards and beds — inpatient bed management.
+ *
+ * The state machine a bed moves through is the substance of this file:
+ *
+ *   available → occupied      (assign, attaches a visit to the bed)
+ *   occupied  → available     (release, on discharge or transfer)
+ *   any       → maintenance   (out of service; not assignable)
+ *
+ * Assignment is the operation to be careful with: a bed holds at most one
+ * patient, so the handler must reject an assign against a bed that is already
+ * occupied rather than overwriting it — two patients recorded in one bed makes
+ * the ward list wrong for everyone using it.
+ *
+ * /unassigned-visits is the other half of the workflow: admitted patients who
+ * have no bed yet, which is the queue a ward nurse actually works from.
+ */
+
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and, sql } from 'drizzle-orm';
 import { db } from '../db';

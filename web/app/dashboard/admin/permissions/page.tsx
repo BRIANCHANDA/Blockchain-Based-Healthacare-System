@@ -1,3 +1,18 @@
+/**
+ * Admin view of consent grants across the institution.
+ *
+ * Shows which practitioners currently hold access to which patients, and when
+ * each grant expires. It is a WINDOW, NOT A CONTROL: an administrator cannot
+ * grant access from here, because only the patient can grant it — that is the
+ * property the AccessControl chaincode enforces and the reason this page is
+ * read-oriented.
+ *
+ * Rows come from the backend's mirror of the ledger. Expiry is computed and
+ * displayed client-side (isPast/formatDistanceToNow) so a grant that has lapsed
+ * reads as expired without waiting for a refresh, but the authoritative check
+ * always happens on the chain at the moment of access.
+ */
+
 "use client";
 import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";

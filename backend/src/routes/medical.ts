@@ -1,3 +1,19 @@
+/**
+ * Standing clinical facts about a patient — allergies, chronic conditions,
+ * family history, and sensitive records.
+ *
+ * These differ from everything in routes/visits.ts: they are not tied to one
+ * encounter. An allergy recorded in Ndola must be visible to a clinician in
+ * Lusaka, because the point of recording it is that the next prescriber sees it.
+ *
+ * SENSITIVE RECORDS are the exception and are handled separately here. Some
+ * diagnoses (HIV status, mental-health treatment, reproductive care) carry a
+ * real risk of harm if disclosed casually, so they sit behind their own
+ * endpoints and their own consent check rather than being returned with the rest
+ * of a patient's history. GET /me/sensitive is the patient's own view of them —
+ * a patient always sees their own record even where a clinician would not.
+ */
+
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and, desc } from 'drizzle-orm';
 import { db } from '../db';

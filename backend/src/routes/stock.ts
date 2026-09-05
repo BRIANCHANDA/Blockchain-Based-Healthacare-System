@@ -1,3 +1,22 @@
+/**
+ * Pharmacy stock — the dispensary's inventory of medications.
+ *
+ * Quantities here move for two different reasons and only one of them lives in
+ * this file. Restocking and manual correction are explicit endpoints below;
+ * dispensing decrements stock as a side effect of fulfilling a prescription in
+ * the pharmacy flow. Anything reconciling stock has to account for both.
+ *
+ * Stock is per-institution: each hospital pharmacy holds its own quantities of
+ * the same drug, so rows are scoped by institutionId and a low-stock alert is
+ * meaningful only within one institution.
+ *
+ * CAUTION: DELETE /:id is a HARD delete, and it removes the stock_movements
+ * history for the drug along with the row. Unlike most of this codebase — where
+ * clinical rows are deactivated so old references keep resolving — the movement
+ * audit trail for that item does not survive. Deactivating instead would be the
+ * safer behaviour if the dispensing history is ever needed retrospectively.
+ */
+
 import { handleError } from '../lib/errors';
 // src/routes/stock.ts
 // Mount as: app.route('/api/stock', stockRouter)

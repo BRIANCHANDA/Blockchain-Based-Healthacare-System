@@ -26,3 +26,8 @@ mobile/*firebase-adminsdk*.json
 # signing keys for the orderer, every peer organisation and every admin
 # identity, and anyone holding them can impersonate those identities.
 fabric-network/network/organizations/
+
+# Local mobile environment. EXPO_PUBLIC_* values are inlined into the bundle,
+# so this holds no secrets — but it holds one developer's LAN address, which
+# would break the app for everyone else. Template is mobile/.env.example.
+mobile/.env

@@ -37,7 +37,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
  *
  *   .env in mobile/:  EXPO_PUBLIC_API_URL=https://api.yourdomain.zm
  */
-const DEV_FALLBACK = 'http://10.120.222.130:3000';
+const DEV_FALLBACK = 'http://192.168.0.126:3000';
 
 const HOST = (process.env.EXPO_PUBLIC_API_URL ?? DEV_FALLBACK).replace(/\/+$/, '');
 

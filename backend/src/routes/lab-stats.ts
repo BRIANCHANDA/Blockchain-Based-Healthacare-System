@@ -1,3 +1,15 @@
+/**
+ * Laboratory dashboard statistics.
+ *
+ * Three views for the lab technician's dashboard: totals for the department
+ * (/), the signed-in technician's own workload (/my-stats), and the live queue
+ * of orders awaiting a result (/pending).
+ *
+ * These are counts over lab_test_orders, scoped to the caller's institution. The
+ * pending queue is the operational one — it is ordered by urgency then age, so
+ * a STAT troponin does not sit behind a routine full blood count.
+ */
+
 import { handleError } from '../lib/errors';
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and, gte, count, sql, desc, ne } from 'drizzle-orm';

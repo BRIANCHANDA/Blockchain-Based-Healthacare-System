@@ -1,3 +1,17 @@
+/**
+ * Blockchain explorer — the admin's view of the ledger itself.
+ *
+ * Renders what backend/src/routes/blockchain.ts exposes: block height, recent
+ * transactions, peer and channel health, and record verification. It exists so
+ * the chain can be seen to be real and functioning rather than taken on trust.
+ *
+ * VERIFICATION has three outcomes and the UI must keep them distinct: the
+ * record matches its anchored hash, the record does NOT match (the database row
+ * changed after anchoring), or the ledger could not be reached. Rendering the
+ * third as a failure would tell an administrator that records had been tampered
+ * with whenever the network was merely down.
+ */
+
 // web/src/app/dashboard/admin/blockchain/page.tsx
 
 "use client";

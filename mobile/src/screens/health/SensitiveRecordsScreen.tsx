@@ -359,7 +359,18 @@ export default function SensitiveRecordsScreen() {
           LocalAuthentication.hasHardwareAsync(),
           LocalAuthentication.isEnrolledAsync(),
         ]);
+        // Logged because these two values decide whether the unlock button
+        // renders at all, and they cannot be read from outside the app —
+        // `adb shell dumpsys biometric` is restricted on Samsung devices, so a
+        // screen with no button is otherwise indistinguishable from a bug.
+        const types = await LocalAuthentication.supportedAuthenticationTypesAsync().catch(() => []);
+        console.log(
+          `[biometrics] hardware=${hw} enrolled=${enrolled} types=[${types.join(",")}] ` +
+          `-> button ${hw && enrolled ? "SHOWN" : "HIDDEN"}`,
+        );
         setHasBiometric(hw && enrolled);
+      } else {
+        console.log("[biometrics] native module NOT linked — PIN only");
       }
       const stored = await AsyncStorage.getItem(PIN_KEY);
       setHasPin(!!stored);
@@ -411,27 +422,69 @@ export default function SensitiveRecordsScreen() {
     setChecking(true);
     setAuthError(undefined);
     try {
-      // No timeout here, deliberately.
+      // A watchdog, not a race.
       //
-      // This used to race authenticateAsync against a 5-second timer. But that
-      // call opens the system biometric dialog and then waits for a HUMAN — and
-      // nobody notices a prompt, picks the phone up and positions a finger in
-      // under five seconds reliably. When the timer won, the screen jumped to
-      // PIN entry while the fingerprint dialog was still open, and the user's
-      // eventual success was discarded because the race had already resolved.
-      // That is why biometric unlock appeared never to work.
+      // authenticateAsync normally resolves on its own — success, user_cancel,
+      // or lockout — and needs no timer. But on a device whose fingerprint
+      // sensor is faulty it can hang forever: Android's BiometricPrompt waits
+      // on a sensor client that never reports, so the dialog never renders and
+      // this promise never settles. On the test handset the kernel node is
+      // unreadable ("Invalid file info, /sys/class/fingerprint/fingerprint/
+      // position") and queued operations accumulate in BiometricScheduler.
       //
-      // authenticateAsync resolves on its own: success, user_cancel when
-      // dismissed, or lockout after too many attempts. Every outcome is handled
-      // below, so there is nothing left for a timeout to rescue.
-      const result = await LocalAuthentication.authenticateAsync({
-        promptMessage:         "Verify your identity",
-        fallbackLabel:         "Use Phone PIN",
-        disableDeviceFallback: false,
+      // Two things matter about the timer below:
+      //
+      //   IT MUST NOT RACE THE USER. An earlier version used 5 seconds, which
+      //   is shorter than the time it takes to notice a prompt and present a
+      //   finger — so it fired on the normal path, threw the user to PIN entry
+      //   while the dialog was still open, and discarded their success. Thirty
+      //   seconds is past any genuine interaction and only catches a hang.
+      //
+      //   IT MUST CANCEL. The earlier version simply abandoned the promise. The
+      //   underlying request stayed queued in the OS, so every attempt added
+      //   another — the scheduler was seven deep on the test device. Calling
+      //   cancelAuthenticate() releases it.
+      const WATCHDOG_MS = 30_000;
+      let watchdog: ReturnType<typeof setTimeout> | undefined;
+
+      const timeout = new Promise<{ success: false; error: string }>((resolve) => {
+        watchdog = setTimeout(async () => {
+          try { await LocalAuthentication!.cancelAuthenticate(); } catch { /* already gone */ }
+          resolve({ success: false, error: "no_prompt" });
+        }, WATCHDOG_MS);
       });
+
+      const result = await Promise.race([
+        LocalAuthentication.authenticateAsync({
+          promptMessage:         "Verify your identity",
+          fallbackLabel:         "Use Phone PIN",
+          disableDeviceFallback: false,
+          // Accept Android Class 2 biometrics as well as Class 3, so that
+          // camera-based face unlock can satisfy this prompt. Stated explicitly
+          // rather than relied upon: 'weak' is the library's current default,
+          // but this screen holds the most sensitive records in the system and
+          // the security class it accepts should be a visible decision, not one
+          // that could change under us in a future release.
+          //
+          // The tradeoff, recorded deliberately: Class 2 face unlock is easier
+          // to defeat than a fingerprint or a 3D scan — a photograph is enough
+          // on some handsets. It is accepted here because it is one factor in
+          // front of a PIN, not the only thing guarding the data.
+          biometricsSecurityLevel: "weak",
+        }),
+        timeout,
+      ]);
+
+      if (watchdog) clearTimeout(watchdog);
 
       if (result.success) {
         await fetchAndUnlock();
+      } else if (result.error === "no_prompt") {
+        // The dialog never appeared within 30 seconds — almost always a faulty
+        // or wedged biometric sensor. Say so, rather than blaming the user.
+        console.log("[biometrics] prompt never appeared within 30s — sensor likely faulty");
+        setAuthError("Biometrics did not respond on this device. Use your PIN.");
+        setScreen(hasPin ? "pin-entry" : "pin-setup");
       } else if (result.error === "user_cancel" || result.error === "app_cancel") {
         // User dismissed — do nothing, stay on lock screen
       } else if (result.error === "lockout") {
@@ -445,6 +498,7 @@ export default function SensitiveRecordsScreen() {
         setAuthError("No biometrics set up on this device. Use your PIN.");
         setScreen(hasPin ? "pin-entry" : "pin-setup");
       } else {
+        console.log(`[biometrics] authenticateAsync failed: ${result.error}`);
         // Includes "timeout", which the library itself reports if the prompt
         // goes unanswered — distinct from the artificial 5-second race that
         // used to cut the user off mid-authentication.
