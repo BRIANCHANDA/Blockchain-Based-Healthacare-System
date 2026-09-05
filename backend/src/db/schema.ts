@@ -1,3 +1,38 @@
+/**
+ * MedLink — PostgreSQL schema (Drizzle ORM).
+ *
+ * THE OFF-CHAIN HALF OF A HYBRID STORE.
+ *
+ * Nothing here is on the blockchain. The ledger holds only three kinds of
+ * thing — a SHA-256 hash per clinical record, a consent object per
+ * patient/practitioner pair, and an append-only access log. Everything below
+ * is the ciphertext and the relational structure those hashes point at.
+ *
+ * Reading this file, three conventions carry most of the meaning:
+ *
+ *   *Encrypted columns.  Any column named `somethingEncrypted` holds
+ *      AES-256-CBC ciphertext written by services/crypto.ts, not readable text.
+ *      Because a fresh IV is used per value, the same plaintext encrypts to a
+ *      different string every time — so these columns CANNOT be searched or
+ *      indexed by equality. Lookups must go through a deterministic identifier
+ *      instead: a national-ID hash, a blockchain address, or a visit number.
+ *
+ *   *blockchainAddress.  The identity a row presents to Fabric. Consent is
+ *      recorded on-chain against these addresses, never against database UUIDs,
+ *      so the ledger stays meaningful independently of this database.
+ *
+ *   *institutionId.  The tenancy boundary. Almost every clinical table carries
+ *      one, and it is what separates hospitals from each other — the Fabric
+ *      network has a single Hospital organisation, so multi-institution scoping
+ *      is enforced here rather than by the ledger.
+ *
+ * Enum values are the contract with the frontend. The web dashboards map these
+ * strings to labels and colours; changing a value here without updating the
+ * corresponding vocab module (web/app/dashboard/<role>/vocab.ts) leaves the UI
+ * rendering a raw enum string. backend/tests/roles.test.ts guards the one case
+ * where drift would be a security problem.
+ */
+
 import {
     pgTable,
     uuid,
@@ -151,6 +186,12 @@ export const requestStatusEnum = pgEnum('request_status', [
 
 // ==================== INSTITUTIONS ====================
 
+/* ══════════════════════════════════════════════════════════════════════
+ * ORGANISATIONS
+ *
+ * Who runs the system. `institutionId` on a clinical row is the tenancy
+ * boundary: it is what stops one hospital reading another's records.
+ * ══════════════════════════════════════════════════════════════════════ */
 export const institutions = pgTable('institutions', {
     id: uuid('id').defaultRandom().primaryKey(),
     institutionCode: text('institution_code').notNull().unique(),
@@ -210,6 +251,13 @@ export const wards = pgTable('wards', {
 
 // ==================== CORE IDENTITY TABLES ====================
 
+/* ══════════════════════════════════════════════════════════════════════
+ * PEOPLE
+ *
+ * Patients and staff. Note the asymmetry — a patient's identifying fields are
+ * encrypted, a practitioner's are too, but a practitioner also carries a
+ * licence number and institution that must stay queryable in the clear.
+ * ══════════════════════════════════════════════════════════════════════ */
 export const patients = pgTable('patients', {
     id: uuid('id').defaultRandom().primaryKey(),
     blockchainAddress: text('blockchain_address').notNull().unique(),
@@ -326,6 +374,12 @@ export const patientInstitutionRegistrations = pgTable('patient_institution_regi
 
 
 
+/* ══════════════════════════════════════════════════════════════════════
+ * THE ENCOUNTER
+ *
+ * A visit is the spine of the clinical model: almost every record below hangs
+ * off a visitId, and it is the unit consent is usually requested for.
+ * ══════════════════════════════════════════════════════════════════════ */
 export const visits = pgTable('visits', {
     id: uuid('id').defaultRandom().primaryKey(),
     patientId: uuid('patient_id').notNull().references(() => patients.id),
@@ -413,6 +467,12 @@ export const vitalSigns = pgTable('vital_signs', {
 
 // ==================== MEDICAL HISTORY ====================
 
+/* ══════════════════════════════════════════════════════════════════════
+ * STANDING CLINICAL FACTS
+ *
+ * True of the patient rather than of one visit, so these are keyed on patientId
+ * and survive across institutions once consent allows them to be read.
+ * ══════════════════════════════════════════════════════════════════════ */
 export const allergies = pgTable('allergies', {
     id: uuid('id').defaultRandom().primaryKey(),
     patientId: uuid('patient_id').notNull().references(() => patients.id),
@@ -464,6 +524,11 @@ export const familyMedicalHistory = pgTable('family_medical_history', {
 
 // ==================== CONSULTATIONS ====================
 
+/* ══════════════════════════════════════════════════════════════════════
+ * ASSESSMENT
+ *
+ * What the clinician found and concluded during this visit.
+ * ══════════════════════════════════════════════════════════════════════ */
 export const consultations = pgTable('consultations', {
     id: uuid('id').defaultRandom().primaryKey(),
     visitId: uuid('visit_id').notNull().references(() => visits.id),
@@ -513,6 +578,12 @@ export const diagnoses = pgTable('diagnoses', {
 
 // ==================== LABORATORY ====================
 
+/* ══════════════════════════════════════════════════════════════════════
+ * DIAGNOSTICS
+ *
+ * Orders and their results. The order/result split matters: an order is written
+ * by a doctor, a result by the lab, and the two are separate ledger anchors.
+ * ══════════════════════════════════════════════════════════════════════ */
 export const labTestOrders = pgTable('lab_test_orders', {
     id: uuid('id').defaultRandom().primaryKey(),
     orderNumber: text('order_number').notNull().unique(),
@@ -605,6 +676,12 @@ export const imagingReports = pgTable('imaging_reports', {
 
 // ==================== PRESCRIPTIONS & PHARMACY ====================
 
+/* ══════════════════════════════════════════════════════════════════════
+ * MEDICATION
+ *
+ * Prescription -> item -> administration. A prescription is the intent, an item
+ * is one drug on it, and administration is the record of it actually given.
+ * ══════════════════════════════════════════════════════════════════════ */
 export const prescriptions = pgTable('prescriptions', {
     id: uuid('id').defaultRandom().primaryKey(),
     prescriptionNumber: text('prescription_number').notNull().unique(),
@@ -672,6 +749,14 @@ export const medicationAdministration = pgTable('medication_administration', {
 
 // ==================== BLOCKCHAIN & SECURITY ====================
 
+/* ══════════════════════════════════════════════════════════════════════
+ * CONSENT AND AUDIT
+ *
+ * The off-chain mirror of the ledger. accessPermissions and auditLogs duplicate
+ * what Fabric already holds so the UI can list and filter quickly — the ledger
+ * remains authoritative, and checkPermission() always asks the chain, never
+ * these rows.
+ * ══════════════════════════════════════════════════════════════════════ */
 export const accessPermissions = pgTable('access_permissions', {
     id: uuid('id').defaultRandom().primaryKey(),
     patientId: uuid('patient_id').notNull().references(() => patients.id),
@@ -717,6 +802,50 @@ export const auditLogs = pgTable('audit_logs', {
 
 // ==================== AUTHENTICATION ====================
 
+/* ══════════════════════════════════════════════════════════════════════
+ * AUTHENTICATION
+ *
+ * Sessions are server-side and revocable by design (see docs/ARCHITECTURE.md
+ * §3), which is why a table exists here rather than relying on a stateless JWT.
+ * ══════════════════════════════════════════════════════════════════════ */
+/* ────────────────────────────────────────────────────────────────────────────
+   PUSH NOTIFICATION DEVICES
+   ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Expo push tokens for a user's devices.
+ *
+ * One row per device, not per user: a patient may carry a phone and a tablet,
+ * and a consent request has to reach whichever they are actually holding. The
+ * token is the address Expo's push service delivers to.
+ *
+ * Tokens are not permanent. Expo reissues one when the app is reinstalled or
+ * restored onto a new device, and delivery to an old token comes back as
+ * DeviceNotRegistered — services/notifications.ts throws DeviceNotRegisteredError
+ * for exactly that case, and the row must then be deleted or every later send
+ * wastes a request on a device that no longer exists.
+ *
+ * The token is unique across the table so re-registering the same device
+ * updates the existing row instead of accumulating duplicates, which would
+ * otherwise deliver the same notification several times to one phone.
+ */
+export const deviceTokens = pgTable('device_tokens', {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id').notNull(),
+    userType: userTypeEnum('user_type').notNull(),
+    // The ExponentPushToken[...] string issued by Expo for this install.
+    token: text('token').notNull().unique(),
+    // 'ios' | 'android' — kept for diagnostics, not used for routing.
+    platform: text('platform'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    // Bumped on every re-registration, so a stale device is identifiable.
+    lastSeenAt: timestamp('last_seen_at').defaultNow().notNull(),
+}, (table) => ({
+    userIdx: index('idx_device_tokens_user_id').on(table.userId),
+    tokenIdx: index('idx_device_tokens_token').on(table.token),
+}));
+
+
 export const authSessions = pgTable('auth_sessions', {
     id: uuid('id').defaultRandom().primaryKey(),
     userId: uuid('user_id').notNull(),
@@ -760,6 +889,12 @@ export const twoFaSecrets = pgTable('two_fa_secrets', {
     userIdx: index('idx_two_fa_secrets_user_id').on(table.userId),
 }));
 
+/* ══════════════════════════════════════════════════════════════════════
+ * REQUESTING ACCESS
+ *
+ * A practitioner asks; the patient approves in the mobile app. Approval is what
+ * triggers the on-chain grant, so this table is the front half of consent.
+ * ══════════════════════════════════════════════════════════════════════ */
 export const accessRequests = pgTable('access_requests', {
     id: uuid('id').defaultRandom().primaryKey(),
     requestedByUserId: uuid('requested_by_user_id').notNull(),
@@ -783,6 +918,13 @@ export const accessRequests = pgTable('access_requests', {
 
 // ==================== REFERRALS ====================
 
+/* ══════════════════════════════════════════════════════════════════════
+ * ACROSS INSTITUTIONS
+ *
+ * Referral, cross-institution grant and emergency override. These are the only
+ * paths by which one hospital reaches another hospital's data — each one is
+ * read-only, since an institution is the sole writer of records it originates.
+ * ══════════════════════════════════════════════════════════════════════ */
 export const referrals = pgTable('referrals', {
     id: uuid('id').defaultRandom().primaryKey(),
     referralNumber: text('referral_number').notNull().unique(),
@@ -883,6 +1025,12 @@ export const patientSensitiveRecords = pgTable('patient_sensitive_records', {
     activeIdx:    index('idx_sensitive_records_is_active').on(table.isActive),
 }));
 
+/* ══════════════════════════════════════════════════════════════════════
+ * PHARMACY STOCK
+ *
+ * Inventory, kept separate from prescribing so dispensing can decrement stock
+ * without touching the clinical record.
+ * ══════════════════════════════════════════════════════════════════════ */
 export const medicationStock = pgTable('medication_stock', {
     id: uuid('id').primaryKey().defaultRandom(),
     institutionId: uuid('institution_id').notNull(),

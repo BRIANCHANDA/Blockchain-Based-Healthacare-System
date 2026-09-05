@@ -1,4 +1,8 @@
 import { Expo, ExpoPushMessage, ExpoPushTicket, ExpoPushReceiptId } from 'expo-server-sdk';
+import { eq, inArray } from 'drizzle-orm';
+
+import { db } from '../db';
+import { deviceTokens } from '../db/schema';
 
 const expo = new Expo({
     accessToken: process.env.EXPO_ACCESS_TOKEN,   // optional but recommended for higher rate limits
@@ -171,6 +175,53 @@ export function notifyUser(userId: string, event: string, data: object) {
         } catch {
             streams.delete(stream); // dead connection — remove silently
         }
+    }
+}
+
+/**
+ * Deliver a push notification to every device a user has registered.
+ *
+ * This is the function call sites should use. It owns the three things that
+ * would otherwise be repeated (and eventually got wrong) at each one:
+ *
+ *   1. looking up the user's tokens — a person may have several devices;
+ *   2. pruning tokens Expo reports as DeviceNotRegistered, so an uninstalled
+ *      app stops costing a request on every future send;
+ *   3. never throwing. A notification is an auxiliary effect: failing to reach
+ *      a phone must not roll back the access request that triggered it, so the
+ *      error is logged and swallowed. Call sites should still not await this on
+ *      the response path.
+ *
+ * Returns the number of devices reached, which is 0 for a user who has never
+ * opened the mobile app — an ordinary case, not an error.
+ */
+export async function pushToUser(
+    userId: string,
+    payload: PushPayload,
+): Promise<number> {
+    try {
+        const rows = await db
+            .select({ token: deviceTokens.token })
+            .from(deviceTokens)
+            .where(eq(deviceTokens.userId, userId));
+
+        if (!rows.length) return 0;
+
+        const { sent, staleTokens } = await sendPushNotifications(
+            rows.map((r) => r.token),
+            payload,
+        );
+
+        // Expo has told us these installs no longer exist. Drop them now rather
+        // than retrying them forever.
+        if (staleTokens.length) {
+            await db.delete(deviceTokens).where(inArray(deviceTokens.token, staleTokens));
+        }
+
+        return sent;
+    } catch (err) {
+        console.error(`pushToUser: delivery to ${userId} failed —`, err);
+        return 0;
     }
 }
 
