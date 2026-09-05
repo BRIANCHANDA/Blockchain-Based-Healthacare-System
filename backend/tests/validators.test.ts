@@ -207,3 +207,29 @@ describe("vitals", () => {
     }
   });
 });
+
+// ── blank optional fields ────────────────────────────────────────────────────
+
+describe("optional fields tolerate a blank form input", () => {
+  test('"" is treated as not provided, not as invalid', async () => {
+    // HTML forms submit "" for a field left blank. A plain .optional() rejects
+    // that, so an untouched optional field failed validation — which reads to
+    // the user as a broken form on a field they deliberately skipped.
+    const { optionalEmail, optionalPhone, optionalIsoDate, optionalNationalId } =
+      await import("../src/lib/validators");
+
+    for (const schema of [optionalEmail, optionalPhone, optionalIsoDate, optionalNationalId]) {
+      expect(schema.safeParse("").success).toBe(true);
+      expect(schema.safeParse("   ").success).toBe(true);
+      expect(schema.safeParse(undefined).success).toBe(true);
+    }
+  });
+
+  test("a filled optional field is still validated", async () => {
+    const { optionalEmail, optionalPhone } = await import("../src/lib/validators");
+    expect(optionalEmail.safeParse("not-an-email").success).toBe(false);
+    expect(optionalEmail.safeParse("a@b.zm").success).toBe(true);
+    expect(optionalPhone.safeParse("abc").success).toBe(false);
+    expect(optionalPhone.safeParse("+260971000001").success).toBe(true);
+  });
+});

@@ -27,7 +27,7 @@ import { sessionMiddleware } from '../middleware/session';
 import crypto from 'crypto';
 
 import { JWT_SECRET } from '../lib/env';
-import { phoneNumber as vPhone, nationalId as vNationalId, dateOfBirth as vDob, clinicalDate as vClinicalDate, futureDate as vFutureDate, email as vEmail } from '../lib/validators';
+import { phoneNumber as vPhone, nationalId as vNationalId, dateOfBirth as vDob, email as vEmail, optionalEmail as vOptionalEmail } from '../lib/validators';
 const JWT_EXPIRES_IN = '24h';
 const DEFAULT_PASSWORD = 'test1234';
 
@@ -40,8 +40,15 @@ const registerPatientSchema = z.object({
   middleName: z.string().optional(), dateOfBirth: vDob,
   gender: z.enum(['male', 'female', 'other']),
   bloodType: z.enum(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'unknown']).optional(),
-  phoneNumber: vPhone, email: vEmail.optional(),
-  address: z.string().trim().min(1).max(300), nationalId: vNationalId, emergencyContact: vPhone,
+  phoneNumber: vPhone, email: vOptionalEmail,
+  address: z.string().trim().min(1).max(300), nationalId: vNationalId,
+  // FREE TEXT, not a phone number. The placeholder in the web form suggests a
+  // number, but the real data is composite — "Grace Musonda — +260977200001 —
+  // Wife" — and 7 of 15 existing records are in that form. Validating this as a
+  // phone number rejected most real emergency contacts, which is worse than
+  // accepting an untidy one: this is the field somebody is called from in a
+  // crisis. Bounded only.
+  emergencyContact: z.string().trim().min(3, 'Required').max(200),
   maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).optional(),
   occupation: z.string().optional(), password: z.string().optional(),
   institutionId: z.string().uuid().optional(),

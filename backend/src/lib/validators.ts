@@ -169,3 +169,27 @@ export const queryInt = (opts: { min?: number; max?: number; default?: number } 
   if (opts.max !== undefined) schema = schema.max(opts.max) as any;
   return opts.default !== undefined ? schema.default(opts.default) : schema;
 };
+
+/**
+ * Optional variants that treat an empty string as "not provided".
+ *
+ * HTML forms submit "" for a field the user left blank, not undefined. A plain
+ * `.optional()` rejects that, so an untouched optional field failed validation —
+ * which reads to the user as "this form is broken" on a field they deliberately
+ * skipped.
+ *
+ * These normalise "" (and whitespace) to undefined before validating, so a blank
+ * optional field is genuinely optional while a filled one is still checked.
+ */
+const blankToUndefined = (schema: z.ZodTypeAny) =>
+  z.preprocess(
+    (v) => (typeof v === 'string' && v.trim() === '' ? undefined : v),
+    schema.optional(),
+  );
+
+export const optionalEmail = blankToUndefined(email);
+export const optionalPhone = blankToUndefined(phoneNumber);
+export const optionalNationalId = blankToUndefined(nationalId);
+export const optionalIsoDate = blankToUndefined(isoDate);
+export const optionalClinicalDate = blankToUndefined(clinicalDate);
+export const optionalFutureDate = blankToUndefined(futureDate);

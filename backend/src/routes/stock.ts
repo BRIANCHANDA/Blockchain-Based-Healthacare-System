@@ -28,7 +28,7 @@ import { db } from '../db';
 import { medicationStock, stockMovements, practitioners } from '../db/schema';
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
-import { phoneNumber as vPhone, nationalId as vNationalId, dateOfBirth as vDob, clinicalDate as vClinicalDate, futureDate as vFutureDate, email as vEmail } from '../lib/validators';
+import { optionalIsoDate as vOptionalIsoDate, optionalFutureDate as vOptionalFutureDate } from '../lib/validators';
 
 const errorSchema = z.object({ success: z.boolean(), error: z.object({ message: z.string() }) });
 const successSchema = z.object({ success: z.boolean(), data: z.any() });
@@ -47,7 +47,22 @@ const stockBodySchema = z.object({
     quantity: z.number().int().min(0),
     reorderLevel: z.number().int().min(0).default(10),
     batchNumber: z.string().optional(),
-    expiryDate: vFutureDate.optional(),   // medication already expired cannot be stocked
+    // A real, plausible date — NOT necessarily a future one.
+    //
+    // This was briefly vFutureDate, which broke editing: the schema is shared by
+    // create and update, and 16 existing rows already hold a past expiry. A
+    // pharmacist must be able to open expired stock to correct a quantity or
+    // record its disposal — tracking expired medication is precisely what a
+    // pharmacy system is for, so it has to be representable.
+    //
+    // Rejecting an already-expired delivery still happens, but on restock below,
+    // where genuinely new stock is being received.
+    //
+    // clinicalDate was tried here too and was also wrong: it caps at one year
+    // ahead, which suits a diagnosis date but not a medication expiry — 77 of
+    // 124 rows expire further out than that. Any real date is accepted; the
+    // rule's job is to reject "banana", not to second-guess a shelf life.
+    expiryDate: vOptionalIsoDate,
     supplier: z.string().optional(),
 });
 
@@ -225,7 +240,7 @@ export const stockRouter = createRouter()
         security: [{ bearerAuth: [] }], middleware: [authMiddleware],
         request: {
             params: z.object({ id: z.string().uuid() }),
-            body: { content: { 'application/json': { schema: z.object({ quantity: z.number().int().positive(), batchNumber: z.string().optional(), expiryDate: vFutureDate.optional(), notes: z.string().optional() }) } } },
+            body: { content: { 'application/json': { schema: z.object({ quantity: z.number().int().positive(), batchNumber: z.string().optional(), expiryDate: vOptionalFutureDate, notes: z.string().optional() }) } } },
         },
         responses: {
             200: { content: { 'application/json': { schema: successSchema } }, description: 'Restocked' },

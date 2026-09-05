@@ -24,7 +24,7 @@ import {
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
 import crypto from 'crypto';
-import { phoneNumber as vPhone, nationalId as vNationalId, dateOfBirth as vDob, clinicalDate as vClinicalDate, futureDate as vFutureDate, email as vEmail } from '../lib/validators';
+import { optionalClinicalDate as vOptionalClinicalDate } from '../lib/validators';
 
 const ok  = z.object({ success: z.boolean(), data: z.any() });
 const err = z.object({ success: z.boolean(), error: z.object({ message: z.string() }) });
@@ -162,7 +162,7 @@ export const medicalRouter = createRouter()
       body: { content: { 'application/json': { schema: z.object({
         condition:     z.string().min(1),
         status:        z.string().min(1), // active | resolved | managed | monitoring
-        diagnosedDate: vClinicalDate.optional(),
+        diagnosedDate: vOptionalClinicalDate,
         notes:         z.string().optional(),
       })}}},
     },
@@ -278,7 +278,7 @@ export const medicalRouter = createRouter()
         category:      z.enum(['infectious_disease', 'mental_health', 'reproductive', 'genetic', 'substance_use', 'other']),
         condition:     z.string().min(1),
         status:        z.enum(['positive', 'negative', 'carrier', 'resolved', 'active', 'unknown']),
-        diagnosedDate: vClinicalDate.optional(),
+        diagnosedDate: vOptionalClinicalDate,
         notes:         z.string().optional(),
       })}}},
     },

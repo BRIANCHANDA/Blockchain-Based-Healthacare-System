@@ -34,7 +34,7 @@ import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
 import { encrypt, decrypt, generateRecordHash } from '../services/crypto';
 import { storeRecordHash } from '../services/fabric';
-import { phoneNumber as vPhone, nationalId as vNationalId, dateOfBirth as vDob, clinicalDate as vClinicalDate, futureDate as vFutureDate, email as vEmail } from '../lib/validators';
+import { phoneNumber as vPhone, email as vEmail, optionalPhone as vOptionalPhone, optionalEmail as vOptionalEmail } from '../lib/validators';
 
 // ── Zod Schemas ──────────────────────────────────────────
 
@@ -52,7 +52,7 @@ const institutionPublicSchema = z.object({
     institutionType: z.string(),
     address: z.string(),
     phone: vPhone,
-    email: vEmail.optional(),
+    email: vOptionalEmail,
     bedCapacity: z.number().optional(),
     specialties: z.array(z.string()).optional(),
     services: z.array(z.string()).optional(),
@@ -64,7 +64,7 @@ const createInstitutionSchema = z.object({
     institutionType: z.string().min(1),
     address: z.string().min(1),
     phone: vPhone,
-    email: vEmail.optional(),
+    email: vOptionalEmail,
     licenseNumber: z.string().min(1),
     accreditationStatus: z.string().optional(),
     accreditationExpiry: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
@@ -81,7 +81,7 @@ const createDepartmentSchema = z.object({
     departmentName: z.string().min(1),
     departmentType: z.string().optional(),
     location: z.string().optional(),
-    phone: vPhone.optional(),
+    phone: vOptionalPhone,
 });
 
 const updateDepartmentSchema = createDepartmentSchema.partial().extend({ isActive: z.boolean().optional() });
