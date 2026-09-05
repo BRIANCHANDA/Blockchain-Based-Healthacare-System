@@ -3,6 +3,7 @@ volumes:
   peer0.hospital.healthcare.com:
   peer0.practitioner.healthcare.com:
   peer0.patient.healthcare.com:
+  ca.patient.healthcare.com:
 
 networks:
   healthcare:
@@ -68,12 +69,14 @@ services:
       - CORE_PEER_CHAINCODEADDRESS=peer0.hospital.healthcare.com:7052
       - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:7052
       - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.hospital.healthcare.com:7051
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.hospital.healthcare.com:7051
       - CORE_PEER_LOCALMSPID=HospitalOrgMSP
       - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
       - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:9444
       - CORE_VM_ENDPOINT=unix:///var/run/docker.sock
       - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=healthcare-network
       - CORE_CHAINCODE_EXECUTETIMEOUT=600s
+      - CORE_CHAINCODE_INSTALLTIMEOUT=1800s
     volumes:
       - ./organizations/peerOrganizations/hospital.healthcare.com/peers/peer0.hospital.healthcare.com:/etc/hyperledger/fabric
       - peer0.hospital.healthcare.com:/var/hyperledger/production
@@ -104,12 +107,14 @@ services:
       - CORE_PEER_CHAINCODEADDRESS=peer0.practitioner.healthcare.com:9052
       - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:9052
       - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.practitioner.healthcare.com:9051
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.practitioner.healthcare.com:9051
       - CORE_PEER_LOCALMSPID=PractitionerOrgMSP
       - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
       - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:9446
       - CORE_VM_ENDPOINT=unix:///var/run/docker.sock
       - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=healthcare-network
       - CORE_CHAINCODE_EXECUTETIMEOUT=600s
+      - CORE_CHAINCODE_INSTALLTIMEOUT=1800s
     volumes:
       - ./organizations/peerOrganizations/practitioner.healthcare.com/peers/peer0.practitioner.healthcare.com:/etc/hyperledger/fabric
       - peer0.practitioner.healthcare.com:/var/hyperledger/production
@@ -140,12 +145,14 @@ services:
       - CORE_PEER_CHAINCODEADDRESS=peer0.patient.healthcare.com:11052
       - CORE_PEER_CHAINCODELISTENADDRESS=0.0.0.0:11052
       - CORE_PEER_GOSSIP_EXTERNALENDPOINT=peer0.patient.healthcare.com:11051
+      - CORE_PEER_GOSSIP_BOOTSTRAP=peer0.patient.healthcare.com:11051
       - CORE_PEER_LOCALMSPID=PatientOrgMSP
       - CORE_PEER_MSPCONFIGPATH=/etc/hyperledger/fabric/msp
       - CORE_OPERATIONS_LISTENADDRESS=0.0.0.0:9448
       - CORE_VM_ENDPOINT=unix:///var/run/docker.sock
       - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=healthcare-network
       - CORE_CHAINCODE_EXECUTETIMEOUT=600s
+      - CORE_CHAINCODE_INSTALLTIMEOUT=1800s
     volumes:
       - ./organizations/peerOrganizations/patient.healthcare.com/peers/peer0.patient.healthcare.com:/etc/hyperledger/fabric
       - peer0.patient.healthcare.com:/var/hyperledger/production
@@ -159,6 +166,28 @@ services:
     networks:
       healthcare:
         ipv4_address: 172.20.0.5
+
+  ca.patient.healthcare.com:
+    container_name: ca.patient.healthcare.com
+    image: hyperledger/fabric-ca:1.5
+    environment:
+      - FABRIC_CA_HOME=/etc/hyperledger/fabric-ca-server
+      - FABRIC_CA_SERVER_CA_NAME=ca.patient.healthcare.com
+      - FABRIC_CA_SERVER_TLS_ENABLED=true
+      - FABRIC_CA_SERVER_PORT=7054
+      - FABRIC_CA_SERVER_CA_CERTFILE=/etc/hyperledger/fabric-ca-server/ca.patient.healthcare.com-cert.pem
+      - FABRIC_CA_SERVER_CA_KEYFILE=/etc/hyperledger/fabric-ca-server/priv_sk
+      - FABRIC_CA_SERVER_OPERATIONS_LISTENADDRESS=0.0.0.0:17054
+    volumes:
+      - ./organizations/peerOrganizations/patient.healthcare.com/ca/:/etc/hyperledger/fabric-ca-server
+      - ca.patient.healthcare.com:/var/hyperledger/production/ca
+    command: sh -c 'fabric-ca-server start -b admin:adminpw -d'
+    ports:
+      - 7054:7054
+      - 17054:17054
+    networks:
+      healthcare:
+        ipv4_address: 172.20.0.7
 
   cli:
     container_name: cli

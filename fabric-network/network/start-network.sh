@@ -1,9 +1,15 @@
 #!/bin/bash
 set -e
 
-NETWORK_DIR="$HOME/Project/Final_year_project/fabric-network/network"
-FABRIC_BIN="$HOME/Project/Final_year_project/fabric-network/fabric-samples/bin"
-FABRIC_CFG_SAMPLES="$HOME/Project/Final_year_project/fabric-network/fabric-samples/config"
+# Paths are derived from this script's own location, not from a fixed path
+# under $HOME. They previously pointed at $HOME/Project/Final_year_project/...,
+# so the network only came up for one developer, in one directory, on one
+# machine — a clone anywhere else failed at the first cd.
+NETWORK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FABRIC_ROOT="$(cd "$NETWORK_DIR/.." && pwd)"
+CHAINCODE_DIR="$FABRIC_ROOT/chaincode"
+FABRIC_BIN="$FABRIC_ROOT/fabric-samples/bin"
+FABRIC_CFG_SAMPLES="$FABRIC_ROOT/fabric-samples/config"
 
 export PATH=$PATH:$FABRIC_BIN
 export FABRIC_CFG_PATH=$NETWORK_DIR
@@ -78,7 +84,7 @@ sleep 30
 # ── Build + Package chaincode ─────────────────────────────────────────────────
 
 echo "Building chaincode..."
-cd $HOME/Project/Final_year_project/fabric-network/chaincode
+cd "$CHAINCODE_DIR"
 # Install all deps (including dev) to get tsc
 npm install
 # Compile TypeScript
@@ -146,7 +152,7 @@ peer lifecycle chaincode approveformyorg \
   --package-id $PACKAGE_ID \
   --sequence 1 \
   --tls --cafile $ORDERER_CA \
-  --signature-policy "OR('HospitalOrgMSP.peer','PractitionerOrgMSP.peer','PatientOrgMSP.peer')"
+  --signature-policy "OutOf(2, 'HospitalOrgMSP.peer', 'PractitionerOrgMSP.peer', 'PatientOrgMSP.peer')"
 
 echo "Approving chaincode for PractitionerOrg..."
 export CORE_PEER_LOCALMSPID="PractitionerOrgMSP"
@@ -162,7 +168,7 @@ peer lifecycle chaincode approveformyorg \
   --package-id $PACKAGE_ID \
   --sequence 1 \
   --tls --cafile $ORDERER_CA \
-  --signature-policy "OR('HospitalOrgMSP.peer','PractitionerOrgMSP.peer','PatientOrgMSP.peer')"
+  --signature-policy "OutOf(2, 'HospitalOrgMSP.peer', 'PractitionerOrgMSP.peer', 'PatientOrgMSP.peer')"
 
 echo "Approving chaincode for PatientOrg..."
 export CORE_PEER_LOCALMSPID="PatientOrgMSP"
@@ -178,9 +184,13 @@ peer lifecycle chaincode approveformyorg \
   --package-id $PACKAGE_ID \
   --sequence 1 \
   --tls --cafile $ORDERER_CA \
-  --signature-policy "OR('HospitalOrgMSP.peer','PractitionerOrgMSP.peer','PatientOrgMSP.peer')"
+  --signature-policy "OutOf(2, 'HospitalOrgMSP.peer', 'PractitionerOrgMSP.peer', 'PatientOrgMSP.peer')"
 
-# ── Commit chaincode with OR policy ──────────────────────────────────────────
+# ── Commit chaincode with MAJORITY (2-of-3) policy ────────────────────────────
+# OutOf(2,...) requires any 2 of the 3 org peers to endorse each transaction.
+# The new Fabric Gateway API (used by the backend) sends proposals to the
+# connected peer which then collects cross-org endorsements automatically via
+# service discovery — no backend code changes needed.
 
 echo "Committing chaincode..."
 export CORE_PEER_LOCALMSPID="HospitalOrgMSP"
@@ -195,7 +205,7 @@ peer lifecycle chaincode commit \
   --version 1.0 \
   --sequence 1 \
   --tls --cafile $ORDERER_CA \
-  --signature-policy "OR('HospitalOrgMSP.peer','PractitionerOrgMSP.peer','PatientOrgMSP.peer')" \
+  --signature-policy "OutOf(2, 'HospitalOrgMSP.peer', 'PractitionerOrgMSP.peer', 'PatientOrgMSP.peer')" \
   --peerAddresses peer0.hospital.healthcare.com:7051 \
   --tlsRootCertFiles $NETWORK_DIR/organizations/peerOrganizations/hospital.healthcare.com/peers/peer0.hospital.healthcare.com/tls/ca.crt \
   --peerAddresses peer0.practitioner.healthcare.com:9051 \
@@ -219,7 +229,7 @@ peer chaincode invoke \
   -C healthcare -n healthcare \
   --peerAddresses peer0.hospital.healthcare.com:7051 \
   --tlsRootCertFiles $NETWORK_DIR/organizations/peerOrganizations/hospital.healthcare.com/peers/peer0.hospital.healthcare.com/tls/ca.crt \
-  -c '{"function":"RecordContract:storeRecordHash","Args":["warmup","warmup","warmup","warmup"]}' || true
+  -c '{"function":"RecordContract:storeRecordHash","Args":["warmup-init","warmup-patient","0000000000000000000000000000000000000000000000000000000000000000","warmup"]}' || true
 
 echo "Waiting for dev-peer containers to start..."
 sleep 10

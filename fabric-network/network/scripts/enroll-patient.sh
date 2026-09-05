@@ -13,8 +13,12 @@
 set -e
 
 PATIENT_ID="${1:?Usage: $0 <patientId>}"
-NETWORK_DIR="$HOME/Project/Final_year_project/fabric-network/network"
-FABRIC_BIN="$HOME/Project/Final_year_project/fabric-network/fabric-samples/bin"
+# Paths derived from this script's location rather than a fixed $HOME path, so
+# the script works from any clone on any machine.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NETWORK_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+FABRIC_ROOT="$(cd "$NETWORK_DIR/.." && pwd)"
+FABRIC_BIN="$FABRIC_ROOT/fabric-samples/bin"
 export PATH=$PATH:$FABRIC_BIN
 
 CA_URL="https://ca.patient.healthcare.com:7054"

@@ -5,10 +5,14 @@
 
 set -e
 
-NETWORK_DIR="$HOME/Project/Final_year_project/fabric-network/network"
-CHAINCODE_DIR="$HOME/Project/Final_year_project/fabric-network/chaincode"
-FABRIC_BIN="$HOME/Project/Final_year_project/fabric-network/fabric-samples/bin"
-FABRIC_CFG_SAMPLES="$HOME/Project/Final_year_project/fabric-network/fabric-samples/config"
+# Paths derived from this script's location rather than a fixed $HOME path, so
+# the script works from any clone on any machine.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+NETWORK_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+FABRIC_ROOT="$(cd "$NETWORK_DIR/.." && pwd)"
+CHAINCODE_DIR="$FABRIC_ROOT/chaincode"
+FABRIC_BIN="$FABRIC_ROOT/fabric-samples/bin"
+FABRIC_CFG_SAMPLES="$FABRIC_ROOT/fabric-samples/config"
 ORDERER_CA=$NETWORK_DIR/organizations/ordererOrganizations/healthcare.com/orderers/orderer.healthcare.com/tls/ca.crt
 
 export PATH=$FABRIC_BIN:$PATH

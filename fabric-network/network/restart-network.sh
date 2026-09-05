@@ -1,6 +1,6 @@
 #!/bin/bash
 set -e
-cd $HOME/Project/Final_year_project/fabric-network/network
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 docker compose up -d
 echo "Waiting for peers to start..."
 sleep 15
