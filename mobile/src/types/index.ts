@@ -146,9 +146,19 @@ export type Permission = {
     grantedAt: string;
     expiresAt: string;
     isActive: boolean;
-    // enriched on frontend
+    /**
+     * Who holds this permission, resolved by the backend.
+     *
+     * The comment here previously said "enriched on frontend", but nothing ever
+     * enriched it — the API sent only grantedToUserId and the screen fell back
+     * to rendering that UUID. GET /permissions/mine now joins to practitioners
+     * and institutions and decrypts the name, so granteeName is always present
+     * ("Unknown clinician" if the practitioner row has gone).
+     */
     granteeName?: string;
     granteeRole?: string;
+    granteeSpecialization?: string | null;
+    granteeInstitutionName?: string | null;
 };
 
 export type AccessRequest = {

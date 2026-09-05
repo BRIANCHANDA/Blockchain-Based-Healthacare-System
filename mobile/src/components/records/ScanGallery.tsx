@@ -30,6 +30,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { MaterialIcons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { BASE_URL } from "../../api/client";
 import { useAuthStore } from "../../store/authStore";
@@ -67,6 +68,9 @@ type Props = {
 
 export default function ScanGallery({ urls, category = "radiology", label }: Props) {
   const token = useAuthStore((s) => s.token);
+  // The viewer covers the whole screen, so its controls must clear the status
+  // bar and the navigation bar rather than assume fixed offsets.
+  const insets = useSafeAreaInsets();
   const [viewing, setViewing] = useState<number | null>(null);
   const [failed, setFailed] = useState<Record<number, boolean>>({});
   const [loading, setLoading] = useState<Record<number, boolean>>({});
@@ -142,7 +146,7 @@ export default function ScanGallery({ urls, category = "radiology", label }: Pro
       >
         <View style={styles.viewer}>
           <TouchableOpacity
-            style={styles.closeBtn}
+            style={[styles.closeBtn, { top: insets.top + 12 }]}
             onPress={() => setViewing(null)}
             accessibilityRole="button"
             accessibilityLabel="Close image"
@@ -167,7 +171,7 @@ export default function ScanGallery({ urls, category = "radiology", label }: Pro
           )}
 
           {urls.length > 1 && viewing !== null && (
-            <View style={styles.pager}>
+            <View style={[styles.pager, { bottom: Math.max(insets.bottom, 16) + 16 }]}>
               <TouchableOpacity
                 disabled={viewing === 0}
                 onPress={() => setViewing(Math.max(0, viewing - 1))}
@@ -229,7 +233,7 @@ const styles = StyleSheet.create({
   fullImage: { width: SCREEN_W, height: SCREEN_H * 0.75 },
   closeBtn: {
     position: "absolute",
-    top: 48,
+    // `top` is applied inline from the safe-area inset.
     right: 18,
     zIndex: 10,
     padding: 8,
@@ -238,7 +242,8 @@ const styles = StyleSheet.create({
   },
   pager: {
     position: "absolute",
-    bottom: 44,
+    // `bottom` is applied inline from the safe-area inset, so the pager does
+    // not sit under the navigation bar.
     left: 0,
     right: 0,
     flexDirection: "row",

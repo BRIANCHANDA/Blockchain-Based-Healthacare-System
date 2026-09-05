@@ -158,12 +158,23 @@ export default function WhoHasAccessScreen({ navigation }: Props) {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.name, exp && styles.nameExpired]}>
-                    {item.granteeName ?? item.grantedToUserId}
+                    {/* Never fall back to grantedToUserId: it is a UUID, and showing it
+                        asked the patient whether to revoke "974f76bc-8452-...", which is
+                        not a decision anyone can make. The backend now always sends a
+                        name, or the words "Unknown clinician". */}
+                    {item.granteeName || "Unknown clinician"}
                   </Text>
                   <Text style={styles.role}>
-                    {item.granteeRole?.replace("_", " ").toUpperCase() ??
-                      "CLINICIAN"}
+                    {[item.granteeRole?.replace(/_/g, " "), item.granteeSpecialization]
+                      .filter(Boolean).join(" · ").toUpperCase() || "CLINICIAN"}
                   </Text>
+                  {item.granteeInstitutionName ? (
+                    // Which hospital they work for is part of the decision: the same
+                    // name at a different institution is a different question.
+                    <Text style={styles.institution} numberOfLines={1}>
+                      {item.granteeInstitutionName}
+                    </Text>
+                  ) : null}
                 </View>
                 <View
                   style={[
@@ -233,6 +244,7 @@ export default function WhoHasAccessScreen({ navigation }: Props) {
 
 // ── Styles ────────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  institution: { fontSize: 11, color: C.inkMuted, marginTop: 1 },
   root: { flex: 1, backgroundColor: C.bg },
 
   headerBar: {

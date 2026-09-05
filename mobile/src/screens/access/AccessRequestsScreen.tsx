@@ -425,7 +425,14 @@ export default function AccessRequestsScreen({ navigation }: Props) {
             accessibilityLabel="Cancel"
           />
 
-          <View style={styles.sheet}>
+          <View
+            style={[
+              styles.sheet,
+              // Clear the gesture bar or navigation buttons. The minimum keeps
+              // a sensible gap on devices that report no inset at all.
+              { paddingBottom: Math.max(insets.bottom, 16) + 12 },
+            ]}
+          >
             <View style={styles.sheetGrip} />
 
             <Text style={styles.sheetTitle}>Grant access</Text>
@@ -507,7 +514,9 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 22,
     paddingHorizontal: 20,
     paddingTop: 10,
-    paddingBottom: Platform.OS === "ios" ? 34 : 22,
+    // Bottom padding is applied inline from the safe-area inset, not here — a
+    // fixed value sat underneath Android's navigation bar, so the Allow button
+    // collided with the system back/home controls.
   },
   sheetGrip: {
     width: 38, height: 4, borderRadius: 2,

@@ -287,6 +287,11 @@ export const permissionRouter = createRouter()
 
       const [blockchainPerms, dbPerms] = await Promise.all([
         getPatientPermissions(blockchainAddress),
+        // Joined to practitioners so the patient sees WHO holds access. Without
+        // this the response carried only grantedToUserId and the app rendered a
+        // raw UUID — nobody can decide whether to revoke "974f76bc-8452-...".
+        // Names are stored encrypted, so they are decrypted below. LEFT joins,
+        // so a permission still lists if the practitioner was since removed.
         db.select({
           id: accessPermissions.id,
           grantedToUserId: accessPermissions.grantedToUserId,
@@ -295,15 +300,38 @@ export const permissionRouter = createRouter()
           grantedAt: accessPermissions.grantedAt,
           expiresAt: accessPermissions.expiresAt,
           isActive: accessPermissions.isActive,
+          firstNameEncrypted: practitioners.firstNameEncrypted,
+          lastNameEncrypted: practitioners.lastNameEncrypted,
+          granteeRole: practitioners.role,
+          granteeSpecialization: practitioners.specialization,
+          granteeInstitutionName: institutions.institutionName,
         })
           .from(accessPermissions)
+          .leftJoin(practitioners, eq(accessPermissions.grantedToUserId, practitioners.id))
+          .leftJoin(institutions, eq(practitioners.institutionId, institutions.id))
           .where(and(
             eq(accessPermissions.patientId, userId),
             eq(accessPermissions.isActive, true),
           )),
       ]);
 
-      return c.json({ success: true, data: { permissions: dbPerms, blockchainPermissions: blockchainPerms } });
+      // Decrypt per row. One unreadable name must not fail the whole list — the
+      // patient still needs to see, and revoke, everyone else.
+      const permissions = dbPerms.map((p) => {
+        let granteeName: string | null = null;
+        try {
+          if (p.firstNameEncrypted && p.lastNameEncrypted) {
+            granteeName = `${decrypt(p.firstNameEncrypted)} ${decrypt(p.lastNameEncrypted)}`.trim();
+          }
+        } catch {
+          granteeName = null;
+        }
+        const { firstNameEncrypted, lastNameEncrypted, ...rest } = p;
+        // Never fall back to the id — rendering that is the bug this fixes.
+        return { ...rest, granteeName: granteeName || "Unknown clinician" };
+      });
+
+      return c.json({ success: true, data: { permissions, blockchainPermissions: blockchainPerms } });
 
     } catch (err: any) {
       return handleError(err, c);
