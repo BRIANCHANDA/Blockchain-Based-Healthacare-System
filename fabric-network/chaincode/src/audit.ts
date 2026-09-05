@@ -1,3 +1,24 @@
+/**
+ * AuditContract — the tamper-evident access log.
+ *
+ * Every read of a patient's records is written here, on-chain, so the log cannot
+ * be edited or pruned by the institution that produced it. That is the whole
+ * point: an audit trail a hospital can rewrite is not evidence, and this is what
+ * lets a patient see who actually opened their record rather than who a hospital
+ * says did.
+ *
+ * Entries are append-only by construction — there is no update or delete
+ * operation on this contract, only writes and queries.
+ *
+ * Reads are themselves access-controlled: a patient may read their own log and
+ * nobody else's, while hospital and practitioner identities may query more
+ * broadly for their own compliance purposes.
+ *
+ * Composite keys index entries by patient, so a patient's log is retrieved by
+ * an indexed lookup rather than a scan of the whole namespace, and
+ * getAuditLogByDateRange narrows that to a time window.
+ */
+
 // fabric/chaincode/src/audit.ts
 //
 // Improvements over the original:

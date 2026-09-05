@@ -24,7 +24,6 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { apiReference } from '@scalar/hono-api-reference';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import { serveStatic } from 'hono/bun';
 
 import { apiLimiter } from './middleware/rateLimit';
 import { globalErrorHandler } from './lib/errors';
@@ -50,6 +49,7 @@ import { stockRouter } from "./routes/stock";
 import { wardRouter } from "./routes/wards";
 import { notificationsRouter } from './routes/notifications';
 import { adminBlockchainRouter } from './routes/blockchain';
+import { filesRouter } from './routes/files';
 import { aiRouter } from './routes/ai/ai';
 import { labRouter } from './routes/lab';
 import { medicalRouter } from './routes/medical';
@@ -104,8 +104,20 @@ app.use('*', logger());
 // ── Global rate limit (DDoS backstop — 200 req/min per IP) ───────────────────
 app.use('/api/*', apiLimiter);
 
-// ── Static files (radiology uploads) ─────────────────────────────────────────
-app.use('/uploads/*', serveStatic({ root: './' }));
+/*
+ * UPLOADED CLINICAL FILES ARE NOT SERVED STATICALLY.
+ *
+ * This used to be `app.use('/uploads/*', serveStatic({ root: './' }))`, which
+ * handed any caller a patient's radiology images with no token and no consent
+ * check — an anonymous GET returned a real X-ray. Filenames are obscure, but the
+ * URLs travel inside API responses, so one leaked URL meant permanent access
+ * that outlived both consent expiry and revocation.
+ *
+ * Files now go through /api/files, which resolves each one back to the patient
+ * it belongs to, applies the same access rule as the rest of the system, and
+ * writes the view to the audit trail. See routes/files.ts.
+ */
+app.route('/api/files', filesRouter);
 
 // ── Global error handler ──────────────────────────────────────────────────────
 app.onError(globalErrorHandler);

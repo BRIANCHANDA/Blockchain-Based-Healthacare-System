@@ -1058,6 +1058,92 @@ export const visitRouter = createRouter()
     }
   })
 
+    // ── LAB RESULT ATTACHMENTS ────────────────────────────────────────────────
+    // POST /:visitId/lab-results/:orderId/attachments   (multipart)
+    //
+    // Laboratory results previously accepted attachmentUrls as an array of
+    // strings supplied by the client — there was no way to actually upload a
+    // file, so a technician could reference a document but never store one.
+    // This mirrors the radiology upload: the file is written to disk, its bytes
+    // are hashed and anchored on the ledger, and the URL points at the
+    // authenticated /api/files route rather than a public directory.
+    .post('/:visitId/lab-results/:orderId/attachments', authMiddleware, async (c) => {
+      try {
+        const userId = c.get('userId');
+        const visitId = c.req.param('visitId');
+        const orderId = c.req.param('orderId');
+
+        const [order] = await db.select({ id: labTestOrders.id })
+          .from(labTestOrders).where(eq(labTestOrders.id, orderId)).limit(1);
+        if (!order) return c.json({ success: false, error: { message: 'Lab order not found' } }, 404);
+
+        const [visitRow] = await db.select({ institutionId: visits.institutionId, patientId: visits.patientId })
+          .from(visits).where(eq(visits.id, visitId)).limit(1);
+        if (!visitRow) return c.json({ success: false, error: { message: 'Visit not found' } }, 404);
+
+        const [patient] = await db.select({ blockchainAddress: patients.blockchainAddress })
+          .from(patients).where(eq(patients.id, visitRow.patientId)).limit(1);
+        if (!patient) return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
+
+        // Same institutional boundary as every other clinical write.
+        const canAct = await canActOnVisit(userId, visitRow.institutionId);
+        if (!canAct) {
+          return c.json({ success: false, error: { message: 'You can only perform clinical actions on visits created by your institution.' } }, 403);
+        }
+
+        const [existing] = await db.select().from(labTestResults)
+          .where(eq(labTestResults.labTestOrderId, orderId)).limit(1);
+        if (!existing) {
+          return c.json({ success: false, error: { message: 'Submit the result before attaching documents' } }, 400);
+        }
+
+        const body = await c.req.parseBody();
+        const raw = body['files'];
+        const fileArray: File[] = raw && typeof raw !== 'string'
+          ? (Array.isArray(raw) ? raw : [raw])
+          : [];
+        if (!fileArray.length) {
+          return c.json({ success: false, error: { message: 'No files supplied' } }, 400);
+        }
+
+        // Only types the file route is willing to serve back. Accepting anything
+        // else would store a document nobody could ever open.
+        const ALLOWED = ['.jpg', '.jpeg', '.png', '.webp', '.pdf'];
+        const uploadDir = path.join(process.cwd(), 'uploads', 'lab');
+        await mkdir(uploadDir, { recursive: true });
+
+        const newUrls: string[] = [];
+        for (const file of fileArray) {
+          const ext = path.extname(file.name || '').toLowerCase();
+          if (!ALLOWED.includes(ext)) {
+            return c.json({ success: false, error: { message: `Unsupported file type: ${ext || 'unknown'}` } }, 415);
+          }
+          const filename = `${Date.now()}-${crypto.randomBytes(8).toString('hex')}${ext}`;
+          const buffer = Buffer.from(await file.arrayBuffer());
+          await writeFile(path.join(uploadDir, filename), buffer);
+
+          // Anchor the file's own bytes, so a swapped document is detectable
+          // independently of the result record that references it.
+          const hash = createHash('sha256').update(buffer).digest('hex');
+          storeRecordHash(`${orderId}:attachment:${hash.slice(0, 8)}`, patient.blockchainAddress, hash, 'lab_attachment')
+            .catch(() => { /* anchoring is retried; never lose the upload over it */ });
+
+          newUrls.push(`${(process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '')}/api/files/lab/${filename}`);
+        }
+
+        const merged = [...((existing.attachmentUrls as string[]) || []), ...newUrls];
+        await db.update(labTestResults)
+          .set({ attachmentUrls: merged })
+          .where(eq(labTestResults.id, existing.id));
+
+        return c.json({ success: true, data: { attachmentUrls: merged, added: newUrls.length } }, 201);
+      } catch (err: any) {
+        console.error('[LAB_ATTACHMENT]', err);
+        return handleError(err, c);
+      }
+    })
+
+
   // ── LAB ORDERS WITH RESULTS ───────────────────────────────────────────────
   .openapi(createRoute({
     tags: ['Visits'], summary: 'Get lab orders with full results (Doctor polling)',
@@ -1432,7 +1518,11 @@ export const visitRouter = createRouter()
           await writeFile(path.join(uploadDir, filename), buffer);
           const hash = createHash('sha256').update(buffer).digest('hex');
           await storeRecordHash(`${orderId}:image:${hash.slice(0, 8)}`, patient[0].blockchainAddress, hash, 'imaging_image');
-          imageUrls.push(`${(process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '')}/uploads/radiology/${filename}`);
+            // Points at the authenticated route, not the old public /uploads
+            // path. Rows written before this change still resolve: clients take
+            // the basename and request /api/files/radiology/<name>, so both URL
+            // shapes work without a data migration.
+          imageUrls.push(`${(process.env.BASE_URL || 'http://localhost:3000').replace(/\/$/, '')}/api/files/radiology/${filename}`);
         }
       }
 
@@ -1503,7 +1593,7 @@ export const visitRouter = createRouter()
         const buffer = Buffer.from(await file.arrayBuffer());
         await writeFile(path.join(uploadDir, filename), buffer);
         hashes.push(createHash('sha256').update(buffer).digest('hex'));
-        imageUrls.push(`${process.env.BASE_URL || 'http://localhost:3000'}/uploads/radiology/${filename}`);
+        imageUrls.push(`${process.env.BASE_URL || 'http://localhost:3000'}/api/files/radiology/${filename}`);
       }
 
       const existing = await db.select().from(imagingReports).where(eq(imagingReports.imagingOrderId, orderId)).limit(1);

@@ -1,3 +1,34 @@
+/**
+ * AccessControlContract — patient consent, enforced on the ledger.
+ *
+ * This contract is the mechanism behind the project's central claim: a patient,
+ * and only a patient, decides who may read their records, and that decision is
+ * recorded where no single hospital can quietly alter it.
+ *
+ * Four properties it guarantees, each covered by tests/accessControl.test.ts:
+ *
+ *   PATIENT-ONLY   Only a PatientOrgMSP identity acting for itself may grant or
+ *                  revoke. A hospital cannot grant itself access, which is what
+ *                  makes this different from a permissions table the hospital
+ *                  owns.
+ *   TIME-BOUND     A grant carries an expiry derived from durationHours. Access
+ *                  ends by lapsing, with no revoke required and no cleanup job.
+ *   REVOCABLE      Revocation takes effect on the next check, and marks the
+ *                  permission inactive rather than deleting it, so the history
+ *                  of who could read what, and when, survives.
+ *   DEFAULT DENY   A pairing with no permission returns false. Absence of a
+ *                  grant is never treated as permission.
+ *
+ * Time comes from txTimeMillis(), never Date.now(). Under the OutOf(2,...)
+ * endorsement policy the same transaction runs on several peers, and a
+ * wall-clock read would give each a different expiry, so their read-write sets
+ * would not match and the transaction would fail validation. See txtime.ts.
+ *
+ * State is written twice on purpose: a current-state pointer (PERM_<p>_<d>) for
+ * fast checks, plus an append-only composite key per event so the full sequence
+ * of grants and revocations is provable from ledger history.
+ */
+
 // fabric/chaincode/src/accessControl.ts
 //
 // Improvements over the original:

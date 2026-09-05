@@ -16,6 +16,7 @@ import { getVisitDetail } from "../../api/records";
 import { useAuthStore } from "../../store/authStore";
 import { RecordsStackParamList } from "../../types";
 import LoadingSpinner from "../../components/common/LoadingSpinner";
+import ScanGallery from "../../components/records/ScanGallery";
 
 type Props = NativeStackScreenProps<RecordsStackParamList, "RecordDetail">;
 
@@ -87,6 +88,21 @@ interface ImagingOrder {
   bodyPart?: string;
   indication?: string;
   status?: string;
+  /**
+   * The radiologist's report, including the images they uploaded.
+   *
+   * GET /visits/:id/summary has always returned this; the interface simply
+   * did not declare it, so the findings and the scans were fetched and then
+   * discarded — the patient saw that an X-ray had been ordered, but never
+   * the result and never the picture.
+   */
+  report?: {
+    findings?: string;
+    impression?: string;
+    recommendations?: string;
+    imageUrls?: string[];
+    reportedAt?: string;
+  } | null;
 }
 interface Prescription {
   id: string;
@@ -532,12 +548,35 @@ export default function RecordDetailScreen({ route, navigation }: Props) {
             count={imagingOrders.length}
           >
             {imagingOrders.map((o) => (
-              <ListItem
-                key={o.id}
-                title={`${o.modality?.toUpperCase()} — ${o.bodyPart}`}
-                subtitle={o.indication}
-                status={o.status}
-              />
+              <View key={o.id}>
+                <ListItem
+                  title={`${o.modality?.toUpperCase()} — ${o.bodyPart}`}
+                  subtitle={o.indication}
+                  status={o.status}
+                />
+
+                {o.report?.impression ? (
+                  <View style={styles.reportBox}>
+                    <Text style={styles.reportLabel}>Impression</Text>
+                    <Text style={styles.reportText}>{o.report.impression}</Text>
+                  </View>
+                ) : null}
+
+                {o.report?.findings ? (
+                  <View style={styles.reportBox}>
+                    <Text style={styles.reportLabel}>Findings</Text>
+                    <Text style={styles.reportText}>{o.report.findings}</Text>
+                  </View>
+                ) : null}
+
+                {o.report?.imageUrls?.length ? (
+                  <ScanGallery
+                    urls={o.report.imageUrls}
+                    category="radiology"
+                    label={o.modality?.toUpperCase()}
+                  />
+                ) : null}
+              </View>
             ))}
           </Section>
         )}
@@ -596,6 +635,21 @@ export default function RecordDetailScreen({ route, navigation }: Props) {
 
 // ── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
+  reportBox: {
+    marginTop: 8,
+    paddingLeft: 10,
+    borderLeftWidth: 2,
+    borderLeftColor: C.primaryGhost,
+  },
+  reportLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    color: C.inkMuted,
+    textTransform: "uppercase",
+    marginBottom: 2,
+  },
+  reportText: { fontSize: 13, lineHeight: 19, color: C.inkSoft },
   root: { flex: 1, backgroundColor: C.bg },
   content: { paddingBottom: 24 },
 

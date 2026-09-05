@@ -1,3 +1,31 @@
+/**
+ * RecordContract — integrity anchoring for off-chain clinical records.
+ *
+ * The ledger never holds clinical data. Records live encrypted in PostgreSQL;
+ * what is committed here is only a SHA-256 digest of each one, plus who wrote it
+ * and when.
+ *
+ * That split is what makes the design work in both directions:
+ *   · Tampering is detectable — recomputing the hash of a stored row and
+ *     comparing it with verifyRecordHash() reveals any change made to the
+ *     database after the record was anchored.
+ *   · Erasure remains possible — a hash is irreversible and contains no patient
+ *     data, so deleting the off-chain row genuinely destroys the record even
+ *     though the anchor is immutable. This is the argument for compatibility
+ *     with data-protection erasure rights, and it depends on nothing but hashes
+ *     ever reaching the chain.
+ *
+ * Records are VERSIONED rather than write-once: re-anchoring the same recordId
+ * appends a new version under a composite key and moves the "latest" pointer, so
+ * an amended record does not overwrite the proof of what it said before.
+ * getRecordHistory() replays every version from the ledger's key history.
+ *
+ * The digest must be produced by generateRecordHash() in the backend, whose
+ * canonical JSON form sorts keys at every depth — an identical record hashed
+ * with plain JSON.stringify may not match, because key order would differ
+ * between the write path and the verify path.
+ */
+
 // fabric/chaincode/src/record.ts
 //
 // Improvements over the original:

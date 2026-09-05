@@ -1,18 +1,23 @@
 /**
- * The patient's own health summary — one endpoint that assembles everything.
+ * A staff member's own performance report.
  *
- * A single GET gathers visits, diagnoses, prescriptions, lab and imaging results
- * and vitals trends into the document the patient reads in the app and exports
- * as a PDF. It is one round trip on purpose: the app is used on Zambian mobile
- * data, where ten sequential requests is a visibly slower experience than one
- * larger response.
+ * NOT a patient health summary — an earlier version of this comment said it was,
+ * which was simply wrong. Every query here is scoped to the authenticated
+ * PRACTITIONER (orderedByPractitionerId, assignedTo, performedByRadiologistId),
+ * and the response is shaped by their role: a practitioner sees consultations
+ * and diagnoses, a lab technician sees tests processed, a radiologist studies
+ * reported, a pharmacist prescriptions dispensed.
  *
- * The consent model does not apply here in the usual direction. A patient is
- * always entitled to their own record, so this route authorises on identity —
- * the caller must BE the patient (or their registered guardian, via the
- * X-Acting-As-Patient header) — rather than checking the ledger for a grant.
- * The permission machinery exists to control who else may read; it never stands
- * between patients and their own data.
+ * It answers "what did I do over this period", which is why it is a single
+ * endpoint returning counts and aggregates rather than clinical detail.
+ *
+ * Patient-facing history lives elsewhere: GET /visits/:id/summary for one
+ * encounter, and the records routes for the longitudinal view.
+ *
+ * No consent check applies, because nothing here is another patient's data —
+ * the caller only ever sees aggregates of their own activity. Adding an
+ * identifiable patient to this response would change that, and would need the
+ * consent machinery the rest of the system uses.
  */
 
 import { handleError } from '../lib/errors';
