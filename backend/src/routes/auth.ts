@@ -27,6 +27,7 @@ import { sessionMiddleware } from '../middleware/session';
 import crypto from 'crypto';
 
 import { JWT_SECRET } from '../lib/env';
+import { phoneNumber as vPhone, nationalId as vNationalId, dateOfBirth as vDob, clinicalDate as vClinicalDate, futureDate as vFutureDate, email as vEmail } from '../lib/validators';
 const JWT_EXPIRES_IN = '24h';
 const DEFAULT_PASSWORD = 'test1234';
 
@@ -36,11 +37,11 @@ const successSchema = z.object({ success: z.boolean(), data: z.any() });
 
 const registerPatientSchema = z.object({
   firstName: z.string().min(2), lastName: z.string().min(2),
-  middleName: z.string().optional(), dateOfBirth: z.string(),
+  middleName: z.string().optional(), dateOfBirth: vDob,
   gender: z.enum(['male', 'female', 'other']),
   bloodType: z.enum(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'unknown']).optional(),
-  phoneNumber: z.string(), email: z.string().email().optional(),
-  address: z.string(), nationalId: z.string(), emergencyContact: z.string(),
+  phoneNumber: vPhone, email: vEmail.optional(),
+  address: z.string().trim().min(1).max(300), nationalId: vNationalId, emergencyContact: vPhone,
   maritalStatus: z.enum(['single', 'married', 'divorced', 'widowed']).optional(),
   occupation: z.string().optional(), password: z.string().optional(),
   institutionId: z.string().uuid().optional(),
@@ -163,7 +164,7 @@ export const authRouter = createRouter()
               // Only honoured for super admins. A hospital admin's staff are always
               // created at the admin's own institution, whatever is sent here.
               institutionId: z.string().uuid().optional(), specialization: z.string().optional(),
-              department: z.string().optional(), phoneNumber: z.string().min(10),
+              department: z.string().optional(), phoneNumber: vPhone,
               email: z.string().email(), credentials: z.string().optional(),
               qualifications: z.string().optional(), password: z.string().min(8).optional(),
             }),

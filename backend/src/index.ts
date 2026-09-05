@@ -24,6 +24,7 @@ import { OpenAPIHono } from '@hono/zod-openapi';
 import { apiReference } from '@scalar/hono-api-reference';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import { bodyLimit } from 'hono/body-limit';
 
 import { apiLimiter } from './middleware/rateLimit';
 import { globalErrorHandler } from './lib/errors';
@@ -102,6 +103,33 @@ app.use('*', cors({
 app.use('*', logger());
 
 // ── Global rate limit (DDoS backstop — 200 req/min per IP) ───────────────────
+/*
+ * REQUEST SIZE LIMIT.
+ *
+ * A survey found roughly 120 request fields declared as z.string() or z.array()
+ * with no maximum length. Individually each is minor; together they mean a
+ * caller can post an arbitrarily large body to almost any endpoint, and some of
+ * that text is encrypted, stored, and hashed into a ledger anchor.
+ *
+ * Adding .max() to 120 schemas would be laborious, easy to get wrong, and would
+ * still miss the next field somebody adds. One limit at the edge caps the whole
+ * class, and the per-field bounds that genuinely matter — the consent reason,
+ * which a patient reads and which is anchored — are set explicitly as well.
+ *
+ * File uploads are excluded: a radiology image legitimately exceeds this.
+ */
+app.use('/api/*', async (c, next) => {
+  const path = c.req.path;
+  // Multipart clinical uploads have their own, larger ceiling.
+  const isUpload = path.includes('/images') || path.includes('/attachments');
+  const limit = isUpload ? 25 * 1024 * 1024 : 256 * 1024;
+  return bodyLimit({
+    maxSize: limit,
+    onError: (c) =>
+      c.json({ success: false, error: { message: 'Request body is too large.' } }, 413),
+  })(c, next);
+});
+
 app.use('/api/*', apiLimiter);
 
 /*

@@ -262,3 +262,70 @@ describe.skipIf(!dbUp)("consent gates access", () => {
     expect(row.approvedAt ?? null).toBeNull();
   });
 });
+
+// ── input validation ─────────────────────────────────────────────────────────
+
+describe.skipIf(!dbUp)("malformed input is rejected at the boundary", () => {
+  test("a non-numeric duration is refused", async () => {
+    // The field a tester reaches for first: text where a number belongs.
+    await clearRequests(world.patient.id);
+    const created = await requestAccess(world.patient.id, doctorToken);
+    const id = created.body.data.requestId;
+
+    for (const bad of ["abc", "", null, {}, [], "24; DROP TABLE", "1e999"]) {
+      const res = await api.post(`/api/permissions/requests/${id}/approve`,
+        { durationHours: bad as any }, doctorToken);
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      expect(res.status).toBeLessThan(500);   // a bad value is the CALLER's error
+    }
+  });
+
+  test("an out-of-range duration is refused", async () => {
+    await clearRequests(world.patient.id);
+    const created = await requestAccess(world.patient.id, doctorToken);
+    const id = created.body.data.requestId;
+
+    for (const bad of [0, -1, -9999, 721, 100000, 1.5]) {
+      const res = await api.post(`/api/permissions/requests/${id}/approve`,
+        { durationHours: bad }, doctorToken);
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      expect(res.status).toBeLessThan(500);
+    }
+  });
+
+  test("a non-uuid id is refused rather than reaching the database", async () => {
+    for (const bad of ["not-a-uuid", "../../etc/passwd", "1 OR 1=1", "%00"]) {
+      const res = await api.post(`/api/permissions/requests/${encodeURIComponent(bad)}/approve`,
+        { durationHours: 24 }, doctorToken);
+      expect(res.status).toBeLessThan(500);
+    }
+  });
+
+  test("an oversized reason is refused, not stored", async () => {
+    // Unbounded text is how a single field becomes a denial-of-service, and it
+    // would also be hashed into the ledger anchor.
+    await clearRequests(world.patient.id);
+    const res = await requestAccess(world.patient.id, doctorToken, {
+      reason: "x".repeat(100_000),
+    });
+    // Assert it is REFUSED, not merely that it did not crash. An earlier
+    // version of this test only checked for < 500, which the 201 it actually
+    // returned satisfied — the field had a minimum length but no maximum.
+    expect(res.status).toBeGreaterThanOrEqual(400);
+    expect(res.status).toBeLessThan(500);
+  });
+
+  test("wrong JSON types are refused", async () => {
+    await clearRequests(world.patient.id);
+    for (const body of [
+      { patientId: 12345, reason: "x", requestedPermissions: ["read"] },
+      { patientId: world.patient.id, reason: 999, requestedPermissions: ["read"] },
+      { patientId: world.patient.id, reason: "x", requestedPermissions: "read" },
+      { patientId: world.patient.id, reason: "x", requestedPermissions: [123] },
+    ]) {
+      const res = await api.post("/api/permissions/request", body, doctorToken);
+      expect(res.status).toBeGreaterThanOrEqual(400);
+      expect(res.status).toBeLessThan(500);
+    }
+  });
+});

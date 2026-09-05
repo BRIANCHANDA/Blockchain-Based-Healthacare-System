@@ -28,8 +28,23 @@ const revokeSchema = z.object({
 const requestAccessSchema = z.object({
   patientId: z.string().uuid(),
   visitId: z.string().uuid().optional(),
-  reason: z.string().min(10),
-  requestedPermissions: z.array(z.string()),
+  // Bounded at both ends. The minimum is what the patient reads when deciding;
+  // the maximum matters because this text is stored, shown on a phone, and
+  // hashed into the ledger anchor — an unbounded field is a denial-of-service
+  // and an unbounded digest input.
+  reason: z.string().trim().min(10, 'Give a reason of at least 10 characters')
+    .max(1000, 'Reason must be under 1000 characters'),
+  // Record-type scopes such as "records:read" or "imaging_report". Not an enum,
+  // because the vocabulary is open and spread across several clients — but the
+  // shape and the count are constrained so arbitrary or enormous input cannot
+  // reach the ledger.
+  requestedPermissions: z
+    .array(
+      z.string().trim().min(1).max(60)
+        .regex(/^[a-z][a-z0-9_:.-]*$/, 'Invalid permission scope'),
+    )
+    .min(1, 'At least one permission is required')
+    .max(20, 'Too many permissions requested'),
 });
 
 export const permissionRouter = createRouter()

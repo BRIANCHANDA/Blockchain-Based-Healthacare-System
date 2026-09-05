@@ -100,3 +100,26 @@ describe.skipIf(!dbUp)("file types", () => {
     }
   });
 });
+
+// ── request size ─────────────────────────────────────────────────────────────
+
+describe.skipIf(!dbUp)("request size limit", () => {
+  test("an oversized JSON body is refused with 413, not processed", async () => {
+    // Roughly 120 request fields have no maximum length. One limit at the edge
+    // caps the whole class rather than relying on 120 individual bounds.
+    const huge = "x".repeat(600 * 1024);
+    const res = await api.post("/api/auth/login/staff", {
+      licenseNumber: huge,
+      password: "x",
+    });
+    expect(res.status).toBe(413);
+  });
+
+  test("an ordinary body still passes", async () => {
+    const res = await api.post("/api/auth/login/staff", {
+      licenseNumber: "DOC-does-not-exist",
+      password: "whatever",
+    });
+    expect(res.status).not.toBe(413);
+  });
+});

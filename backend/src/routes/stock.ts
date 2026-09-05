@@ -28,6 +28,7 @@ import { db } from '../db';
 import { medicationStock, stockMovements, practitioners } from '../db/schema';
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
+import { phoneNumber as vPhone, nationalId as vNationalId, dateOfBirth as vDob, clinicalDate as vClinicalDate, futureDate as vFutureDate, email as vEmail } from '../lib/validators';
 
 const errorSchema = z.object({ success: z.boolean(), error: z.object({ message: z.string() }) });
 const successSchema = z.object({ success: z.boolean(), data: z.any() });
@@ -46,7 +47,7 @@ const stockBodySchema = z.object({
     quantity: z.number().int().min(0),
     reorderLevel: z.number().int().min(0).default(10),
     batchNumber: z.string().optional(),
-    expiryDate: z.string().optional(),   // ISO date
+    expiryDate: vFutureDate.optional(),   // medication already expired cannot be stocked
     supplier: z.string().optional(),
 });
 
@@ -224,7 +225,7 @@ export const stockRouter = createRouter()
         security: [{ bearerAuth: [] }], middleware: [authMiddleware],
         request: {
             params: z.object({ id: z.string().uuid() }),
-            body: { content: { 'application/json': { schema: z.object({ quantity: z.number().int().positive(), batchNumber: z.string().optional(), expiryDate: z.string().optional(), notes: z.string().optional() }) } } },
+            body: { content: { 'application/json': { schema: z.object({ quantity: z.number().int().positive(), batchNumber: z.string().optional(), expiryDate: vFutureDate.optional(), notes: z.string().optional() }) } } },
         },
         responses: {
             200: { content: { 'application/json': { schema: successSchema } }, description: 'Restocked' },
