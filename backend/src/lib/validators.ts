@@ -109,31 +109,14 @@ export const email = z
 export const personName = z
   .string()
   .trim()
-  .min(1, 'Required')
+  // Two characters, matching the rule these fields already had — a single
+  // letter is almost always a slip rather than a name.
+  .min(2, 'Enter a full name')
   .max(80, 'Too long')
   .regex(/^[\p{L}][\p{L}\s'’.-]*$/u, 'Use letters only');
 
-/** A positive whole number: quantities, counts, bed capacity. */
-export const positiveInt = z
-  .number()
-  .int('Must be a whole number')
-  .positive('Must be greater than zero');
 
-/** A non-negative whole number, where zero is meaningful (stock on hand). */
-export const nonNegativeInt = z
-  .number()
-  .int('Must be a whole number')
-  .min(0, 'Cannot be negative');
 
-/**
- * Free clinical text — notes, findings, reasons.
- *
- * Bounded so a single field cannot be used to push megabytes into the database
- * or into a hashed record. Not otherwise restricted: clinical notes legitimately
- * contain numbers, punctuation and abbreviations.
- */
-export const clinicalText = (max = 5000) =>
-  z.string().trim().min(1, 'Required').max(max, `Must be under ${max} characters`);
 
 /**
  * Vital signs, as bounds rather than exact values.
@@ -153,22 +136,6 @@ export const vitals = {
   heightCm: z.number().min(20).max(260),
 };
 
-/**
- * Coerce a query-string number.
- *
- * Query parameters arrive as strings, so `z.number()` would reject every one.
- * `z.coerce.number()` alone accepts "" as 0 and "abc" as NaN, so the pipeline
- * below rejects anything that is not actually numeric.
- */
-export const queryInt = (opts: { min?: number; max?: number; default?: number } = {}) => {
-  let schema = z.coerce
-    .number({ invalid_type_error: 'Must be a number' })
-    .int('Must be a whole number')
-    .refine((n) => Number.isFinite(n), 'Must be a number');
-  if (opts.min !== undefined) schema = schema.min(opts.min) as any;
-  if (opts.max !== undefined) schema = schema.max(opts.max) as any;
-  return opts.default !== undefined ? schema.default(opts.default) : schema;
-};
 
 /**
  * Optional variants that treat an empty string as "not provided".
@@ -189,7 +156,6 @@ const blankToUndefined = (schema: z.ZodTypeAny) =>
 
 export const optionalEmail = blankToUndefined(email);
 export const optionalPhone = blankToUndefined(phoneNumber);
-export const optionalNationalId = blankToUndefined(nationalId);
 export const optionalIsoDate = blankToUndefined(isoDate);
 export const optionalClinicalDate = blankToUndefined(clinicalDate);
 export const optionalFutureDate = blankToUndefined(futureDate);

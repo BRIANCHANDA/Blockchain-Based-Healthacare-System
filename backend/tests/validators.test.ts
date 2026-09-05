@@ -19,7 +19,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   phoneNumber, nationalId, isoDate, dateOfBirth, futureDate, clinicalDate,
-  email, personName, positiveInt, nonNegativeInt, clinicalText, vitals, queryInt,
+  email, personName, vitals,
 } from "../src/lib/validators";
 
 const ok = (schema: any, v: unknown) => schema.safeParse(v).success;
@@ -123,60 +123,16 @@ describe("email", () => {
 
 describe("personName", () => {
   test("accepts real Zambian names, including apostrophes and hyphens", () => {
+    // A single letter is rejected: the fields this replaces already required 2.
     for (const v of ["Chanda", "N'gandu", "Mwape-Chanda", "Namukolo Sichone", "José"]) {
       expect(ok(personName, v)).toBe(true);
     }
   });
 
   test("rejects digits, markup and empty input", () => {
-    for (const v of ["Chanda2", "<script>alert(1)</script>", "123", "", "   ", "!!!"]) {
+    for (const v of ["Chanda2", "<script>alert(1)</script>", "123", "", "   ", "!!!", "A"]) {
       expect(ok(personName, v)).toBe(false);
     }
-  });
-});
-
-// ── numbers ──────────────────────────────────────────────────────────────────
-
-describe("numbers", () => {
-  test("positiveInt rejects zero, negatives, decimals and strings", () => {
-    expect(ok(positiveInt, 5)).toBe(true);
-    for (const v of [0, -1, 2.5, "5", "abc", null, NaN]) {
-      expect(ok(positiveInt, v)).toBe(false);
-    }
-  });
-
-  test("nonNegativeInt allows zero — stock on hand can legitimately be none", () => {
-    expect(ok(nonNegativeInt, 0)).toBe(true);
-    expect(ok(nonNegativeInt, -1)).toBe(false);
-  });
-
-  test("queryInt coerces a numeric string but rejects a non-numeric one", () => {
-    // Query params arrive as strings, so plain z.number() would reject them all.
-    const q = queryInt({ min: 1, max: 100 });
-    expect(q.parse("25")).toBe(25);
-    for (const v of ["abc", "", "1e", "  "]) expect(ok(q, v)).toBe(false);
-    expect(ok(q, "0")).toBe(false);
-    expect(ok(q, "101")).toBe(false);
-  });
-
-  test("queryInt applies its default when the parameter is absent", () => {
-    expect(queryInt({ default: 20 }).parse(undefined)).toBe(20);
-  });
-});
-
-// ── clinical text ────────────────────────────────────────────────────────────
-
-describe("clinicalText", () => {
-  test("accepts real notes containing numbers and punctuation", () => {
-    const t = clinicalText();
-    expect(ok(t, "BP 164/98, patient reports chest pain x3 days. Rx: aspirin 300mg.")).toBe(true);
-  });
-
-  test("rejects empty input and caps the length", () => {
-    const t = clinicalText(100);
-    expect(ok(t, "")).toBe(false);
-    expect(ok(t, "   ")).toBe(false);
-    expect(ok(t, "x".repeat(101))).toBe(false);
   });
 });
 
@@ -215,10 +171,10 @@ describe("optional fields tolerate a blank form input", () => {
     // HTML forms submit "" for a field left blank. A plain .optional() rejects
     // that, so an untouched optional field failed validation — which reads to
     // the user as a broken form on a field they deliberately skipped.
-    const { optionalEmail, optionalPhone, optionalIsoDate, optionalNationalId } =
+    const { optionalEmail, optionalPhone, optionalIsoDate } =
       await import("../src/lib/validators");
 
-    for (const schema of [optionalEmail, optionalPhone, optionalIsoDate, optionalNationalId]) {
+    for (const schema of [optionalEmail, optionalPhone, optionalIsoDate]) {
       expect(schema.safeParse("").success).toBe(true);
       expect(schema.safeParse("   ").success).toBe(true);
       expect(schema.safeParse(undefined).success).toBe(true);

@@ -46,6 +46,7 @@ import path from 'path';
 import { mkdir, writeFile } from 'fs/promises';
 import { createHash } from 'crypto';
 import { notifyUser } from '../services/notifications';
+import { vitals as vVitals } from '../lib/validators';
 
 const errorSchema = z.object({ success: z.boolean(), error: z.object({ message: z.string() }) });
 const successData = z.object({ success: z.boolean(), data: z.any() });
@@ -488,10 +489,20 @@ export const visitRouter = createRouter()
         content: {
           'application/json': {
             schema: z.object({
-              temperature: z.number().optional(), bloodPressureSystolic: z.number().optional(),
-              bloodPressureDiastolic: z.number().optional(), pulseRate: z.number().optional(),
-              respiratoryRate: z.number().optional(), oxygenSaturation: z.number().optional(),
-              weight: z.number().optional(), height: z.number().optional(),
+              // Ranged, not merely typed. z.number() alone accepted a
+              // temperature of 999 and a pulse of -50; the bounds below exclude
+              // the physically impossible while still admitting the genuinely
+              // abnormal — 41.5 degrees and a pulse of 180 are emergencies that
+              // must be recordable. Checked against every existing row before
+              // being applied.
+              temperature: vVitals.temperatureC.optional(),
+              bloodPressureSystolic: vVitals.systolic.optional(),
+              bloodPressureDiastolic: vVitals.diastolic.optional(),
+              pulseRate: vVitals.pulseBpm.optional(),
+              respiratoryRate: vVitals.respiratoryRate.optional(),
+              oxygenSaturation: vVitals.oxygenSaturation.optional(),
+              weight: vVitals.weightKg.optional(),
+              height: vVitals.heightCm.optional(),
               painLevel: z.number().min(0).max(10).optional(), nurseNotes: z.string().optional(),
             }),
           },

@@ -27,7 +27,7 @@ import { sessionMiddleware } from '../middleware/session';
 import crypto from 'crypto';
 
 import { JWT_SECRET } from '../lib/env';
-import { phoneNumber as vPhone, nationalId as vNationalId, dateOfBirth as vDob, email as vEmail, optionalEmail as vOptionalEmail } from '../lib/validators';
+import { phoneNumber as vPhone, nationalId as vNationalId, dateOfBirth as vDob, email as vEmail, optionalEmail as vOptionalEmail, personName as vName } from '../lib/validators';
 const JWT_EXPIRES_IN = '24h';
 const DEFAULT_PASSWORD = 'test1234';
 
@@ -36,7 +36,7 @@ const errorSchema = z.object({ success: z.boolean(), error: z.object({ message: 
 const successSchema = z.object({ success: z.boolean(), data: z.any() });
 
 const registerPatientSchema = z.object({
-  firstName: z.string().min(2), lastName: z.string().min(2),
+  firstName: vName, lastName: vName,
   middleName: z.string().optional(), dateOfBirth: vDob,
   gender: z.enum(['male', 'female', 'other']),
   bloodType: z.enum(['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-', 'unknown']).optional(),
@@ -165,7 +165,7 @@ export const authRouter = createRouter()
         content: {
           'application/json': {
             schema: z.object({
-              firstName: z.string().min(2), lastName: z.string().min(2),
+              firstName: vName, lastName: vName,
               role: z.enum(['practitioner', 'nurse', 'receptionist', 'lab_technician', 'radiologist', 'pharmacist', 'admin']),
               licenseNumber: z.string().min(1), institutionalId: z.string().optional(),
               // Only honoured for super admins. A hospital admin's staff are always
