@@ -200,7 +200,8 @@ export type RootStackParamList = {
 
 export type AuthStackParamList = {
     Login: undefined;
-    Register: undefined;
+    // No Register route: patients are registered by hospital staff, not by
+    // themselves. See navigation/AuthNavigator.tsx.
     ChangePassword: undefined;
 };
 

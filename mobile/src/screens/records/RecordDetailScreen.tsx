@@ -229,19 +229,23 @@ function ListItem({
 export default function RecordDetailScreen({ route, navigation }: Props) {
   const { visitId } = route.params;
   const user = useAuthStore((s) => s.user);
+  const activePatientId = useAuthStore((s) => s.activePatientId);
   const insets = useSafeAreaInsets();
 
   const [data, setData] = useState<VisitDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
+  // Use the active dependent's ID when a guardian is viewing a child's record
+  const effectivePatientId = activePatientId ?? user?.id ?? "";
+
   useEffect(() => {
-    if (!user) return;
-    getVisitDetail(user.id, visitId)
+    if (!effectivePatientId) return;
+    getVisitDetail(effectivePatientId, visitId)
       .then((res) => setData(res.data))
       .catch(() => setError(true))
       .finally(() => setLoading(false));
-  }, [user, visitId]);
+  }, [effectivePatientId, visitId]);
 
   if (loading) return <LoadingSpinner message="Loading visit details…" />;
 

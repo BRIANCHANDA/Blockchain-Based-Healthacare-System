@@ -18,7 +18,7 @@ import {
 import { encrypt, decrypt } from '../services/crypto';
 import { sendOTPEmail } from '../services/email';
 import { createRouter } from '../lib/create-app';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, requireUserType } from '../middleware/auth';
 import {
   loginLimiter, otpLimiter, resendOtpLimiter,
   registerLimiter, passwordLimiter,
@@ -96,7 +96,12 @@ export const authRouter = createRouter()
   .openapi(createRoute({
     tags: ['Auth'], summary: 'Register a new patient',
     method: 'post', path: '/register/patient',
-    middleware: [registerLimiter],
+    // Staff-only, like POST /api/patients. Patients do not self-register:
+    // a record is created by a hospital, which is what binds it to a real,
+    // identified person. This route was unauthenticated, and its only caller
+    // was the mobile self-registration screen, now removed.
+    security: [{ bearerAuth: [] }],
+    middleware: [registerLimiter, authMiddleware, requireUserType('receptionist', 'nurse', 'practitioner', 'admin')],
     request: { body: { content: { 'application/json': { schema: registerPatientSchema } } } },
     responses: {
       201: { content: { 'application/json': { schema: successSchema } }, description: 'Registered' },

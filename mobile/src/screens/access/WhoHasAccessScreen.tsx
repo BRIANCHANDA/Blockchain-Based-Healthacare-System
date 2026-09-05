@@ -1,3 +1,16 @@
+/**
+ * Who has access — the standing list of clinicians who can currently read this
+ * patient's records, and the entry point to revoking any of them.
+ *
+ * The list comes from the ledger by way of GET /permissions/mine, not from a
+ * local cache, so what is shown is the same state the backend enforces reads
+ * against. Entries disappear on their own once their time window lapses, which
+ * is why the screen supports pull-to-refresh: an expiry is not an event the app
+ * is notified about, it is simply a permission that stops being returned.
+ *
+ * Tapping an entry leads to RevokeAccessScreen for the confirm step.
+ */
+
 import React, { useEffect, useState, useCallback } from "react";
 import {
   View,

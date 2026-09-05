@@ -1,6 +1,33 @@
+/**
+ * Authentication state for the patient app.
+ *
+ * Two copies of the session exist and they serve different purposes:
+ *
+ *   AsyncStorage  — survives app restarts, and is what api/client.ts reads on
+ *                   every outgoing request. This is the durable copy.
+ *   this store    — the in-memory copy React renders from. AppNavigator swaps
+ *                   the auth stack for the main stack purely on isAuthenticated.
+ *
+ * Writes must go through setAuth/clearAuth so the two stay in step; setting one
+ * without the other produces a session that renders as signed in but sends no
+ * token, or the reverse.
+ *
+ * `isLoading` starts true so the navigator shows a spinner instead of flashing
+ * the login screen while loadFromStorage() reads the persisted session.
+ *
+ * ACTING AS A DEPENDENT: a guardian can operate the app on behalf of a child or
+ * other dependent. activePatientId is persisted (client.ts sends it as the
+ * X-Acting-As-Patient header on every request), while activeDependentName is
+ * display-only and is deliberately not persisted — after a restart the header
+ * still applies but the banner name is empty until setDependents/
+ * setActivePatient runs again.
+ */
+
 import { create } from 'zustand';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { User, Dependent } from '../types';
+import { unregisterPushToken } from '../api/access';
+import { getExpoPushToken } from '../utils/notifications';
 
 type AuthState = {
     token: string | null;
@@ -35,6 +62,20 @@ export const useAuthStore = create<AuthState>((set) => ({
     },
 
     clearAuth: async () => {
+        // Drop this device's push registration BEFORE the token is cleared —
+        // the endpoint is authenticated, so it has to go out while the session
+        // is still valid. Skipping it would leave the handset receiving the
+        // previous user's consent requests, which in this system means one
+        // patient being notified about another patient's records.
+        try {
+            const pushToken = await getExpoPushToken();
+            if (pushToken) await unregisterPushToken(pushToken);
+        } catch {
+            // Offline, or push was never available on this device. Signing out
+            // must not be blocked by it; the backend also prunes a token once
+            // Expo reports the install as gone.
+        }
+
         await AsyncStorage.multiRemove(['auth_token', 'auth_user', 'active_patient_id']);
         set({ token: null, user: null, isAuthenticated: false, dependents: [], activePatientId: null, activeDependentName: null });
     },

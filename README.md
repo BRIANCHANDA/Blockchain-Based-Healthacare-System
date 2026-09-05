@@ -74,29 +74,50 @@ Before running any part of the system, ensure the following are installed:
 git clone <repo-url>
 cd Final_year_project
 
-# 2. Start the backend API server
-cd backend
-cp .env.example .env   # fill in DATABASE_URL, JWT_SECRET, ENCRYPTION_KEY
-bun install
-bun run dev            # http://localhost:3000
+# 2. Generate the Fabric network's crypto material and start the network
+#    Do this FIRST — the backend reads its blockchain identity from the files
+#    this produces. They are deliberately not in version control: they include
+#    private signing keys for every organisation.
+cd fabric-network/network
+./start-network.sh              # runs cryptogen, then brings up the peers
 
-# 3. Start the web staff portal
+# 3. Start the backend API server
+cd ../../backend
+cp .env.example .env
+#    Then set, at minimum:
+#      DATABASE_URL         your PostgreSQL connection string
+#      JWT_SECRET           openssl rand -base64 48
+#      AES_SECRET_KEY       openssl rand -base64 48
+#      FABRIC_NETWORK_PATH  absolute path to fabric-network/network/organizations
+#    The server refuses to start in production if a secret is missing or weak.
+bun install
+bun run db:push                 # apply the schema
+bun run dev                     # http://localhost:3000
+
+# 4. Start the web staff portal
 cd ../web
 npm install
-npm run dev            # http://localhost:3001 (or :3000 if backend runs on a different port)
+npm run dev                     # http://localhost:3001
 
-# 4. Start the mobile patient app
+# 5. Start the mobile patient app
 cd ../mobile
+cp .env.example .env            # set EXPO_PUBLIC_API_URL to your machine's LAN IP
 npm install
 npx expo start
 
-# 5. Start the Hyperledger Fabric network
-cd ../fabric-network/network
-docker compose up -d
-
-# 6. (Optional) Start Blockchain Explorer to view the ledger in a browser
-cd ../blockchain-explorer
+# 6. (Optional) Blockchain Explorer, to view the ledger in a browser
+cd ../fabric-network/blockchain-explorer
 docker compose up -d            # http://localhost:8080
+```
+
+### Running the tests
+
+No database, Fabric network or Docker required — the suites that need Postgres
+skip themselves with an explanation when it is unreachable.
+
+```bash
+cd backend && bun test                      # 91 tests
+cd fabric-network/chaincode && bun test     # 67 tests
 ```
 
 > The Fabric ledger lives in Docker volumes and survives restarts. Use

@@ -10,7 +10,7 @@ import {
   crossInstitutionAccess,
 } from '../db/schema';
 import { createRouter } from '../lib/create-app';
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, requireUserType } from '../middleware/auth';
 import { encrypt, decrypt, generateRecordHash } from '../services/crypto';
 import { storeRecordHash, checkPermission } from '../services/fabric';
 import crypto from 'crypto';
@@ -122,6 +122,13 @@ export const patientRouter = createRouter()
   .openapi(createRoute({
     tags: ['Patients'], summary: 'Register a new patient',
     method: 'post', path: '/',
+    // A patient record is created by hospital staff at the point of care —
+    // that is what ties it to a real, identified person and to an institution.
+    // This route previously had NO auth middleware at all, so anyone who could
+    // reach the API could create patient records; every other route in this
+    // file was already guarded.
+    security: [{ bearerAuth: [] }],
+    middleware: [authMiddleware, requireUserType('receptionist', 'nurse', 'practitioner', 'admin')],
     request: { body: { content: { 'application/json': { schema: registerPatientBaseSchema.omit({ password: true }) } } } },
     responses: {
       201: { content: { 'application/json': { schema: z.object({ success: z.boolean(), data: z.object({ patientId: z.string().uuid(), blockchainAddress: z.string(), isMinor: z.boolean(), temporaryPatientId: z.string().nullable() }) }) } }, description: 'Registered' },

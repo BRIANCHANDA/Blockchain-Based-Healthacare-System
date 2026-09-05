@@ -1,3 +1,17 @@
+/**
+ * Root navigator: decides whether the user sees the login flow or the app.
+ *
+ * The choice is made solely by isAuthenticated in the auth store, so signing in
+ * or out anywhere in the app moves the user without any explicit navigation
+ * call. loadFromStorage() runs once on mount to restore a persisted session, and
+ * the spinner below covers that read — without it the login screen would flash
+ * for a moment on every cold start of an already signed-in app.
+ *
+ * RootNavigator is a separate component purely so useNotifications() runs inside
+ * NavigationContainer, which it needs in order to navigate when a notification
+ * is tapped.
+ */
+
 import React, { useEffect } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";

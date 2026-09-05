@@ -1,3 +1,21 @@
+/**
+ * Access requests — the patient's inbox of pending consent decisions.
+ *
+ * This screen is where objective 3 becomes visible to the patient: a clinician
+ * has asked to read their records, and nobody sees anything until the patient
+ * taps Approve here. Rejecting is a first-class outcome, not a dismissal.
+ *
+ * An approval does not merely update a database row. The backend forwards it to
+ * the AccessControl chaincode, which writes a permission bounded by the duration
+ * the patient chose; every later read is checked against that ledger entry, so
+ * access ends on its own when the window passes. This is why an approval can
+ * take a moment and why the row is disabled (via `actioning`) while it commits —
+ * a double tap would submit the decision twice.
+ *
+ * ROLE_META exists so a request names a person the patient can recognise — the
+ * role and institution asking — rather than an opaque practitioner id.
+ */
+
 import React, { useEffect, useState, useCallback } from "react";
 import {
   View,

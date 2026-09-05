@@ -1,3 +1,18 @@
+/**
+ * Revoke access — the confirmation step before withdrawing a clinician's
+ * permission to read this patient's records.
+ *
+ * Revocation is deliberately a separate screen with an explicit confirm rather
+ * than a swipe on the list. It is consequential in both directions: it takes
+ * effect immediately for every future read, and a patient who revokes the doctor
+ * currently treating them will find their clinician unable to see their history.
+ *
+ * WHAT_HAPPENS is shown for that reason — the patient should know the outcome
+ * before confirming, including that revoking does not erase the audit trail. The
+ * chaincode marks the permission inactive rather than deleting it, so the record
+ * that access was once granted, and then withdrawn, survives.
+ */
+
 import React, { useState } from "react";
 import {
   View,
