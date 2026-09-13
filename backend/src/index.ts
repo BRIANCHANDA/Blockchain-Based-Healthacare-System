@@ -49,9 +49,9 @@ import { personalReportRouter } from "./routes/personal-report";
 import { stockRouter } from "./routes/stock";
 import { wardRouter } from "./routes/wards";
 import { notificationsRouter } from './routes/notifications';
+import { liveUpdates } from './middleware/live-updates';
 import { adminBlockchainRouter } from './routes/blockchain';
 import { filesRouter } from './routes/files';
-import { aiRouter } from './routes/ai/ai';
 import { labRouter } from './routes/lab';
 import { medicalRouter } from './routes/medical';
 import { guardiansRouter } from './routes/guardians';
@@ -100,7 +100,8 @@ app.use('*', cors({
 }));
 
 // ── Logger ────────────────────────────────────────────────────────────────────
-app.use('*', logger());
+// EventSource uses a token query parameter; never include it in access logs.
+app.use('*', logger(message => console.log(message.replace(/([?&]token=)[^&\s]+/g, '$1[REDACTED]'))));
 
 // ── Global rate limit (DDoS backstop — 200 req/min per IP) ───────────────────
 /*
@@ -131,6 +132,7 @@ app.use('/api/*', async (c, next) => {
 });
 
 app.use('/api/*', apiLimiter);
+app.use('/api/*', liveUpdates);
 
 /*
  * UPLOADED CLINICAL FILES ARE NOT SERVED STATICALLY.
@@ -172,7 +174,6 @@ app.route('/api/reports/personal', personalReportRouter);
 app.route('/api/stock', stockRouter);
 app.route('/api/wards', wardRouter);
 app.route('/api/notifications', notificationsRouter);
-app.route('/api/ai', aiRouter);
 app.route('/api/lab', labRouter);
 app.route('/api/medical', medicalRouter);
 app.route('/api/guardians', guardiansRouter);

@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import {
@@ -566,8 +567,8 @@ export default function NurseWardPage() {
   const [releasing,    setReleasing]    = useState(false);
 
   // Load wards
-  const loadWards = useCallback(async () => {
-    setLoading(true);
+  const loadWards = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await api.get("/api/wards");
       const data: Ward[] = res.data.data ?? [];
@@ -577,9 +578,9 @@ export default function NurseWardPage() {
   }, [activeWard]);
 
   // Load beds for selected ward
-  const loadBeds = useCallback(async () => {
+  const loadBeds = useCallback(async (silent = false) => {
     if (!activeWard) return;
-    setBedsLoading(true);
+    if (!silent) setBedsLoading(true);
     try {
       const res = await api.get(`/api/wards/${activeWard}/beds`);
       setBeds(res.data.data ?? []);
@@ -598,11 +599,7 @@ export default function NurseWardPage() {
   useEffect(() => { loadWards(); loadAwaitingBed(); }, []);
   useEffect(() => { loadBeds(); }, [activeWard]);
 
-  // Auto-refresh beds and awaiting panel every 30s
-  useEffect(() => {
-    const iv = setInterval(() => { loadBeds(); loadAwaitingBed(); }, 30_000);
-    return () => clearInterval(iv);
-  }, [loadBeds, loadAwaitingBed]);
+  useLiveRefresh(() => Promise.all([loadWards(true), loadBeds(true), loadAwaitingBed()]));
 
   async function handleRelease(bed: Bed) {
     setReleasing(true);

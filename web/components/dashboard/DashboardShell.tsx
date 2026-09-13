@@ -20,6 +20,7 @@ import { ChevronRight, LogOut, Menu, X, Building2 } from "lucide-react";
 import { Logo } from "@/components/Logo";
 import { ProfileDrawer } from "@/components/ProfileDrawer";
 import { NotificationBell } from "@/components/NotificationBell";
+import NotificationListener from "@/components/NotificationListener";
 import { useAuthStore } from "@/lib/store";
 
 export interface NavItem {
@@ -540,6 +541,7 @@ export function DashboardShell({
         <main key={pathname} className="flex-1" style={{ padding: "var(--sp-6)" }}>
           {children}
         </main>
+        <NotificationListener />
 
         <footer
           style={{

@@ -7,13 +7,15 @@
 
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Bell, FlaskConical, ScanLine, CheckCheck, Trash2, BedDouble } from "lucide-react";
+import { Bell, FlaskConical, ScanLine, CheckCheck, Trash2, BedDouble, ArrowLeftRight, UserPlus } from "lucide-react";
 import { useNotifications, AppNotification } from "@/hooks/useNotification";
+import { useAuthStore } from "@/lib/store";
+import { notificationRoute } from "@/lib/notificationMeta";
 import { formatDistanceToNow } from "date-fns";
 
 const EVENT_META: Record<
   string,
-  { label: string; color: string; bg: string; Icon: any; nurseRoute?: boolean }
+  { label: string; color: string; bg: string; Icon: any }
 > = {
   lab_result_ready: {
     label: "Lab Result Ready",
@@ -32,7 +34,24 @@ const EVENT_META: Record<
     color: "var(--urgent-ink)",
     bg: "var(--amber-050)",
     Icon: BedDouble,
-    nurseRoute: true,
+  },
+  internal_referral_received: {
+    label: "New Internal Referral",
+    color: "var(--accent-ink)",
+    bg: "var(--violet-050)",
+    Icon: ArrowLeftRight,
+  },
+  patient_assigned: {
+    label: "Patient Assigned to You",
+    color: "var(--info-ink)",
+    bg: "var(--blue-050)",
+    Icon: UserPlus,
+  },
+  external_referral_received: {
+    label: "New Referral Received",
+    color: "var(--accent-ink)",
+    bg: "var(--violet-050)",
+    Icon: ArrowLeftRight,
   },
 };
 
@@ -44,6 +63,8 @@ function NotificationItem({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const { user } = useAuthStore();
+  const { markRead } = useNotifications();
   const meta = EVENT_META[n.event] ?? {
     label: n.event,
     color: "var(--text-secondary)",
@@ -54,11 +75,9 @@ function NotificationItem({
 
   function handleClick() {
     onClose();
-    if (meta.nurseRoute) {
-      router.push("/dashboard/nurse/ward");
-    } else if (n.data.visitId) {
-      router.push(`/dashboard/doctor/visit/${n.data.visitId}`);
-    }
+    markRead(n.id);
+    const route = notificationRoute(n.event, n.data, user?.type);
+    if (route) router.push(route);
   }
 
   return (
@@ -80,6 +99,7 @@ function NotificationItem({
         <p className="text-sm font-semibold text-[var(--text-primary)] mt-0.5 leading-snug">
           {n.data.patientName ?? "Patient"}
           {n.data.testName ? ` — ${n.data.testName}` : ""}
+          {n.data.reason ? ` — ${n.data.reason}` : ""}
           {n.data.modality ? ` — ${n.data.modality}` : ""}
           {n.data.admittingDiagnosis ? ` — ${n.data.admittingDiagnosis}` : ""}
         </p>
@@ -112,18 +132,13 @@ export function NotificationBell() {
     return () => document.removeEventListener("mousedown", handler);
   }, [open]);
 
-  // Mark all read when panel is opened
-  function handleOpen() {
-    setOpen((v) => {
-      if (!v) setTimeout(markAllRead, 1500); // mark read after 1.5 s
-      return !v;
-    });
-  }
+  function handleOpen() { setOpen(v => !v); }
 
   return (
     <div className="relative" ref={panelRef}>
       {/* Bell button */}
       <button
+        aria-label="Notifications"
         onClick={handleOpen}
         className="relative w-9 h-9 rounded-[var(--r-sm)] flex items-center justify-center transition-colors hover:bg-[var(--surface-inset)]"
       >
@@ -187,7 +202,7 @@ export function NotificationBell() {
                   All caught up
                 </p>
                 <p className="text-xs text-[var(--text-disabled)] mt-1">
-                  Lab results will appear here
+                  Assignments, referrals and results will appear here
                 </p>
               </div>
             ) : (

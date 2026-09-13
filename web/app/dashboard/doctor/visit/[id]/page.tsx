@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { visitApi } from "@/lib/api";
@@ -422,6 +423,8 @@ export default function DoctorVisitPage() {
   useEffect(() => {
     if (permStage === "granted") loadVisit();
   }, [permStage, loadVisit]);
+
+  useLiveRefresh(() => loadVisit(true), permStage === "granted");
 
   // ── Permission / loading states ───────────────────────────────────────────
 
@@ -963,13 +966,6 @@ export default function DoctorVisitPage() {
               <DischargeTab
                 visitId={visitId}
                 visit={visit}
-                patient={patient}
-                consultations={consultations}
-                diagnoses={diagnoses}
-                vitalSigns={vitals}
-                labOrders={labOrders}
-                imagingOrders={imagingOrders}
-                prescriptions={prescriptions}
                 onSaved={() => { showToast("Patient discharged.", "success"); loadVisit(true); }}
                 onError={(msg: string) => showToast(msg, "error")}
               />

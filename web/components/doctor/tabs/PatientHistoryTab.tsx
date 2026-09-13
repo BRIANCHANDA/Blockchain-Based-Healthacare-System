@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { patientApi, permissionApi } from "@/lib/api";
 import EmergencyOverrideModal from "@/components/EmergencyOverrideModal";
 import {
@@ -1256,8 +1257,8 @@ export default function PatientHistoryTab({
   }, [patientIdProp, visitId]);
 
   // Step 2: load history once patientId is resolved
-  const loadHistory = useCallback(async (pid: string) => {
-    setLoading(true);
+  const loadHistory = useCallback(async (pid: string, silent = false) => {
+    if (!silent) setLoading(true);
     setError(null);
     try {
       const res = await patientApi.getHistory(pid);
@@ -1276,6 +1277,8 @@ export default function PatientHistoryTab({
     if (!resolvedPatientId) return;
     loadHistory(resolvedPatientId);
   }, [resolvedPatientId, loadHistory]);
+
+  useLiveRefresh(() => resolvedPatientId && loadHistory(resolvedPatientId, true), !!resolvedPatientId);
 
   // Called when a permission is granted for an away institution — reload to get visits
   const handlePermissionGranted = useCallback(() => {

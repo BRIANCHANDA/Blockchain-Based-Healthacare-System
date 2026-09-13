@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
@@ -82,6 +83,8 @@ export default function AdminPatientsPage() {
       setRefreshing(false);
     }
   }, [search, page, isSuperAdmin, institutionId, institutionFilter]);
+
+  useLiveRefresh(() => load(true));
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); }, [search, institutionFilter, genderFilter]);

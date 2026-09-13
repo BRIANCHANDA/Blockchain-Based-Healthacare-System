@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useParams, useRouter } from "next/navigation";
 import { patientApi } from "@/lib/api";
 import {
@@ -61,8 +62,8 @@ export default function PatientDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [patRes, visitsRes] = await Promise.all([
         patientApi.getById(patientId),
@@ -81,6 +82,7 @@ export default function PatientDetailPage() {
   useEffect(() => {
     load();
   }, [load]);
+  useLiveRefresh(() => load(true));
 
   if (loading) {
     return (

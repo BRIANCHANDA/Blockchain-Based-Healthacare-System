@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { patientApi } from "@/lib/api";
 import {
   Search,
@@ -101,7 +102,7 @@ export default function PatientList({
         );
         // A short page means we have reached the end.
         setHasMore(newPatients.length === LIMIT);
-        if (!reset) setOffset(currentOffset + LIMIT);
+        setOffset(currentOffset + newPatients.length);
       } catch (err: any) {
         setError(err.response?.data?.error?.message ?? "Failed to load patients.");
       } finally {
@@ -115,6 +116,15 @@ export default function PatientList({
   useEffect(() => {
     fetchPatients(true);
   }, [debouncedSearch]);
+
+  useLiveRefresh(async () => {
+    const limit = Math.max(LIMIT, patients.length);
+    const res = await patientApi.searchPaginated({ q: debouncedSearch || undefined, limit, offset: 0 });
+    const nextPatients = res.data.data.patients as Patient[];
+    setPatients(nextPatients);
+    setOffset(nextPatients.length);
+    setHasMore(nextPatients.length === limit);
+  }, !loading && !loadingMore && search === debouncedSearch);
 
   const formatDate = (iso: string) => {
     try {

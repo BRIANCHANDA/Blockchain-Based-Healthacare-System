@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { patientApi } from "@/lib/api";
@@ -85,6 +86,8 @@ export default function RadiologyPatientsPage() {
     },
     [search, page],
   );
+
+  useLiveRefresh(() => load(true));
 
   useEffect(() => {
     load();

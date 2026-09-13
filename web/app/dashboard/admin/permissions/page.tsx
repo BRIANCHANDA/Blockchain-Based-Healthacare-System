@@ -14,6 +14,7 @@
  */
 
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback } from "react";
 import { api } from "@/lib/api";
 import {
@@ -82,6 +83,8 @@ export default function AdminPermissionsPage() {
       setRefreshing(false);
     }
   }, []);
+
+  useLiveRefresh(() => load(true));
 
   useEffect(() => {
     load();

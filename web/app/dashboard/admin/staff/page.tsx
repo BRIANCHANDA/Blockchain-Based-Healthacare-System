@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback, Suspense } from "react";
 import { useAuthStore } from "@/lib/store";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -133,6 +134,8 @@ function StaffPageInner() {
     },
     [page, search, roleFilter, verifiedFilter, institutionFilter],
   );
+
+  useLiveRefresh(() => load(true));
 
   useEffect(() => {
     load();

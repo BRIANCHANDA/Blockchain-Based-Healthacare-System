@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { use, useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { visitApi, practitionersApi } from "@/lib/api";
@@ -354,6 +355,8 @@ export default function ReceptionistVisitDetailPage({
   useEffect(() => {
     if (visitId) load();
   }, [visitId]);
+
+  useLiveRefresh(() => load(true), !!visitId);
 
   const assignNurse = async (nurseId: string) => {
     setAssigning(true);

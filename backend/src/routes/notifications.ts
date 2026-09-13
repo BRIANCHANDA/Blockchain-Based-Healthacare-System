@@ -5,12 +5,12 @@
 //   app.route('/api/notifications', notificationsRouter);
 
 import { z } from 'zod';
-import { eq, and } from 'drizzle-orm';
+import { eq, and, gt } from 'drizzle-orm';
 
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
 import { db } from '../db';
-import { deviceTokens } from '../db/schema';
+import { deviceTokens, practitioners, authSessions } from '../db/schema';
 import { addConnection, activeConnectionCount } from '../services/notifications';
 
 export const notificationsRouter = createRouter()
@@ -26,45 +26,66 @@ export const notificationsRouter = createRouter()
     //   imaging_result_ready — { visitId, orderId, modality, bodyPart, orderNumber }
     //   ping               — { ts } sent every 25 s to keep proxies alive
     //
-    .get('/stream', authMiddleware, (c) => {
+    .get('/stream', authMiddleware, async (c) => {
         const userId = c.get('userId');
+        const sessionId = c.get('sessionId');
         if (!userId) return c.text('Unauthorized', 401);
+        const [staff] = await db.select({ institutionId: practitioners.institutionId })
+            .from(practitioners).where(eq(practitioners.id, userId)).limit(1);
 
         // Build a ReadableStream that stays open
         let cleanup: (() => void) | null = null;
         let intervalId: ReturnType<typeof setInterval> | null = null;
+        const dispose = () => {
+            if (intervalId) clearInterval(intervalId);
+            cleanup?.();
+            c.req.raw.signal.removeEventListener('abort', dispose);
+        };
 
         const stream = new ReadableStream({
             start(controller) {
                 const encoder = new TextEncoder();
 
                 const write = (data: string) => {
-                    try {
-                        controller.enqueue(encoder.encode(data));
-                    } catch {
-                        // controller already closed
-                    }
+                    controller.enqueue(encoder.encode(data));
                 };
 
                 const close = () => {
+                    dispose();
                     try { controller.close(); } catch { /* already closed */ }
                 };
 
                 // Register with the broadcaster
-                cleanup = addConnection(userId, { write, close });
+                cleanup = addConnection(userId, { write, close }, staff?.institutionId ?? null);
+                c.req.raw.signal.addEventListener('abort', dispose, { once: true });
 
                 // Send an immediate "connected" event so the client knows it's live
                 write(`event: connected\ndata: ${JSON.stringify({ userId, ts: Date.now() })}\n\n`);
 
                 // Heartbeat every 25 s — keeps load balancers / Nginx from killing the conn
-                intervalId = setInterval(() => {
-                    write(`event: ping\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
+                let checkingSession = false;
+                intervalId = setInterval(async () => {
+                    if (checkingSession) return;
+                    checkingSession = true;
+                    try {
+                        const [session] = await db.select({ id: authSessions.id }).from(authSessions)
+                            .where(and(eq(authSessions.id, sessionId), eq(authSessions.isActive, true), gt(authSessions.expiresAt, new Date()))).limit(1);
+                        const [currentStaff] = await db.select({ institutionId: practitioners.institutionId, isActive: practitioners.isActive })
+                            .from(practitioners).where(eq(practitioners.id, userId)).limit(1);
+                        if (!session || (staff && (!currentStaff?.isActive || currentStaff.institutionId !== staff.institutionId))) {
+                            close();
+                            return;
+                        }
+                        write(`event: ping\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
+                    }
+                    catch { close(); }
+                    finally { checkingSession = false; }
                 }, 25_000);
+                if (c.req.raw.signal.aborted) close();
             },
 
             cancel() {
-                if (intervalId) clearInterval(intervalId);
-                if (cleanup) cleanup();
+                dispose();
             },
         });
 

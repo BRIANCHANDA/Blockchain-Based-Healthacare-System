@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { visitApi } from "@/lib/api";
@@ -299,10 +300,10 @@ export default function RadiologyQueuePage() {
     }
   }, []);
 
+  useLiveRefresh(() => fetchOrders(true));
+
   useEffect(() => {
     fetchOrders();
-    const interval = setInterval(() => fetchOrders(true), 60_000);
-    return () => clearInterval(interval);
   }, [fetchOrders]);
 
   // ── Permission check before redirect ─────────────────────────────────────

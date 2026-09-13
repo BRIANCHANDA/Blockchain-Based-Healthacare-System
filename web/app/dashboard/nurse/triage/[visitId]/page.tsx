@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { visitApi } from "@/lib/api";
@@ -677,6 +678,12 @@ export default function TriagePage() {
       .catch(() => setDoctors([]))
       .finally(() => setDoctorsLoading(false));
   }, [step]);
+
+  useLiveRefresh(async () => {
+    const res = await visitApi.getSummary(visitId);
+    setVisit(res.data.data.visit);
+    setPatient(res.data.data.patient ?? null);
+  }, !!visitId && pageMode === "view");
 
   const enterEditMode = () => {
     if (!visit?.vitals) { setPageMode("new-triage"); return; }

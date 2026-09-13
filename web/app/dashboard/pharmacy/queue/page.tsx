@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { visitApi } from "@/lib/api";
@@ -67,10 +68,10 @@ export default function PharmacyQueuePage() {
     }
   }, []);
 
+  useLiveRefresh(() => fetchData(true));
+
   useEffect(() => {
     fetchData();
-    const interval = setInterval(() => fetchData(true), 60_000);
-    return () => clearInterval(interval);
   }, [fetchData]);
 
   const filtered = prescriptions
@@ -78,6 +79,7 @@ export default function PharmacyQueuePage() {
     .filter(
       (p) =>
         !search ||
+        p.patientName?.toLowerCase().includes(search.toLowerCase()) ||
         p.prescriptionNumber?.toLowerCase().includes(search.toLowerCase()) ||
         p.visitNumber?.toLowerCase().includes(search.toLowerCase()),
     );
@@ -151,7 +153,7 @@ export default function PharmacyQueuePage() {
         <SearchInput
           value={search}
           onChange={setSearch}
-          placeholder="Search prescription or visit number…"
+          placeholder="Search patient, prescription or visit…"
           icon={Search}
           clearIcon={X}
           style={{ flex: "1 1 220px", maxWidth: 340 }}
@@ -243,9 +245,18 @@ export default function PharmacyQueuePage() {
                   <span className="flex-1 min-w-0 flex flex-col" style={{ gap: 5 }}>
                     <span className="flex items-center flex-wrap" style={{ gap: 8 }}>
                       <span
+                        className="truncate"
                         style={{
-                          font: "700 13.5px/1 var(--font-mono)",
+                          font: "700 13.5px/1 var(--font-sans)",
                           color: "var(--text-primary)",
+                        }}
+                      >
+                        {rx.patientName || "Unknown patient"}
+                      </span>
+                      <span
+                        style={{
+                          font: "500 11px/1 var(--font-mono)",
+                          color: "var(--text-muted)",
                         }}
                       >
                         {rx.prescriptionNumber}

@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
@@ -270,10 +271,10 @@ export default function NurseOverview() {
     }
   };
 
+  useLiveRefresh(() => fetchAssignedPatients(true));
+
   useEffect(() => {
     fetchAssignedPatients();
-    const iv = setInterval(() => fetchAssignedPatients(true), 30_000);
-    return () => clearInterval(iv);
   }, []);
 
   const openAssignModal = async (visit: AssignedPatient) => {

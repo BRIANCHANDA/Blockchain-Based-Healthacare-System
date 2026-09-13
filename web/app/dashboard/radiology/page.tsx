@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
@@ -104,6 +105,8 @@ export default function RadiologyOverviewPage() {
       setRefreshing(false);
     }
   }, []);
+
+  useLiveRefresh(() => fetchData(true));
 
   useEffect(() => {
     fetchData();

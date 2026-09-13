@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback } from "react";
 import { visitApi } from "@/lib/api";
 import { ClipboardList, RefreshCw, Search, X } from "lucide-react";
@@ -52,6 +53,8 @@ export default function AdminVisitsPage() {
       setRefreshing(false);
     }
   }, []);
+
+  useLiveRefresh(() => load(true));
 
   useEffect(() => {
     load();

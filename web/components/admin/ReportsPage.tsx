@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useAuthStore } from "@/lib/store";
 import { api } from "@/lib/api";
 import {
@@ -278,8 +279,8 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState<Record<Tab, boolean>>({ clinical: false, operational: false, administrative: false });
   const [exporting, setExporting] = useState(false);
 
-  const fetchReport = useCallback(async (type: Tab) => {
-    setLoading(l => ({ ...l, [type]: true }));
+  const fetchReport = useCallback(async (type: Tab, silent = false) => {
+    if (!silent) setLoading(l => ({ ...l, [type]: true }));
     try {
       const res = await api.get(`/api/reports/${type}?from=${fromDate}&to=${toDate}&format=json`);
       setData(d => ({ ...d, [type]: res.data.data }));
@@ -291,6 +292,7 @@ export default function ReportsPage() {
   }, [fromDate, toDate]);
 
   useEffect(() => { fetchReport(tab); }, [tab, fromDate, toDate]);
+  useLiveRefresh(() => fetchReport(tab, true));
 
   const handleExport = async () => {
     setExporting(true);

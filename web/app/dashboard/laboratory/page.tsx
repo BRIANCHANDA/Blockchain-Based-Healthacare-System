@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
@@ -103,6 +104,8 @@ export default function LabOverviewPage() {
       setRefreshing(false);
     }
   }, []);
+
+  useLiveRefresh(() => fetchData(true));
 
   useEffect(() => {
     fetchData();
@@ -519,7 +522,8 @@ export default function LabOverviewPage() {
                             textTransform: "capitalize",
                           }}
                         >
-                          {order.specimenType || "—"}
+                          {order.patientName || "Unknown patient"}
+                          {order.specimenType ? ` · ${order.specimenType}` : ""}
                           {order.visitNumber ? ` · ${order.visitNumber}` : ""}
                           {order.clinicalNotes ? ` · ${order.clinicalNotes}` : ""}
                         </span>

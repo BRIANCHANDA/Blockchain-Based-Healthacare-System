@@ -1,95 +1,87 @@
-// web/src/hooks/useNotifications.ts
-//
-// Opens an SSE connection to /api/notifications/stream once the user is logged in.
-// Returns { notifications, unreadCount, markAllRead, clearAll }
-//
-// Usage:
-//   const { notifications, unreadCount, markAllRead } = useNotifications();
+"use client";
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect } from "react";
+import { create } from "zustand";
+import { useAuthStore } from "@/lib/store";
+import { NOTIFICATION_EVENTS } from "@/lib/notificationMeta";
+import { requestDataRefresh } from "@/lib/liveUpdates";
+
+const STRING_FIELDS = [
+  "notificationId", "visitId", "visitNumber", "patientName", "priority", "assignedRole",
+  "testName", "orderNumber", "modality", "bodyPart", "reason", "admittingDiagnosis", "referralId", "referralNumber",
+] as const;
+type NotificationData = Partial<Record<typeof STRING_FIELDS[number], string>> & { hasCritical?: boolean };
 
 export type AppNotification = {
-    id: string;
-    event: string;          // 'lab_result_ready' | 'imaging_result_ready' | …
-    data: Record<string, any>;
-    receivedAt: string;
-    read: boolean;
+  id: string;
+  event: string;
+  data: NotificationData;
+  receivedAt: string;
+  read: boolean;
+  dismissed: boolean;
 };
 
-const MAX_STORED = 50;
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000';
+const useInbox = create<{
+  owner: string | null;
+  notifications: AppNotification[];
+  reset: (owner: string | null) => void;
+  push: (event: string, data: NotificationData) => void;
+  markAllRead: () => void;
+  markRead: (id: string) => void;
+  dismiss: (id: string) => void;
+  clearAll: () => void;
+}>((set) => ({
+  owner: null, notifications: [],
+  reset: owner => set({ owner, notifications: [] }),
+  push: (event, data) => set(state => {
+    const id = typeof data.notificationId === "string" ? data.notificationId : crypto.randomUUID();
+    if (state.notifications.some(n => n.id === id)) return state;
+    return { notifications: [{
+      id, event, data, receivedAt: new Date().toISOString(), read: false, dismissed: false,
+    }, ...state.notifications].slice(0, 50) };
+  }),
+  markAllRead: () => set(s => ({ notifications: s.notifications.map(n => ({ ...n, read: true })) })),
+  markRead: id => set(s => ({ notifications: s.notifications.map(n => n.id === id ? { ...n, read: true, dismissed: true } : n) })),
+  dismiss: id => set(s => ({ notifications: s.notifications.map(n => n.id === id ? { ...n, dismissed: true } : n) })),
+  clearAll: () => set({ notifications: [] }),
+}));
 
 export function useNotifications() {
-    const [notifications, setNotifications] = useState<AppNotification[]>([]);
-    const esRef = useRef<EventSource | null>(null);
-    const reconnectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const inbox = useInbox();
+  const userId = useAuthStore(s => s.user?.id);
+  // Hide the previous user's data immediately, before effect cleanup.
+  const notifications = inbox.owner === userId ? inbox.notifications : [];
+  return { ...inbox, notifications, unreadCount: notifications.filter(n => !n.read).length };
+}
 
-    const unreadCount = notifications.filter((n) => !n.read).length;
-
-    const markAllRead = useCallback(() => {
-        setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    }, []);
-
-    const clearAll = useCallback(() => setNotifications([]), []);
-
-    const push = useCallback((event: string, data: Record<string, any>) => {
-        const notif: AppNotification = {
-            id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-            event,
-            data,
-            receivedAt: new Date().toISOString(),
-            read: false,
-        };
-        setNotifications((prev) => [notif, ...prev].slice(0, MAX_STORED));
-    }, []);
-
-    useEffect(() => {
-        const token = localStorage.getItem('hc_token');
-        if (!token) return;
-
-        function connect() {
-            // EventSource doesn't support custom headers — pass token as query param
-            // The auth middleware must read it from ?token= as a fallback.
-            const url = `${BASE_URL}/api/notifications/stream?token=${encodeURIComponent(token!)}`;
-            const es = new EventSource(url);
-            esRef.current = es;
-
-            es.addEventListener('connected', () => {
-                console.log('[notifications] SSE connected');
-            });
-
-            es.addEventListener('lab_result_ready', (e) => {
-                push('lab_result_ready', JSON.parse(e.data));
-            });
-
-            es.addEventListener('imaging_result_ready', (e) => {
-                push('imaging_result_ready', JSON.parse(e.data));
-            });
-
-            es.addEventListener('patient_admitted', (e) => {
-                push('patient_admitted', JSON.parse(e.data));
-            });
-
-            es.addEventListener('ping', () => {
-                // heartbeat — no action needed
-            });
-
-            es.onerror = () => {
-                es.close();
-                esRef.current = null;
-                // Reconnect after 5 s
-                reconnectTimer.current = setTimeout(connect, 5_000);
-            };
-        }
-
-        connect();
-
-        return () => {
-            esRef.current?.close();
-            esRef.current = null;
-            if (reconnectTimer.current) clearTimeout(reconnectTimer.current);
-        };
-    }, [push]);
-
-    return { notifications, unreadCount, markAllRead, clearAll };
+/** Mounted once by the dashboard shell; bell and popups share this inbox. */
+export function useNotificationStream() {
+  const token = useAuthStore(s => s.token);
+  const userId = useAuthStore(s => s.user?.id);
+  useEffect(() => {
+    useInbox.getState().reset(userId ?? null);
+    if (!token || !userId) return;
+    const base = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000").replace(/\/$/, "");
+    const stream = new EventSource(`${base}/api/notifications/stream?token=${encodeURIComponent(token)}`);
+    stream.addEventListener("connected", requestDataRefresh);
+    stream.addEventListener("data_changed", requestDataRefresh);
+    for (const event of NOTIFICATION_EVENTS) {
+      stream.addEventListener(event, (message) => {
+        try {
+          const payload = JSON.parse((message as MessageEvent).data) as unknown;
+          if (!payload || typeof payload !== "object" || Array.isArray(payload)) return;
+          const values = payload as Record<string, unknown>;
+          const data: NotificationData = {};
+          for (const key of STRING_FIELDS) {
+            if (typeof values[key] === "string") data[key] = values[key];
+          }
+          data.hasCritical = values.hasCritical === true;
+          useInbox.getState().push(event, data);
+          requestDataRefresh();
+        } catch { /* A malformed event must not kill the connection. */ }
+      });
+    }
+    // Native EventSource handles reconnection.
+    return () => { stream.close(); useInbox.getState().reset(null); };
+  }, [token, userId]);
 }

@@ -445,7 +445,7 @@ export function ImagingTab({
       }
     }
     if (Object.keys(preloaded).length > 0) {
-      setReports((prev) => ({ ...preloaded, ...prev }));
+      setReports((prev) => ({ ...prev, ...preloaded }));
     }
   }, [imagingOrders]);
 

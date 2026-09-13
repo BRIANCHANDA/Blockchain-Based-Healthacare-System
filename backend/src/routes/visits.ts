@@ -28,7 +28,7 @@
 
 import { handleError } from '../lib/errors';
 import { createRoute, z } from '@hono/zod-openapi';
-import { eq, desc, and, sql, ne } from 'drizzle-orm';
+import { eq, desc, and, sql, ne, or, isNull } from 'drizzle-orm';
 import { db } from '../db';
 import {
   visits, vitalSigns, consultations, diagnoses,
@@ -40,12 +40,13 @@ import {
 import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
 import { storeRecordHash, logAccess, checkPermission } from '../services/fabric';
-import { generateRecordHash } from '../services/crypto';
+import { generateRecordHash, decrypt } from '../services/crypto';
 import crypto from 'crypto';
 import path from 'path';
 import { mkdir, writeFile } from 'fs/promises';
 import { createHash } from 'crypto';
 import { notifyUser } from '../services/notifications';
+import { notifyPatientAssigned } from '../services/assignment-notifications';
 import { vitals as vVitals } from '../lib/validators';
 
 const errorSchema = z.object({ success: z.boolean(), error: z.object({ message: z.string() }) });
@@ -415,7 +416,7 @@ export const visitRouter = createRouter()
       const { nurseId } = c.req.valid('json');
 
       const [visitRow, staffRow, nurseRow] = await Promise.all([
-        db.select({ institutionId: visits.institutionId }).from(visits).where(eq(visits.id, visitId)).limit(1),
+        db.select({ institutionId: visits.institutionId, patientId: visits.patientId, visitNumber: visits.visitNumber, priority: visits.priority }).from(visits).where(eq(visits.id, visitId)).limit(1),
         db.select({ institutionId: practitioners.institutionId }).from(practitioners).where(eq(practitioners.id, userId)).limit(1),
         db.select({ id: practitioners.id, role: practitioners.role, institutionId: practitioners.institutionId, isActive: practitioners.isActive }).from(practitioners).where(eq(practitioners.id, nurseId)).limit(1),
       ]);
@@ -427,12 +428,12 @@ export const visitRouter = createRouter()
       const visitInst = visitRow[0]?.institutionId ?? null;
       const staffInst = staffRow[0]?.institutionId ?? null;
       const nurseInst = nurseRow[0]?.institutionId ?? null;
-      const anyNull = !visitInst || !staffInst || !nurseInst;
-      const mismatch = !anyNull && !(staffInst === visitInst && staffInst === nurseInst);
+      const mismatch = !visitInst || !staffInst || !nurseInst || !(staffInst === visitInst && staffInst === nurseInst);
       if (mismatch) return c.json({ success: false, error: { message: 'Institution mismatch — cannot assign nurse from a different institution.' } }, 403);
-      if (anyNull) console.warn(`⚠ assign-nurse: null institutionId (visit=${visitInst}, staff=${staffInst}, nurse=${nurseInst}). Allowing.`);
+      if (!nurseRow[0].isActive) return c.json({ success: false, error: { message: 'Nurse account is inactive' } }, 403);
 
       await db.update(visits).set({ assignedNurseId: nurseId }).where(eq(visits.id, visitId));
+      await notifyPatientAssigned(visitId, nurseId, 'nurse');
       return c.json({ success: true, data: { message: 'Nurse assigned successfully' } });
     } catch (err: any) {
       return handleError(err, c);
@@ -462,16 +463,17 @@ export const visitRouter = createRouter()
         return c.json({ success: false, error: { message: 'Only nurses can assign doctors' } }, 403);
       const { visitId } = c.req.valid('param');
       const { doctorId } = c.req.valid('json');
-      const visit = await db.select({ institutionId: visits.institutionId }).from(visits).where(eq(visits.id, visitId)).limit(1);
+      const visit = await db.select({ institutionId: visits.institutionId, patientId: visits.patientId, visitNumber: visits.visitNumber, priority: visits.priority }).from(visits).where(eq(visits.id, visitId)).limit(1);
       if (!visit.length) return c.json({ success: false, error: { message: 'Visit not found' } }, 404);
       const staffInstitutionId = await getStaffInstitution(userId);
-      if (visit[0].institutionId && staffInstitutionId && visit[0].institutionId !== staffInstitutionId)
+      if (!visit[0].institutionId || !staffInstitutionId || visit[0].institutionId !== staffInstitutionId)
         return c.json({ success: false, error: { message: 'Cannot assign doctor to visit from another institution' } }, 403);
       const doctor = await db.select().from(practitioners)
-        .where(and(eq(practitioners.id, doctorId), eq(practitioners.role, 'practitioner'), eq(practitioners.institutionId, staffInstitutionId)))
+        .where(and(eq(practitioners.id, doctorId), eq(practitioners.role, 'practitioner'), eq(practitioners.isActive, true), eq(practitioners.institutionId, staffInstitutionId)))
         .limit(1);
       if (!doctor.length) return c.json({ success: false, error: { message: 'Doctor not found in your institution' } }, 404);
       await db.update(visits).set({ assignedDoctorId: doctorId }).where(eq(visits.id, visitId));
+      await notifyPatientAssigned(visitId, doctorId, 'practitioner');
       return c.json({ success: true, data: { message: 'Doctor assigned successfully' } });
     } catch (err: any) {
       return handleError(err, c);
@@ -959,6 +961,12 @@ export const visitRouter = createRouter()
         .limit(1);
       if (!order.length)
         return c.json({ success: false, error: { message: 'Lab order not found' } }, 404);
+      if (order[0].visitId !== visitId)
+        return c.json({ success: false, error: { message: 'Lab order does not belong to this visit' } }, 400);
+      // A null assignment is the shared hospital-laboratory queue. Explicitly
+      // assigned orders remain actionable only by their intended technician.
+      if (order[0].assignedTo && order[0].assignedTo !== userId)
+        return c.json({ success: false, error: { message: 'This lab order is assigned to another technician' } }, 403);
 
       // ── Validate visit exists ─────────────────────────────────────────────
       const visitRow = await db
@@ -1552,6 +1560,13 @@ export const visitRouter = createRouter()
 
       await db.update(imagingOrders).set({ status: 'reported' }).where(eq(imagingOrders.id, orderId));
       await auditAction(userId, userType, visitRow[0].patientId, patient[0].blockchainAddress, 'create', 'imaging_report', reportId, ip);
+      try {
+        const [visit] = await db.select({ doctorId: visits.assignedDoctorId }).from(visits).where(eq(visits.id, visitId)).limit(1);
+        if (visit?.doctorId) notifyUser(visit.doctorId, 'imaging_result_ready', {
+          visitId, orderId, orderNumber: order[0].orderNumber,
+          modality: order[0].modality, bodyPart: order[0].bodyPart,
+        });
+      } catch { console.warn('[IMAGING_NOTIFICATION] Delivery failed'); }
       return c.json({ success: true, data: { reportId, imageUrls } }, 201);
     } catch (err: any) {
       return handleError(err, c);
@@ -1822,7 +1837,9 @@ export const visitRouter = createRouter()
                 testName: z.string(), testCode: z.string(),
                 specimenType: z.enum(['blood', 'urine', 'stool', 'sputum', 'csf', 'tissue', 'swab', 'other']),
                 urgency: z.enum(['routine', 'urgent', 'emergency', 'critical']).default('routine'),
-                clinicalNotes: z.string().optional(), assignedTo: z.string().uuid(),
+                // When nobody is online, leave this unset.  The order is then
+                // offered to every laboratory technician at this institution.
+                clinicalNotes: z.string().optional(), assignedTo: z.string().uuid().optional(),
               })).min(1),
             }),
           },
@@ -1854,14 +1871,16 @@ export const visitRouter = createRouter()
 
       const createdOrders = [];
       for (const test of body.tests) {
-        const tech = await db.select({ id: practitioners.id }).from(practitioners)
-          .where(and(eq(practitioners.id, test.assignedTo), eq(practitioners.role, 'lab_technician'), eq(practitioners.institutionId, visitRow[0].institutionId)))
-          .limit(1);
-        if (!tech.length) return c.json({ success: false, error: { message: `Lab technician not found in this institution` } }, 400);
+        if (test.assignedTo) {
+          const tech = await db.select({ id: practitioners.id }).from(practitioners)
+            .where(and(eq(practitioners.id, test.assignedTo), eq(practitioners.role, 'lab_technician'), eq(practitioners.institutionId, visitRow[0].institutionId)))
+            .limit(1);
+          if (!tech.length) return c.json({ success: false, error: { message: 'Lab technician not found in this institution' } }, 400);
+        }
 
         const orderNumber = `LAB-${Date.now()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
         const orderHash = generateRecordHash({ visitId, orderNumber, ...test, practitionerId: userId, timestamp: new Date().toISOString() });
-        const result = await db.insert(labTestOrders).values({ orderNumber, visitId, patientId: visitRow[0].patientId, orderedByPractitionerId: userId, testName: test.testName, testCode: test.testCode, specimenType: test.specimenType, urgency: test.urgency, clinicalNotes: test.clinicalNotes ?? null, status: 'ordered', assignedTo: test.assignedTo, blockchainHash: orderHash }).returning();
+        const result = await db.insert(labTestOrders).values({ orderNumber, visitId, patientId: visitRow[0].patientId, orderedByPractitionerId: userId, testName: test.testName, testCode: test.testCode, specimenType: test.specimenType, urgency: test.urgency, clinicalNotes: test.clinicalNotes ?? null, status: 'ordered', assignedTo: test.assignedTo ?? null, blockchainHash: orderHash }).returning();
         await storeRecordHash(result[0].id, patient[0].blockchainAddress, orderHash, 'lab_order');
         createdOrders.push(result[0]);
       }
@@ -2181,10 +2200,30 @@ export const visitRouter = createRouter()
         testName: labTestOrders.testName, testCode: labTestOrders.testCode, specimenType: labTestOrders.specimenType, urgency: labTestOrders.urgency,
         clinicalNotes: labTestOrders.clinicalNotes, status: labTestOrders.status, orderedAt: labTestOrders.orderedAt,
         visitNumber: visits.visitNumber, chiefComplaint: visits.chiefComplaint,
-      }).from(labTestOrders).leftJoin(visits, eq(visits.id, labTestOrders.visitId))
-        .where(and(ne(labTestOrders.status, 'resulted'), ne(labTestOrders.status, 'cancelled'), institutionFilter))
+        patientFirstNameEncrypted: patients.firstNameEncrypted, patientLastNameEncrypted: patients.lastNameEncrypted,
+      }).from(labTestOrders)
+        .leftJoin(visits, eq(visits.id, labTestOrders.visitId))
+        .leftJoin(patients, eq(patients.id, labTestOrders.patientId))
+        .where(and(
+          ne(labTestOrders.status, 'resulted'),
+          ne(labTestOrders.status, 'cancelled'),
+          institutionFilter,
+          // Match the nursing queue: personal assignments plus the shared
+          // hospital queue for orders created while no technician was online.
+          userType === 'admin' ? undefined : or(eq(labTestOrders.assignedTo, userId), isNull(labTestOrders.assignedTo)),
+        ))
         .orderBy(sql`CASE ${labTestOrders.urgency} WHEN 'critical' THEN 1 WHEN 'emergency' THEN 2 WHEN 'urgent' THEN 3 ELSE 4 END`, labTestOrders.orderedAt);
-      return c.json({ success: true, data: { orders } });
+      return c.json({
+        success: true,
+        data: {
+          orders: orders.map((order) => ({
+            ...order,
+            patientName: order.patientFirstNameEncrypted
+              ? `${decrypt(order.patientFirstNameEncrypted)} ${order.patientLastNameEncrypted ? decrypt(order.patientLastNameEncrypted) : ''}`.trim()
+              : 'Unknown patient',
+          })),
+        },
+      });
     } catch (err: any) {
       return handleError(err, c);
     }

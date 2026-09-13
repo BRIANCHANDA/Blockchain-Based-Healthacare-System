@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { visitApi } from "@/lib/api";
@@ -68,10 +69,10 @@ export default function LabQueuePage() {
     }
   }, []);
 
+  useLiveRefresh(() => fetchOrders(true));
+
   useEffect(() => {
     fetchOrders();
-    const interval = setInterval(() => fetchOrders(true), 60_000);
-    return () => clearInterval(interval);
   }, [fetchOrders]);
 
   const filtered = orders
@@ -238,6 +239,8 @@ export default function LabQueuePage() {
                         color: "var(--text-secondary)",
                       }}
                     >
+                      <span>{order.patientName || "Unknown patient"}</span>
+                      <span style={{ color: "var(--text-disabled)" }}>·</span>
                       <span>{order.visitNumber}</span>
                       <span style={{ color: "var(--text-disabled)" }}>·</span>
                       <span style={{ textTransform: "capitalize" }}>

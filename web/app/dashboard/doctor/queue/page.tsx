@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
@@ -113,10 +114,10 @@ export default function DoctorQueuePage() {
     }
   }, []);
 
+  useLiveRefresh(() => load(true));
+
   useEffect(() => {
     load();
-    const iv = setInterval(() => load(true), 30_000);
-    return () => clearInterval(iv);
   }, [load]);
 
   const isAwaitingResults = (v: QueueVisit) =>

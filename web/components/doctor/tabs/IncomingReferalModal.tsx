@@ -1,7 +1,9 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
+import { useAuthStore } from "@/lib/store";
 import {
   Building2,
   Search,
@@ -174,7 +176,7 @@ function ReferralRow({
 }: {
   referral: IncomingReferral;
   idx: number;
-  onAdmit: (r: IncomingReferral) => void;
+  onAdmit?: (r: IncomingReferral) => void;
 }) {
   const u = getU(referral.urgency);
   const st = getS(referral.status);
@@ -253,7 +255,7 @@ function ReferralRow({
         <span className="hidden sm:inline-flex">
           <Pill tone={st.tone}>{st.label}</Pill>
         </span>
-        {referral.status === "pending" && (
+        {referral.status === "pending" && onAdmit && (
           <Button
             variant="primary"
             size="sm"
@@ -519,6 +521,8 @@ type Filter = "all" | "pending" | "accepted" | "completed";
 
 export default function IncomingReferralsPage() {
   const router = useRouter();
+  const role = useAuthStore(s => s.user?.type);
+  const canAdmit = role === "receptionist" || role === "admin";
 
   const [referrals, setReferrals] = useState<IncomingReferral[]>([]);
   const [loading, setLoading] = useState(true);
@@ -554,13 +558,10 @@ export default function IncomingReferralsPage() {
     [filter],
   );
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useLiveRefresh(() => load(true));
 
   useEffect(() => {
-    const iv = setInterval(() => load(true), 30_000);
-    return () => clearInterval(iv);
+    load();
   }, [load]);
 
   const handleLookup = async () => {
@@ -665,7 +666,7 @@ export default function IncomingReferralsPage() {
         {lookupResult && (
           <div style={{ marginTop: 12 }}>
             <ReferralSummary referral={lookupResult} />
-            <div style={{ marginTop: 10 }}>
+            <div style={{ marginTop: 10, display: canAdmit ? undefined : "none" }}>
               {lookupResult.status === "pending" ? (
                 <Button
                   variant="primary"
@@ -731,7 +732,7 @@ export default function IncomingReferralsPage() {
           />
         ) : (
           referrals.map((r, i) => (
-            <ReferralRow key={r.id} referral={r} idx={i} onAdmit={setAdmitting} />
+            <ReferralRow key={r.id} referral={r} idx={i} onAdmit={canAdmit ? setAdmitting : undefined} />
           ))
         )}
       </Card>
@@ -820,7 +821,7 @@ export default function IncomingReferralsPage() {
             iconRight={ArrowRight}
             style={{ marginTop: 14 }}
             onClick={() => {
-              router.push(`/dashboard/receptionist/visits/${admitted.visitId}`);
+              router.push(role === "admin" ? "/dashboard/admin/visits" : `/dashboard/receptionist/visits/${admitted.visitId}`);
               setAdmitted(null);
             }}
           >

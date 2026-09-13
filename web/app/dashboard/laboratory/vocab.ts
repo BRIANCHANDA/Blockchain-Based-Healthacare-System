@@ -99,5 +99,6 @@ export function normalizeOrder(o: any) {
     testCode: o.testCode ?? o.test_code ?? "",
     orderNumber: o.orderNumber ?? o.order_number ?? "",
     chiefComplaint: o.chiefComplaint ?? o.chief_complaint ?? "",
+    patientName: o.patientName ?? o.patient_name ?? "Unknown patient",
   };
 }

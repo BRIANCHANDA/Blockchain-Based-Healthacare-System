@@ -16,6 +16,9 @@ import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
 import { generateRecordHash, decrypt } from '../services/crypto';
 import { storeRecordHash, checkPermission } from '../services/fabric';
+import { notifyUser } from '../services/notifications';
+import { notifyDataChanged } from '../services/realtime';
+import { notifyPatientAssigned } from '../services/assignment-notifications';
 import crypto from 'crypto';
 
 const errorSchema = z.object({
@@ -162,6 +165,16 @@ export const referralRouter = createRouter()
             if (referringInstitutionId === body.receivingInstitutionId)
                 return c.json({ success: false, error: { message: 'Cannot refer to your own institution' } }, 400);
 
+            if (body.receivingPractitionerId) {
+                const [doctor] = await db.select({ id: practitioners.id }).from(practitioners).where(and(
+                    eq(practitioners.id, body.receivingPractitionerId),
+                    eq(practitioners.institutionId, body.receivingInstitutionId),
+                    eq(practitioners.role, 'practitioner'), eq(practitioners.isActive, true),
+                    eq(practitioners.isVerified, true),
+                )).limit(1);
+                if (!doctor) return c.json({ success: false, error: { message: 'Receiving doctor not found at the destination hospital' } }, 404);
+            }
+
             const referralNumber = `REF-${Date.now()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
 
             const [result] = await db.insert(referrals).values({
@@ -203,6 +216,37 @@ export const referralRouter = createRouter()
                 blockchainTransactionId: crypto.randomBytes(16).toString('hex'),
                 ipAddress: c.req.header('x-forwarded-for'),
             });
+
+            notifyDataChanged(body.receivingInstitutionId, practitionerId);
+            try {
+            const patientName = await getDecryptedPatientName(body.patientId);
+            const notification = {
+                referralId: result.id,
+                referralNumber,
+                patientName,
+                reason: body.reason,
+                priority: body.urgency,
+            };
+
+            // Coordination staff always need to know a referral has arrived,
+            // including when it is addressed to a particular doctor.
+            const recipientConditions: any[] = [
+                eq(practitioners.institutionId, body.receivingInstitutionId),
+                eq(practitioners.isActive, true),
+                eq(practitioners.isVerified, true),
+            ];
+            if (body.receivingPractitionerId) {
+                recipientConditions.push(or(eq(practitioners.id, body.receivingPractitionerId), inArray(practitioners.role, ['receptionist', 'admin'])));
+            } else {
+                recipientConditions.push(inArray(practitioners.role, ['practitioner', 'receptionist', 'admin']));
+            }
+            const recipients = await db.select({ id: practitioners.id })
+                .from(practitioners)
+                .where(and(...recipientConditions));
+            for (const recipient of recipients) {
+                notifyUser(recipient.id, 'external_referral_received', notification);
+            }
+            } catch { console.warn('[REFERRAL_NOTIFICATION] Delivery failed'); }
 
             return c.json({ success: true, data: { referralId: result.id, referralNumber } }, 201);
         } catch (err: any) {
@@ -553,6 +597,15 @@ export const referralRouter = createRouter()
             if (referral.status !== 'pending')
                 return c.json({ success: false, error: { message: `Referral is already ${referral.status}` } }, 400);
 
+            const assignedDoctorId = body.assignedDoctorId ?? referral.receivingPractitionerId;
+            if (assignedDoctorId) {
+                const [doctor] = await db.select({ id: practitioners.id }).from(practitioners).where(and(
+                    eq(practitioners.id, assignedDoctorId), eq(practitioners.institutionId, institutionId),
+                    eq(practitioners.role, 'practitioner'), eq(practitioners.isActive, true),
+                )).limit(1);
+                if (!doctor) return c.json({ success: false, error: { message: 'Assigned doctor not found at this hospital' } }, 404);
+            }
+
             // ── Step 1: Ensure patient is registered at this institution ──────
             const existingReg = await db
                 .select({ id: patientInstitutionRegistrations.id })
@@ -600,7 +653,7 @@ export const referralRouter = createRouter()
                 status: 'in-progress',
                 priority: referral.urgency,       // carry over urgency as priority
                 wardOrRoom: body.wardOrRoom ?? null,
-                assignedDoctorId: body.assignedDoctorId ?? referral.receivingPractitionerId ?? null,
+                assignedDoctorId: assignedDoctorId ?? null,
                 blockchainHash: visitHash,
             }).returning({ id: visits.id });
 
@@ -645,6 +698,9 @@ export const referralRouter = createRouter()
                 ipAddress: c.req.header('x-forwarded-for'),
                 accessReason: `Converted from referral ${referral.referralNumber}`,
             });
+
+            if (assignedDoctorId) await notifyPatientAssigned(newVisit.id, assignedDoctorId, 'practitioner');
+            notifyDataChanged(referral.referringInstitutionId, userId);
 
             return c.json({
                 success: true,

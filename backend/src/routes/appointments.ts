@@ -10,6 +10,8 @@ import { createRouter } from '../lib/create-app';
 import { authMiddleware } from '../middleware/auth';
 import { generateRecordHash, decrypt } from '../services/crypto';
 import { storeRecordHash } from '../services/fabric';
+import { notifyUser } from '../services/notifications';
+import { notifyPatientAssigned } from '../services/assignment-notifications';
 import crypto from 'crypto';
 
 const errorSchema = z.object({ success: z.boolean(), error: z.object({ message: z.string() }) });
@@ -410,7 +412,12 @@ export const appointmentRouter = createRouter()
                 return c.json({ success: false, error: { message: 'Appointment date must be in the future' } }, 400);
 
             const patient = await db
-                .select({ id: patients.id, blockchainAddress: patients.blockchainAddress })
+                .select({
+                    id: patients.id,
+                    blockchainAddress: patients.blockchainAddress,
+                    firstNameEncrypted: patients.firstNameEncrypted,
+                    lastNameEncrypted: patients.lastNameEncrypted,
+                })
                 .from(patients)
                 .where(eq(patients.id, body.patientId))
                 .limit(1);
@@ -473,6 +480,26 @@ export const appointmentRouter = createRouter()
                         ? `Internal referral: ${body.admittingDiagnosis.slice(0, 80)}`
                         : 'New appointment',
             });
+
+            // An appointment with an admitting diagnosis is the application's
+            // internal-referral workflow. Notify only the receiving doctor;
+            // ordinary appointments must not create a clinical referral alert.
+            if (
+                body.admittingDiagnosis &&
+                body.assignedDoctorId &&
+                body.assignedDoctorId !== userId
+            ) {
+                notifyUser(body.assignedDoctorId, 'internal_referral_received', {
+                    visitId: newVisit.id,
+                    visitNumber: newVisit.visitNumber,
+                    patientName: await decryptName(
+                        patient[0].firstNameEncrypted,
+                        patient[0].lastNameEncrypted,
+                    ),
+                    reason: body.admittingDiagnosis,
+                    priority: body.priority,
+                });
+            }
 
             return c.json({ success: true, data: { appointmentId: newVisit.id, visitNumber: newVisit.visitNumber } }, 201);
         } catch (err: any) {
@@ -544,6 +571,19 @@ export const appointmentRouter = createRouter()
             if (appt.status !== 'scheduled')
                 return c.json({ success: false, error: { message: `Cannot confirm — appointment is already ${appt.status}` } }, 409);
 
+            const assignedStaff = [
+                { id: body.assignedNurseId ?? appt.assignedNurseId, role: 'nurse' as const },
+                { id: body.assignedDoctorId ?? appt.assignedDoctorId, role: 'practitioner' as const },
+            ];
+            for (const recipient of assignedStaff) {
+                if (!recipient.id) continue;
+                const [staff] = await db.select({ id: practitioners.id }).from(practitioners).where(and(
+                    eq(practitioners.id, recipient.id), eq(practitioners.institutionId, institutionId),
+                    eq(practitioners.role, recipient.role), eq(practitioners.isActive, true),
+                )).limit(1);
+                if (!staff) return c.json({ success: false, error: { message: 'Assigned staff member is unavailable at this hospital' } }, 404);
+            }
+
             const updates: any = {
                 status: 'in-progress',
                 admissionDate: new Date(),
@@ -568,6 +608,10 @@ export const appointmentRouter = createRouter()
                 ipAddress: ip,
                 accessReason: 'Patient arrival confirmed',
             });
+
+            for (const recipient of assignedStaff) {
+                if (recipient.id) await notifyPatientAssigned(updated.id, recipient.id, recipient.role);
+            }
 
             return c.json({ success: true, data: { visitId: updated.id, visitNumber: updated.visitNumber, message: 'Patient checked in — visit is now active' } });
         } catch (err: any) {

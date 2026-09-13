@@ -11,6 +11,7 @@
  */
 
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback } from "react";
 import { api, institutionApi } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
@@ -219,6 +220,8 @@ export default function AuditPage() {
     },
     [page, actionFilter, roleFilter, institutionFilter, isSuperAdmin],
   );
+
+  useLiveRefresh(() => load(true));
 
   useEffect(() => {
     load();

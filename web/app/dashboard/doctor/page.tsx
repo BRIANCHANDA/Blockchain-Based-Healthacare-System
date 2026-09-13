@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
@@ -342,11 +343,11 @@ export default function DoctorOverview() {
     }
   }, []);
 
+  useLiveRefresh(() => Promise.all([fetchQueue(true), fetchStats()]));
+
   useEffect(() => {
     fetchStats();
     fetchQueue();
-    const iv = setInterval(() => fetchQueue(true), 30_000);
-    return () => clearInterval(iv);
   }, [fetchStats, fetchQueue]);
 
   // Derived

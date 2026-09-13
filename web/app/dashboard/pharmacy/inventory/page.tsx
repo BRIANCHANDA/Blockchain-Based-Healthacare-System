@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback, useRef } from "react";
 import { stockApi } from "@/lib/api";
 import {
@@ -132,6 +133,8 @@ export default function PharmacyInventoryPage() {
     },
     [debouncedSearch, lowOnly],
   );
+
+  useLiveRefresh(() => load(true));
 
   useEffect(() => {
     load();

@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { patientApi, api } from "@/lib/api";
 import {
   ArrowLeft,
@@ -489,6 +490,12 @@ export default function PatientDetail({ patientId, onBack }: PatientDetailProps)
   }, [patientId]);
 
   // ── Enter edit mode ────────────────────────────────────────────────────────
+  useLiveRefresh(async () => {
+    const res = await patientApi.getRegistration(patientId);
+    const payload = res.data?.data ?? res.data;
+    if (payload?.id) setPatient(payload as PatientRegistration);
+  }, !!patientId && !editing && !loading);
+
   const enterEdit = () => {
     if (!patient) return;
     setForm({

@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { visitApi } from "@/lib/api";
@@ -80,6 +81,8 @@ export default function PharmacyDispensedPage() {
       setRefreshing(false);
     }
   }, []);
+
+  useLiveRefresh(() => load(true));
 
   useEffect(() => {
     load();

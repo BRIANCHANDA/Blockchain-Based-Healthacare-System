@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
@@ -111,10 +112,10 @@ export default function PharmacyOverviewPage() {
     }
   }, []);
 
+  useLiveRefresh(() => load(true));
+
   useEffect(() => {
     load();
-    const iv = setInterval(() => load(true), 60_000);
-    return () => clearInterval(iv);
   }, [load]);
 
   const longWaiting = pending.filter(

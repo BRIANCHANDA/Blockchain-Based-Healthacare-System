@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback } from "react";
 import { patientApi } from "@/lib/api";
 import {
@@ -618,6 +619,8 @@ export default function NursePatientsPage() {
       setRefreshing(false);
     }
   }, [search, page]);
+
+  useLiveRefresh(() => load(true));
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setPage(1); }, [search]);

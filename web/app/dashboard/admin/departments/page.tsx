@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { api } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
 import {
@@ -288,9 +289,9 @@ export default function DepartmentsPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     if (!institutionId) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const res = await api.get(
         `/api/institutions/${institutionId}/departments?includeInactive=${showInactive}`
@@ -302,6 +303,7 @@ export default function DepartmentsPage() {
   }, [institutionId, showInactive]);
 
   useEffect(() => { load(); }, [load]);
+  useLiveRefresh(() => load(true));
 
   const handleSaved = (msg: string) => {
     setModal(null);
@@ -367,7 +369,7 @@ export default function DepartmentsPage() {
           </p>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <button onClick={load} style={{
+          <button onClick={() => load()} style={{
             display: "flex", alignItems: "center", gap: 6, padding: "8px 14px",
             borderRadius: 9, border: "1px solid var(--hc-border)", background: "var(--white)",
             fontSize: 13, fontWeight: 600, color: "var(--text-secondary)", cursor: "pointer",

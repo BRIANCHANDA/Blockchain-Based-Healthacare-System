@@ -2,6 +2,7 @@
 
 "use client";
 import { useEffect, useState, useCallback, useMemo } from "react";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useRouter } from "next/navigation";
 import { labApi } from "@/lib/api";
 import {
@@ -116,6 +117,17 @@ export default function LabHistoryPage() {
   useEffect(() => {
     fetchPage();
   }, []);
+
+  useLiveRefresh(async () => {
+    // Refresh the entire loaded window without collapsing "Load more" pages.
+    // The API caps each request at 100, so retain the original 30-row pages.
+    const pages = await Promise.all(Array.from({ length: Math.max(1, Math.ceil(offset / 30)) },
+      (_, page) => labApi.getMyResults({ limit: 30, offset: page * 30 })));
+    const nextResults = pages.flatMap(res => res.data?.data?.results ?? []);
+    setResults(nextResults);
+    setOffset(nextResults.length);
+    setHasMore(pages[pages.length - 1].data?.data?.hasMore ?? false);
+  }, !loading && !loadingMore);
 
   // Filter
   const filtered = useMemo(() => {

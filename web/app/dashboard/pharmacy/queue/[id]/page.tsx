@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { visitApi } from "@/lib/api";
@@ -407,6 +408,17 @@ export default function PharmacyDispensePage() {
       .catch(() => setPrescription(null))
       .finally(() => setLoading(false));
   }, [prescriptionId]);
+
+  useLiveRefresh(async () => {
+    const res = await visitApi.getPrescriptionDetail(prescriptionId);
+    const itemList = res.data.data?.items ?? [];
+    setPrescription(res.data.data?.prescription ?? null);
+    setItems(itemList);
+    // Preserve the pharmacist's choices and notes; only remove items already
+    // dispensed by a colleague since this screen was opened.
+    setSelected(previous => new Set([...previous].filter(id =>
+      itemList.some((item: any) => item.id === id && !item.is_dispensed))));
+  }, !!prescriptionId && !loading);
 
   const toggleItem = (id: string) => {
     setSelected((prev) => {

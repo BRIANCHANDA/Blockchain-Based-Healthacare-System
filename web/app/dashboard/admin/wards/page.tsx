@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { api } from "@/lib/api";
 import {
   BedDouble, Plus, Pencil, Trash2, X, RefreshCw,
@@ -321,8 +322,8 @@ export default function AdminWardsPage() {
   const [editing,  setEditing]  = useState<Ward | null>(null);
   const [deleting, setDeleting] = useState<Ward | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [wardsRes, deptsRes] = await Promise.all([
         api.get("/api/wards"),
@@ -336,6 +337,7 @@ export default function AdminWardsPage() {
   }, []);
 
   useEffect(() => { load(); }, []);
+  useLiveRefresh(() => load(true));
 
   const visible = wards.filter(w => showInactive ? true : w.isActive);
   const totalBeds     = visible.reduce((s, w) => s + w.bedsTracked, 0);

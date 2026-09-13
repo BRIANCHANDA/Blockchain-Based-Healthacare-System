@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useRouter } from "next/navigation";
 import { patientApi } from "@/lib/api";
 import { useAuthStore } from "@/lib/store";
@@ -71,6 +72,11 @@ export default function DoctorPatientsPage() {
 
   const institutionId = (user as any)?.institutionId;
   const institutionName = (user as any)?.institutionName;
+
+  useLiveRefresh(async () => {
+    const res = await patientApi.getAllByInstitution(institutionId);
+    setPatients(res.data.data?.patients ?? []);
+  }, !!institutionId);
 
   useEffect(() => {
     const fetchPatients = async () => {

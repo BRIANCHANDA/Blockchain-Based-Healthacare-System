@@ -87,10 +87,59 @@ const EMPTY_TEST = {
   assignedTo: "",
 };
 
+type QuantitativeResult = {
+  parameter: string;
+  value: string;
+  referenceRange?: string;
+};
+
+// Results entered in the laboratory form are an array of rows, whereas older
+// records are a parameter-to-value object. Normalise both shapes before
+// rendering so a row object is never coerced to "[object Object]".
+function displayResultValue(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "—";
+  if (typeof value !== "object") return String(value);
+  if (Array.isArray(value)) return value.map(displayResultValue).join(", ");
+  return Object.entries(value as Record<string, unknown>)
+    .map(([key, item]) => `${key}: ${displayResultValue(item)}`)
+    .join(", ");
+}
+
+function normaliseQuantitativeResults(
+  resultsData: unknown,
+  referenceRanges?: Record<string, unknown>,
+): QuantitativeResult[] {
+  if (Array.isArray(resultsData)) {
+    return resultsData.map((row: any, index) => {
+      const parameter = displayResultValue(row?.parameter ?? row?.name ?? `Result ${index + 1}`);
+      const value = `${displayResultValue(row?.value ?? row?.result ?? row?.reading)}${row?.unit ? ` ${displayResultValue(row.unit)}` : ""}`;
+      return {
+        parameter,
+        value,
+        referenceRange: displayResultValue(row?.referenceRange ?? referenceRanges?.[parameter]),
+      };
+    });
+  }
+
+  if (resultsData && typeof resultsData === "object") {
+    return Object.entries(resultsData as Record<string, unknown>).map(([parameter, value]) => ({
+      parameter,
+      value: displayResultValue(value),
+      referenceRange: displayResultValue(referenceRanges?.[parameter]),
+    }));
+  }
+
+  return [];
+}
+
 // ── Lab order card ────────────────────────────────────────────────────────────
 function LabOrderCard({ order }: { order: any }) {
   const [open, setOpen] = useState(false);
   const resulted = order.status === "resulted";
+  const quantitativeResults = normaliseQuantitativeResults(
+    order.result?.resultsData,
+    order.result?.referenceRanges,
+  );
   /* A resulted test is done regardless of how urgently it was ordered, so
      "resulted" wins over the urgency tone. */
   const tone = resulted ? "success" : getPriority(order.urgency).tone;
@@ -206,9 +255,7 @@ function LabOrderCard({ order }: { order: any }) {
           )}
 
           {/* Quantitative results, with reference ranges where the lab sent them. */}
-          {order.result?.resultsData &&
-            typeof order.result.resultsData === "object" &&
-            Object.keys(order.result.resultsData).length > 0 && (
+          {quantitativeResults.length > 0 && (
               <div
                 style={{
                   borderRadius: "var(--r-sm)",
@@ -226,9 +273,9 @@ function LabOrderCard({ order }: { order: any }) {
                   Quantitative results
                 </SectionLabel>
 
-                {Object.entries(order.result.resultsData).map(([param, value]) => (
+                {quantitativeResults.map(({ parameter, value, referenceRange }, index) => (
                   <div
-                    key={param}
+                    key={`${parameter}-${index}`}
                     className="flex items-center justify-between"
                     style={{
                       gap: 12,
@@ -242,7 +289,7 @@ function LabOrderCard({ order }: { order: any }) {
                         color: "var(--text-secondary)",
                       }}
                     >
-                      {param}
+                      {parameter}
                     </span>
                     <span className="flex items-center" style={{ gap: 12 }}>
                       <span
@@ -251,16 +298,16 @@ function LabOrderCard({ order }: { order: any }) {
                           color: "var(--text-primary)",
                         }}
                       >
-                        {String(value)}
+                        {value}
                       </span>
-                      {order.result?.referenceRanges?.[param] && (
+                      {referenceRange && referenceRange !== "—" && (
                         <span
                           style={{
                             font: "400 11px/1 var(--font-mono)",
                             color: "var(--text-muted)",
                           }}
                         >
-                          ref {order.result.referenceRanges[param]}
+                          ref {referenceRange}
                         </span>
                       )}
                     </span>
@@ -370,14 +417,16 @@ export function LabOrdersTab({
       onError("Add at least one test with name and code.");
       return;
     }
-    const missing = valid.find((t) => !t.assignedTo);
-    if (missing) {
-      onError(`Assign a lab technician to "${missing.testName}".`);
-      return;
-    }
     setSubmitting(true);
     try {
-      await visitApi.orderLabs(visitId, { tests: valid });
+      // An empty selection deliberately becomes an unassigned order. The API
+      // publishes those orders to every lab technician at this hospital.
+      await visitApi.orderLabs(visitId, {
+        tests: valid.map((test) => ({
+          ...test,
+          assignedTo: test.assignedTo || undefined,
+        })),
+      });
       setTests([{ ...EMPTY_TEST }]);
       setShowForm(false);
       onSaved();
@@ -438,7 +487,7 @@ export function LabOrdersTab({
             <CardHeader
               icon={FlaskConical}
               title="Order lab tests"
-              subtitle="Select tests and assign a technician"
+              subtitle="Assign an online technician, or share the order with the hospital laboratory"
               tone="urgent"
               right={
                 <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}>
@@ -568,14 +617,21 @@ export function LabOrdersTab({
                       />
                     </FieldGroup>
 
-                    <FieldGroup label="Assign lab technician *">
+                    <FieldGroup label="Assign lab technician">
                       <StaffDropdown
                         value={test.assignedTo}
                         onChange={(v) => updateTest(idx, "assignedTo", v)}
                         staff={labTechs}
                         loading={techsLoading}
-                        placeholder="Select a technician…"
+                        placeholder={labTechs.length ? "Select a technician…" : "No technician online — shared with hospital laboratory"}
                       />
+                      {!techsLoading && labTechs.length === 0 && (
+                        <p
+                          style={{ margin: "6px 0 0", font: "400 12px/1.4 var(--font-sans)", color: "var(--text-muted)" }}
+                        >
+                          This order will appear in the queue of every laboratory technician at this hospital.
+                        </p>
+                      )}
                     </FieldGroup>
                   </div>
                 ))}

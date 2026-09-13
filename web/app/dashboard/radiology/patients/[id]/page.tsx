@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, use } from "react";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useRouter } from "next/navigation";
 import { patientApi, labApi } from "@/lib/api";
 import PatientBanner from "@/components/PatientBanner";
@@ -52,6 +53,15 @@ export default function RadiologyPatientDetailPage({
   const [context, setContext] = useState<any>(null);
   const [ctxLoading, setCtxLoading] = useState(true);
   const [ctxError, setCtxError] = useState<string | null>(null);
+
+  useLiveRefresh(async () => {
+    const [pRes, hRes, cRes] = await Promise.all([
+      patientApi.getById(id), patientApi.getHistory(id), labApi.getPatientContext(id),
+    ]);
+    setPatient(pRes.data.data);
+    setHistory(hRes.data.data);
+    setContext(cRes.data?.data ?? null);
+  });
 
   useEffect(() => {
     (async () => {

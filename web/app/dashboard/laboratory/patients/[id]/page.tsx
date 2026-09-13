@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useParams, useRouter } from "next/navigation";
 import { labApi } from "@/lib/api";
 import {
@@ -273,6 +274,11 @@ export default function LabPatientDetailPage() {
       })
       .finally(() => setLoading(false));
   }, [patientId]);
+
+  useLiveRefresh(async () => {
+    const res = await labApi.getPatientContext(patientId);
+    setContext(res.data?.data ?? null);
+  });
 
   if (loading) {
     return (

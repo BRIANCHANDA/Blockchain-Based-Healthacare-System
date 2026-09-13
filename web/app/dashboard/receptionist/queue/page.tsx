@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { api, practitionersApi, visitApi } from "@/lib/api";
@@ -158,11 +159,11 @@ export default function QueuePage() {
   }, []);
 
   // ── Initial load: run both independently so neither blocks the other ───────
+  useLiveRefresh(() => Promise.all([fetchQueue(true), fetchNurses()]));
+
   useEffect(() => {
     fetchQueue(false);
     fetchNurses();
-    const interval = setInterval(() => fetchQueue(true), 30_000);
-    return () => clearInterval(interval);
   }, [fetchQueue, fetchNurses]);
 
   // ── Assign nurse ───────────────────────────────────────────────────────────

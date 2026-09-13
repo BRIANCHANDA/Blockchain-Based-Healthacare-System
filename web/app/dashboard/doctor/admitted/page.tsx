@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
@@ -82,8 +83,8 @@ export default function AdmittedPatientsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await api.get("/api/visits/inpatients");
       setPatients(res.data?.data?.patients ?? []);
@@ -93,6 +94,8 @@ export default function AdmittedPatientsPage() {
       setLoading(false);
     }
   }, []);
+
+  useLiveRefresh(() => load(true));
 
   useEffect(() => {
     load();
@@ -121,7 +124,7 @@ export default function AdmittedPatientsPage() {
         title="Admitted patients"
         subtitle="All current inpatients at your institution"
         actions={
-          <Button icon={RefreshCw} onClick={load} disabled={loading}>
+          <Button icon={RefreshCw} onClick={() => load()} disabled={loading}>
             Refresh
           </Button>
         }

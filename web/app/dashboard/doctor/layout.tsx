@@ -62,6 +62,11 @@ const NAV: NavGroup[] = [
         href: "/dashboard/doctor/referrals",
         icon: ArrowLeftRight,
       },
+      {
+        label: "Hospital Referrals",
+        href: "/dashboard/doctor/referrals/incoming",
+        icon: ArrowLeftRight,
+      },
     ],
   },
   {

@@ -441,12 +441,12 @@ export function Avatar({
   size = 32,
   seed = 0,
 }: {
-  name: string;
+  name?: string | null;
   size?: number;
   seed?: number;
 }) {
   const initials =
-    name
+    (name ?? "")
       .split(" ")
       .filter(Boolean)
       .map((n) => n[0])

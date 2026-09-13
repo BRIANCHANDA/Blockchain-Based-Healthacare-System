@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState, useCallback } from "react";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useAuthStore } from "@/lib/store";
 import { api } from "@/lib/api";
 import {
@@ -446,8 +447,8 @@ export default function PersonalReportPage() {
   const [loading, setLoading]   = useState(false);
   const [exporting, setExporting] = useState(false);
 
-  const fetchReport = useCallback(async () => {
-    setLoading(true);
+  const fetchReport = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await api.get(`/api/reports/personal?from=${fromDate}&to=${toDate}&format=json`);
       setData(res.data.data);
@@ -459,6 +460,7 @@ export default function PersonalReportPage() {
   }, [fromDate, toDate]);
 
   useEffect(() => { fetchReport(); }, [fromDate, toDate]);
+  useLiveRefresh(() => fetchReport(true));
 
   const handleExport = async () => {
     setExporting(true);
@@ -520,7 +522,7 @@ export default function PersonalReportPage() {
           <span style={{ fontSize: 13, color: "var(--text-muted)" }}>to</span>
           <input type="date" value={toDate} onChange={e => setToDate(e.target.value)}
             style={{ padding: "8px 12px", borderRadius: 10, border: "1px solid var(--hc-border)", fontSize: 13, outline: "none", color: "var(--text-secondary)" }} />
-          <button onClick={fetchReport} disabled={loading}
+          <button onClick={() => fetchReport()} disabled={loading}
             style={{ width: 36, height: 36, borderRadius: 9, border: "1px solid var(--hc-border)", background: "var(--white)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>
             <RefreshCw size={14} style={{ animation: loading ? "spin 1s linear infinite" : "none" }} />
           </button>

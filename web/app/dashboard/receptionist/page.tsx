@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthStore } from "@/lib/store";
@@ -613,10 +614,10 @@ export default function ReceptionistOverviewPage() {
     }
   };
 
+  useLiveRefresh(() => fetchData(true));
+
   useEffect(() => {
     fetchData();
-    const iv = setInterval(() => fetchData(true), 30_000);
-    return () => clearInterval(iv);
   }, [fetchData]);
 
   /*

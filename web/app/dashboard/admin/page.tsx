@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
@@ -711,8 +712,8 @@ export default function AdminDashboard() {
   const [recentAudit, setRecentAudit] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
+  const fetchAll = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
 
     try {
       const [statsRes, staffRes, visitsRes, auditRes] =
@@ -750,6 +751,8 @@ export default function AdminDashboard() {
       setLoading(false);
     }
   }, []);
+
+  useLiveRefresh(() => fetchAll(true));
 
   useEffect(() => {
     fetchAll();

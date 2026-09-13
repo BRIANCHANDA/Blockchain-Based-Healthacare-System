@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { api, appointmentApi } from "@/lib/api";
@@ -524,12 +525,12 @@ export default function DoctorReferralsPage() {
     }
   }, []);
 
+  useLiveRefresh(() => load(true));
+
   useEffect(() => {
     load();
   }, [load]);
   useEffect(() => {
-    const iv = setInterval(() => load(true), 60_000);
-    return () => clearInterval(iv);
   }, [load]);
 
   // Counts

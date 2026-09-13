@@ -31,6 +31,7 @@ import {
   Layers,
   ShieldAlert,
   ScrollText,
+  ArrowLeftRight,
 } from "lucide-react";
 import { useAuthStore } from "@/lib/store";
 import {
@@ -75,6 +76,11 @@ function getNavGroups(isSuperAdmin: boolean): NavGroup[] {
                 label: "Visits",
                 href: "/dashboard/admin/visits",
                 icon: ClipboardList,
+              },
+              {
+                label: "Incoming Referrals",
+                href: "/dashboard/admin/referrals/incoming",
+                icon: ArrowLeftRight,
               },
               {
                 label: "Wards",

@@ -144,39 +144,7 @@ export class DeviceNotRegisteredError extends Error {
 
 
 
-type SSEStream = {
-    write: (data: string) => void;
-    close: () => void;
-};
-
-// userId → Set of open SSE connections
-const connections = new Map<string, Set<SSEStream>>();
-
-/** Register a new SSE connection for a user. Returns a cleanup fn. */
-export function addConnection(userId: string, stream: SSEStream): () => void {
-    if (!connections.has(userId)) connections.set(userId, new Set());
-    connections.get(userId)!.add(stream);
-
-    return () => {
-        connections.get(userId)?.delete(stream);
-        if (connections.get(userId)?.size === 0) connections.delete(userId);
-    };
-}
-
-/** Push a notification to all active connections for a user. */
-export function notifyUser(userId: string, event: string, data: object) {
-    const streams = connections.get(userId);
-    if (!streams || streams.size === 0) return; // user not online — that's fine
-
-    const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-    for (const stream of streams) {
-        try {
-            stream.write(payload);
-        } catch {
-            streams.delete(stream); // dead connection — remove silently
-        }
-    }
-}
+export { addConnection, notifyUser, activeConnectionCount } from "./realtime";
 
 /**
  * Deliver a push notification to every device a user has registered.
@@ -223,11 +191,4 @@ export async function pushToUser(
         console.error(`pushToUser: delivery to ${userId} failed —`, err);
         return 0;
     }
-}
-
-/** How many active connections exist (for health checks / debugging). */
-export function activeConnectionCount(): number {
-    let total = 0;
-    for (const set of connections.values()) total += set.size;
-    return total;
 }

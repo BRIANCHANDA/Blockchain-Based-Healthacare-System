@@ -1,4 +1,5 @@
 "use client";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
@@ -129,10 +130,10 @@ export default function NurseQueuePage() {
     }
   }, []);
 
+  useLiveRefresh(() => load(true));
+
   useEffect(() => {
     load();
-    const i = setInterval(() => load(true), 30_000);
-    return () => clearInterval(i);
   }, [load]);
 
   const pendingCount = visits.filter((v) => !v.hasVitals).length;

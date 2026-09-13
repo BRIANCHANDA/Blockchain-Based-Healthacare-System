@@ -24,6 +24,7 @@
  */
 
 import axios from 'axios';
+import { requestDataRefresh } from './liveUpdates';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
@@ -42,7 +43,12 @@ api.interceptors.request.use((config) => {
 
 let _redirecting = false;
 api.interceptors.response.use(
-    (res) => res,
+    (res) => {
+        if (['post', 'put', 'patch', 'delete'].includes(res.config.method ?? '') && res.data?.success !== false) {
+            requestDataRefresh();
+        }
+        return res;
+    },
     (err) => {
         const status = err.response?.status;
         const msg: string = err.response?.data?.error?.message ?? '';
