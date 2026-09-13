@@ -10,6 +10,8 @@
  * A fixed key, so runs are reproducible and no production secret is needed.
  * Not a credential: it exists only to satisfy crypto.ts's 32-byte requirement.
  */
+import { mock } from "bun:test";
+
 process.env.AES_SECRET_KEY ??= "test-key-please-do-not-use-in-prod-0123456789";
 
 /** Same reasoning for token signing in the integration tests. */
@@ -38,3 +40,8 @@ if (!/test/i.test(dbName)) {
     `Set TEST_DATABASE_URL to a dedicated test database.`,
   );
 }
+
+// Stub only external delivery in the test process. Integration tests still
+// create, read and verify real OTP records; no Resend key/network is needed.
+// email.test.ts independently exercises the real service with an isolated SDK.
+mock.module("../src/services/email", () => ({ sendOTPEmail: async () => {} }));

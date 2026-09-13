@@ -6,7 +6,14 @@
 
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Email is needed when delivering a code, not when importing the API. A fresh
+// checkout/CI can boot without provider credentials; actual sends still fail
+// explicitly if email has not been configured (never report a skipped send).
+function getEmailClient(): Resend {
+  const key = process.env.RESEND_API_KEY?.trim();
+  if (!key) throw new Error('Email delivery is not configured: RESEND_API_KEY is required.');
+  return new Resend(key);
+}
 
 // If DEV_EMAIL_OVERRIDE is set, all emails route there (useful for demo/dev)
 function resolveRecipient(actualEmail: string): string {
@@ -27,7 +34,7 @@ export async function sendOTPEmail(
   const recipient = resolveRecipient(toEmail);
   const isDev = !!process.env.DEV_EMAIL_OVERRIDE && recipient !== toEmail;
 
-  const { error } = await resend.emails.send({
+  const { error } = await getEmailClient().emails.send({
     from: getSender(),
     to: recipient,
     subject: `${otp} — Your MedLink verification code`,
