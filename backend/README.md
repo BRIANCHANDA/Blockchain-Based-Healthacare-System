@@ -223,7 +223,12 @@ cp .env.example .env
 #   JWT_SECRET=your-long-random-secret
 #   ENCRYPTION_KEY=32-byte-hex-key
 
-# Apply database migrations
+# First-time setup of an EMPTY development database only.
+# Older migrations omitted objects created via db:push, so bootstrap from schema.
+bun run db:push
+bun run db:baseline
+
+# For an existing, baselined database, apply reviewed pending migrations instead:
 bun run db:migrate
 
 # Seed with sample data (optional)
@@ -278,5 +283,20 @@ Interactive API docs: **http://localhost:3000/reference**
 | `bun run start` | Start production server |
 | `bun run db:generate` | Generate a Drizzle migration from schema changes |
 | `bun run db:migrate` | Apply pending migrations to the database |
+| `bun run db:status` | Read-only comparison of the configured database and application schema |
+| `bun run db:baseline` | Record a verified checkpoint for an existing db:push-managed database with no migration history |
 | `bun run db:studio` | Open Drizzle Studio (browser-based database browser) |
 | `bun run seed` | Seed the database with sample institutions, staff, and patients |
+
+Database maintenance commands require Node.js 20.12+ alongside Bun and load
+`backend/.env` explicitly. If the shell and `.env` specify different database URLs,
+they stop instead of choosing a target silently. They print only the host/database,
+never the password, and do not fall back to a local database.
+
+For Neon or another populated database, run `db:status` first. Review generated SQL
+before `db:migrate`; do not use `db:push --force` or seed sample data into the online
+database. Older databases created with `db:push` have no migration ledger:
+reconcile only reviewed schema differences, then use `db:baseline`. Baseline is
+refused if any schema drift remains. It records the existing verified schema, not
+a claim that the historical SQL was replayed. Keep migration SQL unchanged after
+it has been applied/baselined; `db:migrate` checks hashes before proceeding.

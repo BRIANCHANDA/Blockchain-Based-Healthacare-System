@@ -1,0 +1,19 @@
+<!-- @dsCard group="Colors" viewport="700x230" name="Semantic hues" subtitle="Critical, urgent, info, accent, success — each with a soft tint" -->
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css">
+<style>
+  body{margin:0;font-family:var(--font-sans);background:var(--surface-card);padding:20px}
+  .grid{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+  .col h4{margin:0 0 8px;font-size:11px;letter-spacing:var(--ls-caps);text-transform:uppercase;color:var(--text-muted)}
+  .pair{display:flex;flex-direction:column;border-radius:var(--r-sm);overflow:hidden;border:1px solid var(--border)}
+  .base{height:44px;display:flex;align-items:flex-end;padding:6px 8px;color:#fff;font-size:10px;font-family:var(--font-mono)}
+  .tint{height:26px;display:flex;align-items:center;padding:0 8px;font-size:10px;font-family:var(--font-mono)}
+</style></head>
+<body>
+  <div class="grid">
+    <div class="col"><h4>Critical</h4><div class="pair"><div class="base" style="background:var(--critical)">#FF5757</div><div class="tint" style="background:var(--critical-tint);color:var(--critical-ink)">tint</div></div></div>
+    <div class="col"><h4>Urgent</h4><div class="pair"><div class="base" style="background:var(--urgent)">#F59E0B</div><div class="tint" style="background:var(--urgent-tint);color:var(--urgent-ink)">tint</div></div></div>
+    <div class="col"><h4>Info</h4><div class="pair"><div class="base" style="background:var(--info)">#3B82F6</div><div class="tint" style="background:var(--info-tint);color:var(--info-ink)">tint</div></div></div>
+    <div class="col"><h4>Accent</h4><div class="pair"><div class="base" style="background:var(--accent)">#8B5CF6</div><div class="tint" style="background:var(--accent-tint);color:var(--accent-ink)">tint</div></div></div>
+    <div class="col"><h4>Success</h4><div class="pair"><div class="base" style="background:var(--success)">#059669</div><div class="tint" style="background:var(--success-tint);color:var(--success-ink)">tint</div></div></div>
+  </div>
+</body></html>

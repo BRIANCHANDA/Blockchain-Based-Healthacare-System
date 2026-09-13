@@ -28,20 +28,21 @@
   "organizations": {
     "HospitalOrgMSP": {
       "mspid": "HospitalOrgMSP",
+      "peers": ["peer0.hospital.healthcare.com"],
       "adminPrivateKey": {
-        "path": "/home/brian/Project/Final_year_project/fabric-network/network/organizations/peerOrganizations/hospital.healthcare.com/users/Admin@hospital.healthcare.com/msp/keystore/priv_sk"
+        "path": "/tmp/crypto/peerOrganizations/hospital.healthcare.com/users/Admin@hospital.healthcare.com/msp/keystore/priv_sk"
       },
       "signedCert": {
-        "path": "/home/brian/Project/Final_year_project/fabric-network/network/organizations/peerOrganizations/hospital.healthcare.com/users/Admin@hospital.healthcare.com/msp/signcerts/cert.pem"
+        "path": "/tmp/crypto/peerOrganizations/hospital.healthcare.com/users/Admin@hospital.healthcare.com/msp/signcerts/Admin@hospital.healthcare.com-cert.pem"
       }
     }
   },
   "peers": {
     "peer0.hospital.healthcare.com": {
       "tlsCACerts": {
-        "path": "/home/brian/Project/Final_year_project/fabric-network/network/organizations/peerOrganizations/hospital.healthcare.com/peers/peer0.hospital.healthcare.com/tls/ca.crt"
+        "path": "/tmp/crypto/peerOrganizations/hospital.healthcare.com/peers/peer0.hospital.healthcare.com/tls/ca.crt"
       },
-      "url": "grpcs://localhost:7051",
+      "url": "grpcs://peer0.hospital.healthcare.com:7051",
       "grpcOptions": {
         "ssl-target-name-override": "peer0.hospital.healthcare.com"
       }

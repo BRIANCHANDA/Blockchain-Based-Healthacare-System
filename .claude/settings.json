@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /home/brian/Project/Final_year_project remote -v)",
+      "Bash(git -C /home/brian/Project/Final_year_project remote set-url origin git@github.com:BRIANCHANDA/Blockchain-Based-Healthacare-System.git)",
+      "Bash(bun run *)",
+      "Bash(npm run *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3100/dashboard/pharmacy)",
+      "Read(//tmp/**)",
+      "Bash(jobs -p)",
+      "Bash(xargs -r kill)",
+      "Bash(pkill -f \"next dev -p 3100\")",
+      "Bash(git checkout *)",
+      "Bash(git stash *)",
+      "Bash(awk '/storeRecordHash/{print NR\": \"$0}' /home/brian/Project/Final_year_project/backend/src/routes/visits.ts)",
+      "Bash(bun install *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
+    ]
+  }
+}

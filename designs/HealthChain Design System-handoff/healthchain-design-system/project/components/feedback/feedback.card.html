@@ -1,0 +1,39 @@
+<!-- @dsCard group="Components" viewport="700x320" name="Feedback & data — vitals, rows, empty states" subtitle="Vital stats with deltas, list rows, section headers, empty/loading/error" -->
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<style>body{margin:0;font-family:var(--font-sans);background:var(--surface-bg);padding:22px}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+.two{display:grid;grid-template-columns:1.2fr 1fr;gap:16px}
+.lbl{font:600 11px/1 var(--font-sans);letter-spacing:.06em;text-transform:uppercase;color:var(--text-muted);margin:0 0 10px}
+.card{background:var(--surface-card);border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden}</style></head>
+<body><div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<script type="text/babel">
+const { VitalStat, ListRow, SectionHeader, EmptyState, Button } = window.HealthChainDesignSystem_9f6dff;
+const hr = {borderTop:'1px solid var(--border-faint)'};
+function Demo(){return (<div>
+  <SectionHeader title="Latest vitals" icon="activity" count={6}/>
+  <div className="grid">
+    <VitalStat label="Blood pressure" value="128/84" unit="mmHg" delta="+6" deltaDir="up" icon="heart-pulse" compact/>
+    <VitalStat label="SpO₂" value="98" unit="%" delta="+1" deltaDir="down" icon="activity" compact/>
+    <VitalStat label="Temp" value="38.9" unit="°C" critical icon="alert-triangle" compact/>
+  </div>
+  <div className="two">
+    <div>
+      <div className="lbl">List rows</div>
+      <div className="card">
+        <ListRow icon="lock" iconTone="brand" title="Change password" chevron onClick={()=>{}}/>
+        <ListRow style={hr} icon="bell" title="Notifications" right="On" chevron onClick={()=>{}}/>
+        <ListRow style={hr} icon="log-out" title="Sign out" destructive onClick={()=>{}}/>
+      </div>
+    </div>
+    <div>
+      <div className="lbl">Empty state</div>
+      <div className="card"><EmptyState icon="send" title="No referrals yet" body="When your doctor refers you, it'll appear here." /></div>
+    </div>
+  </div>
+</div>);}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>);
+</script></body></html>

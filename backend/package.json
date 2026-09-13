@@ -7,7 +7,11 @@
     "build": "bun build src/index.ts --outdir dist",
     "seed": "bun run src/db/seed.ts",
     "test": "bun test",
-    "db:push": "drizzle-kit push"
+    "db:push": "drizzle-kit push",
+    "db:generate": "node scripts/db-maintenance.mjs generate",
+    "db:status": "node scripts/db-maintenance.mjs status",
+    "db:migrate": "node scripts/db-maintenance.mjs migrate",
+    "db:baseline": "node scripts/db-maintenance.mjs baseline"
   },
   "dependencies": {
     "@grpc/grpc-js": "latest",

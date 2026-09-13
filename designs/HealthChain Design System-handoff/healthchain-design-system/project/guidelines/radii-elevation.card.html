@@ -1,0 +1,25 @@
+<!-- @dsCard group="Spacing" viewport="700x180" name="Radii & elevation" subtitle="Corner radii and the restrained, RN-friendly shadow set" -->
+<!DOCTYPE html><html><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css">
+<style>
+  body{margin:0;font-family:var(--font-sans);background:var(--surface-app);padding:24px;display:flex;gap:40px;flex-wrap:wrap}
+  .grp{display:flex;gap:14px}
+  .item{display:flex;flex-direction:column;align-items:center;gap:8px}
+  .box{width:64px;height:48px;background:var(--surface-card);border:1px solid var(--border)}
+  .sbox{width:64px;height:48px;background:var(--surface-card);border-radius:var(--r-md)}
+  .lbl{font-family:var(--font-mono);font-size:11px;color:var(--text-secondary)}
+</style></head>
+<body>
+  <div class="grp">
+    <div class="item"><div class="box" style="border-radius:var(--r-sm)"></div><div class="lbl">r-sm 10</div></div>
+    <div class="item"><div class="box" style="border-radius:var(--r-md)"></div><div class="lbl">r-md 14</div></div>
+    <div class="item"><div class="box" style="border-radius:var(--r-lg)"></div><div class="lbl">r-lg 18</div></div>
+    <div class="item"><div class="box" style="border-radius:var(--r-xl)"></div><div class="lbl">r-xl 24</div></div>
+    <div class="item"><div class="box" style="border-radius:var(--r-pill);width:48px"></div><div class="lbl">pill</div></div>
+  </div>
+  <div class="grp">
+    <div class="item"><div class="sbox" style="box-shadow:var(--elev-1)"></div><div class="lbl">elev-1</div></div>
+    <div class="item"><div class="sbox" style="box-shadow:var(--elev-2)"></div><div class="lbl">elev-2</div></div>
+    <div class="item"><div class="sbox" style="box-shadow:var(--elev-3)"></div><div class="lbl">elev-3</div></div>
+    <div class="item"><div class="sbox" style="box-shadow:var(--elev-brand)"></div><div class="lbl">elev-brand</div></div>
+  </div>
+</body></html>
