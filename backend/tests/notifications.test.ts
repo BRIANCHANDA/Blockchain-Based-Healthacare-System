@@ -1,5 +1,5 @@
 /**
- * Unit tests for the SSE half of services/notifications.ts — the in-memory
+ * Unit tests for services/realtime.ts — the in-memory SSE
  * registry of open client connections.
  *
  *   bun test
@@ -8,7 +8,7 @@
  * screen. It is pure in-process state, so it tests without a database, a
  * network or a browser.
  *
- * The push half of that module (pushToUser / sendPushNotification) is not
+ * The push helpers in services/notifications.ts (pushToUser / sendPushNotification) are not
  * covered here: it queries device_tokens and calls Expo's servers, so it needs
  * a database and network. Its behaviour is exercised separately.
  *
@@ -23,7 +23,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { addConnection, notifyUser, activeConnectionCount } from "../src/services/notifications";
+import { addConnection, notifyUser, activeConnectionCount } from "../src/services/realtime";
 
 /** A fake SSE stream that records what was written to it. */
 function fakeStream() {
@@ -68,7 +68,8 @@ describe("notifyUser", () => {
     expect(s.writes.length).toBe(1);
     const { event, data } = parseSse(s.writes[0]);
     expect(event).toBe("access_request");
-    expect(data).toEqual({ requestId: "req-1" });
+    expect(data).toEqual({ requestId: "req-1", notificationId: expect.any(String) });
+    expect(data.notificationId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
     // The blank line terminator is what makes EventSource dispatch the event.
     expect(s.writes[0].endsWith("\n\n")).toBe(true);
 
@@ -87,8 +88,27 @@ describe("notifyUser", () => {
 
     expect(a.writes.length).toBe(1);
     expect(b.writes.length).toBe(1);
+    // Every device must receive the same ID for inbox deduplication.
+    expect(a.writes[0]).toBe(b.writes[0]);
 
     ca(); cb();
+  });
+
+  test("assigns distinct IDs to separate notifications without mutating the caller's payload", () => {
+    const s = fakeStream();
+    const user = uid("patient");
+    const cleanup = addConnection(user, s.stream);
+    const payload = Object.freeze({ requestId: "req-repeat" });
+    try {
+      notifyUser(user, "access_request", payload);
+      notifyUser(user, "access_request", payload);
+      const first = parseSse(s.writes[0]).data;
+      const second = parseSse(s.writes[1]).data;
+      expect(first.requestId).toBe(payload.requestId);
+      expect(second.requestId).toBe(payload.requestId);
+      expect(first.notificationId).not.toBe(second.notificationId);
+      expect(payload).toEqual({ requestId: "req-repeat" });
+    } finally { cleanup(); }
   });
 
   test("never writes to a different user's stream", () => {
