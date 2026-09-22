@@ -30,6 +30,8 @@ import { handleError } from '../lib/errors';
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, desc, and, sql, ne, or, isNull } from 'drizzle-orm';
 import { db } from '../db';
+import { clinicalDb, clinicalWriteGuard } from '../middleware/clinical-write';
+import { prescriptionDetailWithPatientName } from '../lib/prescription-detail';
 import {
   visits, vitalSigns, consultations, diagnoses,
   labTestOrders, labTestResults, imagingOrders, imagingReports,
@@ -46,6 +48,7 @@ import path from 'path';
 import { mkdir, writeFile } from 'fs/promises';
 import { createHash } from 'crypto';
 import { notifyUser } from '../services/notifications';
+import { imagingOrderSchema, pendingImagingScope } from '../lib/imaging-orders';
 import { notifyPatientAssigned } from '../services/assignment-notifications';
 import { vitals as vVitals } from '../lib/validators';
 
@@ -484,7 +487,7 @@ export const visitRouter = createRouter()
   .openapi(createRoute({
     tags: ['Visits'], summary: 'Record patient vital signs (Nurse only)',
     method: 'post', path: '/:visitId/vitals',
-    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware, clinicalWriteGuard],
     request: {
       params: z.object({ visitId: z.string().uuid() }),
       body: {
@@ -520,6 +523,7 @@ export const visitRouter = createRouter()
   }), async (c) => {
     try {
       let userType = c.get('userType');
+      const db = clinicalDb(c);
       const userId = c.get('userId');
       if (userType !== 'nurse') {
         const staff = await db.select({ role: practitioners.role }).from(practitioners).where(eq(practitioners.id, userId)).limit(1);
@@ -615,7 +619,7 @@ export const visitRouter = createRouter()
   .openapi(createRoute({
     tags: ['Visits'], summary: 'Record doctor consultation notes (Practitioner)',
     method: 'post', path: '/:visitId/consultation',
-    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware, clinicalWriteGuard],
     request: {
       params: z.object({ visitId: z.string().uuid() }),
       body: {
@@ -639,6 +643,7 @@ export const visitRouter = createRouter()
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
+    const db = clinicalDb(c);
     try {
       const userType = c.get('userType');
       if (userType !== 'practitioner') return c.json({ success: false, error: { message: 'Only practitioners can record consultations' } }, 403);
@@ -685,7 +690,7 @@ export const visitRouter = createRouter()
   .openapi(createRoute({
     tags: ['Visits'], summary: 'Add diagnosis to a visit (Practitioner)',
     method: 'post', path: '/:visitId/diagnosis',
-    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware, clinicalWriteGuard],
     request: {
       params: z.object({ visitId: z.string().uuid() }),
       body: {
@@ -707,6 +712,7 @@ export const visitRouter = createRouter()
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
+    const db = clinicalDb(c);
     try {
       const userType = c.get('userType');
       if (userType !== 'practitioner') return c.json({ success: false, error: { message: 'Only practitioners can add diagnoses' } }, 403);
@@ -720,6 +726,7 @@ export const visitRouter = createRouter()
       if (!visitRow.length) return c.json({ success: false, error: { message: 'Visit not found' } }, 404);
       const consultation = await db.select().from(consultations).where(eq(consultations.id, body.consultationId)).limit(1);
       if (!consultation.length) return c.json({ success: false, error: { message: 'Consultation not found' } }, 404);
+      if (consultation[0].visitId !== visitId) return c.json({ success: false, error: { message: 'Consultation belongs to another visit' } }, 403);
       const patient = await db.select({ blockchainAddress: patients.blockchainAddress })
         .from(patients).where(eq(patients.id, visitRow[0].patientId)).limit(1);
       if (!patient.length) return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
@@ -817,8 +824,12 @@ export const visitRouter = createRouter()
       if (patientRow.length) {
         const p = patientRow[0];
         patientData = {
+          id: p.id,
           firstName: decrypt(p.firstNameEncrypted),
+          middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : null,
           lastName: decrypt(p.lastNameEncrypted),
+          dateOfBirth: decrypt(p.dateOfBirthEncrypted),
+          isMinor: p.isMinor,
           gender: p.gender,
           bloodType: p.bloodType,
         };
@@ -874,7 +885,7 @@ export const visitRouter = createRouter()
       const imagingOrdersWithNames = await Promise.all(imagingOrdersRaw.map(async (o) => ({
         id: o.id, orderNumber: o.orderNumber, modality: o.modality,
         bodyPart: o.bodyPart, indication: o.indication, urgency: o.urgency,
-        status: o.status, orderedAt: o.orderedAt,
+        status: o.status, orderedAt: o.orderedAt, assignedTo: o.assignedTo,
         assignedToName: o.radioFirstName && o.radioLastName
           ? `${await decrypt(o.radioFirstName)} ${await decrypt(o.radioLastName)}` : null,
         report: o.reportFindings ? {
@@ -894,6 +905,7 @@ export const visitRouter = createRouter()
           // Visit row enriched with triage-relevant fields
           visit: {
             ...visit,
+            canEditClinical: userType === 'practitioner' && visit.assignedDoctorId === userId && visit.status === 'in-progress',
             hasVitals,
             vitals: mostRecentVitals,
             assignedDoctorName,
@@ -1452,18 +1464,18 @@ export const visitRouter = createRouter()
       const userId = c.get('userId');
       if (userType !== 'radiologist' && userType !== 'admin') return c.json({ success: false, error: { message: 'Access denied' } }, 403);
       const staffInstitutionId = await getStaffInstitution(userId);
-      const institutionFilter = (userType === 'admin' && !staffInstitutionId) ? undefined : eq(visits.institutionId, staffInstitutionId);
+      if (!staffInstitutionId && userType !== 'admin') return c.json({ success: false, error: { message: 'No institution assigned' } }, 403);
       const { decrypt } = await import('../services/crypto');
       const orders = await db.select({
         id: imagingOrders.id, orderNumber: imagingOrders.orderNumber, visitId: imagingOrders.visitId, patientId: imagingOrders.patientId,
         modality: imagingOrders.modality, bodyPart: imagingOrders.bodyPart, indication: imagingOrders.indication,
-        urgency: imagingOrders.urgency, status: imagingOrders.status, orderedAt: imagingOrders.orderedAt,
+        urgency: imagingOrders.urgency, status: imagingOrders.status, orderedAt: imagingOrders.orderedAt, assignedTo: imagingOrders.assignedTo,
         visitNumber: visits.visitNumber, chiefComplaint: visits.chiefComplaint,
         patientFirstNameEncrypted: patients.firstNameEncrypted, patientLastNameEncrypted: patients.lastNameEncrypted,
       }).from(imagingOrders)
         .leftJoin(visits, eq(visits.id, imagingOrders.visitId))
         .leftJoin(patients, eq(patients.id, imagingOrders.patientId))
-        .where(and(ne(imagingOrders.status, 'reported'), ne(imagingOrders.status, 'cancelled'), institutionFilter))
+        .where(pendingImagingScope(userId, staffInstitutionId, userType === 'admin'))
         .orderBy(desc(imagingOrders.orderedAt));
       const ordersWithNames = await Promise.all(orders.map(async (o) => ({
         ...o, patientName: o.patientFirstNameEncrypted && o.patientLastNameEncrypted
@@ -1646,7 +1658,7 @@ export const visitRouter = createRouter()
   .openapi(createRoute({
     tags: ['Visits'], summary: 'Create prescription (Practitioner)',
     method: 'post', path: '/:visitId/prescriptions',
-    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware, clinicalWriteGuard],
     request: {
       params: z.object({ visitId: z.string().uuid() }),
       body: {
@@ -1672,6 +1684,7 @@ export const visitRouter = createRouter()
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
+    const db = clinicalDb(c);
     try {
       const userType = c.get('userType');
       if (userType !== 'practitioner') return c.json({ success: false, error: { message: 'Only practitioners can prescribe medications' } }, 403);
@@ -1826,7 +1839,7 @@ export const visitRouter = createRouter()
   .openapi(createRoute({
     tags: ['Visits'], summary: 'Order lab tests for a patient (Practitioner)',
     method: 'post', path: '/:visitId/lab-orders',
-    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware, clinicalWriteGuard],
     request: {
       params: z.object({ visitId: z.string().uuid() }),
       body: {
@@ -1853,6 +1866,7 @@ export const visitRouter = createRouter()
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
+    const db = clinicalDb(c);
     try {
       const userType = c.get('userType');
       if (userType !== 'practitioner') return c.json({ success: false, error: { message: 'Only practitioners can order lab tests' } }, 403);
@@ -1896,18 +1910,13 @@ export const visitRouter = createRouter()
   .openapi(createRoute({
     tags: ['Visits'], summary: 'Order imaging study (Practitioner)',
     method: 'post', path: '/:visitId/imaging-orders',
-    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware, clinicalWriteGuard],
     request: {
       params: z.object({ visitId: z.string().uuid() }),
       body: {
         content: {
           'application/json': {
-            schema: z.object({
-              modality: z.enum(['x-ray', 'ct_scan', 'mri', 'ultrasound', 'pet_scan', 'mammogram', 'fluoroscopy']),
-              bodyPart: z.string(), indication: z.string(),
-              urgency: z.enum(['routine', 'urgent', 'emergency', 'critical']).default('routine'),
-              assignedTo: z.string().uuid(),
-            }),
+            schema: imagingOrderSchema,
           },
         },
       },
@@ -1919,6 +1928,7 @@ export const visitRouter = createRouter()
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
+    const db = clinicalDb(c);
     try {
       const userType = c.get('userType');
       if (userType !== 'practitioner') return c.json({ success: false, error: { message: 'Only practitioners can order imaging' } }, 403);
@@ -1935,14 +1945,17 @@ export const visitRouter = createRouter()
       const canAct = await canActOnVisit(userId, visitRow[0].institutionId);
       if (!canAct) return c.json({ success: false, error: { message: 'You can only perform clinical actions on visits created by your institution.' } }, 403);
 
-      const radiologist = await db.select({ id: practitioners.id }).from(practitioners)
-        .where(and(eq(practitioners.id, body.assignedTo), eq(practitioners.role, 'radiologist'), eq(practitioners.institutionId, visitRow[0].institutionId)))
-        .limit(1);
-      if (!radiologist.length) return c.json({ success: false, error: { message: 'Radiologist not found in this institution' } }, 400);
+      if (body.assignedTo) {
+        const radiologist = await db.select({ id: practitioners.id }).from(practitioners)
+          .where(and(eq(practitioners.id, body.assignedTo), eq(practitioners.role, 'radiologist'),
+            eq(practitioners.institutionId, visitRow[0].institutionId), eq(practitioners.isActive, true), eq(practitioners.isVerified, true)))
+          .limit(1);
+        if (!radiologist.length) return c.json({ success: false, error: { message: 'Active radiologist not found in this institution' } }, 400);
+      }
 
       const orderNumber = `IMG-${Date.now()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
       const orderHash = generateRecordHash({ visitId, orderNumber, ...body, practitionerId: userId, timestamp: new Date().toISOString() });
-      const result = await db.insert(imagingOrders).values({ orderNumber, visitId, patientId: visitRow[0].patientId, orderedByPractitionerId: userId, modality: body.modality, bodyPart: body.bodyPart, indication: body.indication, urgency: body.urgency, status: 'ordered', assignedTo: body.assignedTo, blockchainHash: orderHash }).returning();
+      const result = await db.insert(imagingOrders).values({ orderNumber, visitId, patientId: visitRow[0].patientId, orderedByPractitionerId: userId, modality: body.modality, bodyPart: body.bodyPart, indication: body.indication, urgency: body.urgency, status: 'ordered', assignedTo: body.assignedTo ?? null, blockchainHash: orderHash }).returning();
 
       await storeRecordHash(result[0].id, patient[0].blockchainAddress, orderHash, 'imaging_order');
       await auditAction(userId, userType, visitRow[0].patientId, patient[0].blockchainAddress, 'create', 'imaging_order', result[0].id, ip);
@@ -1956,7 +1969,7 @@ export const visitRouter = createRouter()
   .openapi(createRoute({
     tags: ['Visits'], summary: 'Doctor admits patient to ward (changes visit to inpatient)',
     method: 'patch', path: '/:visitId/admit',
-    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware, clinicalWriteGuard],
     request: {
       params: z.object({ visitId: z.string().uuid() }),
       body: {
@@ -1979,6 +1992,7 @@ export const visitRouter = createRouter()
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
+    const db = clinicalDb(c);
     try {
       const userType = c.get('userType');
       if (userType !== 'practitioner')
@@ -2063,7 +2077,7 @@ export const visitRouter = createRouter()
   .openapi(createRoute({
     tags: ['Visits'], summary: 'Discharge patient and close visit (Practitioner)',
     method: 'patch', path: '/:visitId/discharge',
-    security: [{ bearerAuth: [] }], middleware: [authMiddleware],
+    security: [{ bearerAuth: [] }], middleware: [authMiddleware, clinicalWriteGuard],
     request: {
       params: z.object({ visitId: z.string().uuid() }),
       body: {
@@ -2084,6 +2098,7 @@ export const visitRouter = createRouter()
       500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
     },
   }), async (c) => {
+    const db = clinicalDb(c);
     try {
       const userType = c.get('userType');
       if (userType !== 'practitioner') return c.json({ success: false, error: { message: 'Only practitioners can discharge patients' } }, 403);
@@ -2370,6 +2385,11 @@ export const visitRouter = createRouter()
 
       const { prescriptionId } = c.req.valid('param');
 
+      const staffInstitutionId = await getStaffInstitution(c.get('userId'));
+      if (!staffInstitutionId && userType !== 'admin')
+        return c.json({ success: false, error: { message: 'No institution assigned' } }, 403);
+      const instClause = staffInstitutionId ? sql`AND v.institution_id = ${staffInstitutionId}` : sql``;
+
       const [prescriptionResult, itemsResult] = await Promise.all([
         db.execute(
           sql`
@@ -2381,10 +2401,14 @@ export const visitRouter = createRouter()
               p.status,
               p.prescribed_at,
               v.visit_number,
-              v.chief_complaint
+              v.chief_complaint,
+              pt.first_name_encrypted AS patient_first_name_encrypted,
+              pt.last_name_encrypted AS patient_last_name_encrypted
             FROM prescriptions p
             JOIN visits v ON v.id = p.visit_id
+            JOIN patients pt ON pt.id = p.patient_id
             WHERE p.id = ${prescriptionId}
+              ${instClause}
             LIMIT 1
           `
         ),
@@ -2409,6 +2433,11 @@ export const visitRouter = createRouter()
               dispensed_quantity
             FROM prescription_items
             WHERE prescription_id = ${prescriptionId}
+              AND EXISTS (
+                SELECT 1 FROM prescriptions p
+                JOIN visits v ON v.id = p.visit_id
+                WHERE p.id = ${prescriptionId} ${instClause}
+              )
             ORDER BY created_at ASC
           `
         ),
@@ -2423,7 +2452,7 @@ export const visitRouter = createRouter()
       return c.json({
         success: true,
         data: {
-          prescription: rows[0],
+          prescription: prescriptionDetailWithPatientName(rows[0]),
           items: itemRows,
         },
       });

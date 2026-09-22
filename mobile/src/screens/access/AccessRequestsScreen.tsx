@@ -22,7 +22,7 @@
  * role and institution asking — rather than an opaque practitioner id.
  */
 
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -49,6 +49,7 @@ import {
 } from "../../api/access";
 import { AccessStackParamList } from "../../types";
 import LoadingSpinner from "../../components/common/LoadingSpinner";
+import { usePatientResource } from "../../hooks/usePatientResource";
 
 type Props = NativeStackScreenProps<AccessStackParamList, "AccessRequests">;
 
@@ -119,9 +120,6 @@ const ROLE_META: Record<
 
 export default function AccessRequestsScreen({ navigation }: Props) {
   const insets = useSafeAreaInsets();
-  const [requests, setRequests] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [actioning, setActioning] = useState<string | null>(null);
 
   // Duration sheet: which request is being decided, and for how long.
@@ -134,29 +132,16 @@ export default function AccessRequestsScreen({ navigation }: Props) {
    * While the field is empty or mid-edit the preset still stands, so the sheet
    * always has a valid duration to commit.
    */
-  const parsedCustom = parseInt(customHours, 10);
+  const parsedCustom = Number(customHours);
   const effectiveHours = customHours.trim() !== "" && Number.isFinite(parsedCustom)
     ? parsedCustom
     : selectedHours;
 
   const fetchRequests = useCallback(async () => {
-    try {
-      const res = await getAccessRequests();
-      setRequests(res.data?.requests ?? []);
-    } catch {
-      setRequests([]);
-    }
+    const res = await getAccessRequests();
+    return (res.data?.requests ?? []) as any[];
   }, []);
-
-  useEffect(() => {
-    fetchRequests().finally(() => setLoading(false));
-  }, []);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchRequests();
-    setRefreshing(false);
-  };
+  const { data: requests, loading, refreshing, error, refresh: onRefresh, update: setRequests } = usePatientResource(fetchRequests, [] as any[]);
 
   /**
    * Approving opens the duration sheet rather than granting immediately.
@@ -178,7 +163,7 @@ export default function AccessRequestsScreen({ navigation }: Props) {
     const hours = effectiveHours;
     // Guard here as well as on the server: a value the ledger would reject
     // should never leave the phone, or the patient sees an opaque failure.
-    if (!Number.isFinite(hours) || hours < 1 || hours > MAX_HOURS) {
+    if (!Number.isInteger(hours) || hours < 1 || hours > MAX_HOURS) {
       Toast.show({
         type: "error",
         text1: "Invalid duration",
@@ -247,6 +232,15 @@ export default function AccessRequestsScreen({ navigation }: Props) {
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" backgroundColor={C.bg} />
 
+      {error && (
+        <View style={{ padding: 16, paddingTop: insets.top + 16 }}>
+          <Text accessibilityLiveRegion="polite">Could not refresh access requests. {requests.length ? "Showing previously loaded requests." : "Please try again."}</Text>
+          <TouchableOpacity accessibilityRole="button" onPress={onRefresh} disabled={refreshing} style={{ minHeight: 48, justifyContent: "center" }}>
+            <Text>{refreshing ? "Retrying…" : "Retry"}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* ── Header ── */}
       <View style={[styles.headerBar, { paddingTop: insets.top + 8 }]}>
         <View style={styles.headerTopRow}>
@@ -298,7 +292,7 @@ export default function AccessRequestsScreen({ navigation }: Props) {
             tintColor={C.primary}
           />
         }
-        ListEmptyComponent={
+        ListEmptyComponent={error ? null :
           <View style={styles.empty}>
             <View style={styles.emptyIcon}>
               <MaterialIcons

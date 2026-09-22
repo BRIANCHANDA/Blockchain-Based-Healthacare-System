@@ -32,12 +32,8 @@ import {
 /* ==========================================================================
    Internal referral.
 
-   Books an appointment with another practitioner at THIS institution — no
-   blockchain involved, since the record never leaves the hospital. (The
-   cross-institution equivalent is CreateReferalModal.)
-
-   Urgency sets the default appointment time: routine lands tomorrow,
-   anything higher lands an hour from now.
+   Transfers the active encounter to another doctor at this institution.
+   Future appointment booking remains a separate workflow.
    ========================================================================== */
 
 interface Specialist {
@@ -51,6 +47,8 @@ interface InternalReferralModalProps {
   patientId: string;
   patientName: string;
   chiefComplaint: string;
+  referringDoctorId?: string;
+  priority?: string;
   onClose: () => void;
   onSuccess: (msg: string) => void;
 }
@@ -65,7 +63,7 @@ const URGENCY: {
   {
     value: "routine",
     label: "Routine",
-    desc: "Within the next few days",
+    desc: "Standard priority",
     tone: "success",
     icon: Clock,
   },
@@ -120,16 +118,15 @@ function StepDot({ n, active, done }: { n: number; active: boolean; done: boolea
 
 // ── Main ──────────────────────────────────────────────────────────────────────
 export function InternalReferralModal({
-  visitId, patientId, patientName, chiefComplaint, onClose, onSuccess,
+  visitId, patientId, patientName, chiefComplaint, referringDoctorId, priority, onClose, onSuccess,
 }: InternalReferralModalProps) {
   const [step,         setStep]         = useState<1 | 2 | 3>(1);
   const [specialists,  setSpecialists]  = useState<Specialist[]>([]);
   const [loading,      setLoading]      = useState(true);
   const [search,       setSearch]       = useState("");
   const [selected,     setSelected]     = useState<Specialist | null>(null);
-  const [urgency,      setUrgency]      = useState<UrgencyValue>("routine");
+  const [urgency,      setUrgency]      = useState<UrgencyValue>(URGENCY.find(u => u.value === priority)?.value ?? "routine");
   const [reason,       setReason]       = useState(`Internal referral: ${chiefComplaint}`);
-  const [apptDate,     setApptDate]     = useState("");
   const [submitting,   setSubmitting]   = useState(false);
   const [error,        setError]        = useState<string | null>(null);
   const [apptNumber,   setApptNumber]   = useState<string | null>(null);
@@ -143,11 +140,11 @@ export function InternalReferralModal({
           name:           s.name,
           specialization: s.specialization ?? null,
         }));
-        setSpecialists(staff);
+        setSpecialists(staff.filter(s => s.id !== referringDoctorId));
       })
       .catch(() => setSpecialists([]))
       .finally(() => setLoading(false));
-  }, []);
+  }, [referringDoctorId]);
 
   const filtered = specialists.filter(s =>
     s.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -158,35 +155,19 @@ export function InternalReferralModal({
     if (!selected) return;
     if (reason.trim().length < 5) { setError("Reason must be at least 5 characters."); return; }
 
-    // For urgent/emergency/critical — book for today if no date selected
-    const bookDate = apptDate
-      ? new Date(apptDate).toISOString()
-      : (() => {
-          const d = new Date();
-          if (urgency === "routine") {
-            d.setDate(d.getDate() + 1); // tomorrow for routine
-          } else {
-            d.setHours(d.getHours() + 1); // 1hr from now for urgent+
-          }
-          return d.toISOString();
-        })();
-
     setError(null);
     setSubmitting(true);
     try {
-      const res = await appointmentApi.book({
+      const res = await appointmentApi.handover({
+        visitId,
         patientId,
-        appointmentDate:  bookDate,
-        visitType:        "consultation",
         priority:         urgency,
-        chiefComplaint:     reason.trim(),
-        admittingDiagnosis: reason.trim(),
-        assignedDoctorId: selected.id,
-        originVisitId:    visitId,
+        reason: reason.trim(),
+        doctorId: selected.id,
       });
       setApptNumber(res.data.data.visitNumber);
       setStep(3);
-      onSuccess(`Internal referral to Dr. ${selected.name} booked — ${res.data.data.visitNumber}`);
+      onSuccess(`Patient handed over to Dr. ${selected.name}. This visit is now read-only for you.`);
     } catch (err: any) {
       setError(err.response?.data?.error?.message ?? "Failed to create internal referral.");
     } finally {
@@ -233,7 +214,7 @@ export function InternalReferralModal({
           disabled={reason.trim().length < 5}
           onClick={handleSubmit}
         >
-          {submitting ? "Booking…" : "Book referral"}
+          {submitting ? "Handing over…" : "Confirm handover"}
         </Button>
       </>
     ) : (
@@ -489,29 +470,17 @@ export function InternalReferralModal({
             />
           </Field>
 
-          {/* A date only makes sense when the referral is not immediate. */}
-          {(urgency === "routine" || urgency === "urgent") && (
-            <Field
-              label="Preferred date & time"
-              hint={
-                urgency === "routine"
-                  ? "Optional — defaults to tomorrow."
-                  : "Optional — defaults to an hour from now."
-              }
-            >
-              <Input
-                type="datetime-local"
-                value={apptDate}
-                onChange={(e) => setApptDate(e.target.value)}
-                min={new Date().toISOString().slice(0, 16)}
-              />
-            </Field>
-          )}
+          <Banner tone="info" icon={AlertCircle}>
+            This transfers responsibility immediately. Your notes remain in the visit,
+            but you will no longer be able to add consultations, diagnoses, orders,
+            prescriptions or discharge the patient. Save any unfinished work first.
+            Use appointment booking for a future specialist consultation instead.
+          </Banner>
 
           {(urgency === "emergency" || urgency === "critical") && (
             <Banner tone="critical" icon={AlertTriangle}>
               <strong style={{ textTransform: "capitalize" }}>{urgency}</strong>{" "}
-              referral — the appointment is booked for an hour from now. Notify Dr.{" "}
+              handover — notify Dr.{" "}
               {selected?.name} directly if immediate attention is required.
             </Banner>
           )}

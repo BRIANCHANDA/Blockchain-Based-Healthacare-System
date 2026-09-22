@@ -2,6 +2,7 @@ import { handleError } from '../lib/errors';
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and, desc, asc, gte, lte, sql, inArray } from 'drizzle-orm';
 import { db } from '../db';
+import { clinicalDb, clinicalWriteGuard } from '../middleware/clinical-write';
 import {
     visits, patients, practitioners, institutions,
     auditLogs,
@@ -13,6 +14,7 @@ import { storeRecordHash } from '../services/fabric';
 import { notifyUser } from '../services/notifications';
 import { notifyPatientAssigned } from '../services/assignment-notifications';
 import crypto from 'crypto';
+import { internalHandoversRouter } from './internal-handovers';
 
 const errorSchema = z.object({ success: z.boolean(), error: z.object({ message: z.string() }) });
 const successData = z.object({ success: z.boolean(), data: z.any() });
@@ -39,6 +41,7 @@ async function decryptName(first: string, last: string): Promise<string> {
 // ── Router ────────────────────────────────────────────────────────────────────
 
 export const appointmentRouter = createRouter()
+    .route('/handovers', internalHandoversRouter)
 
     // ══════════════════════════════════════════════════════════════════════════
     // GET /appointments
@@ -355,7 +358,7 @@ export const appointmentRouter = createRouter()
         method: 'post',
         path: '/',
         security: [{ bearerAuth: [] }],
-        middleware: [authMiddleware],
+        middleware: [authMiddleware, clinicalWriteGuard],
         request: {
             body: {
                 content: {
@@ -393,6 +396,7 @@ export const appointmentRouter = createRouter()
             500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
         },
     }), async (c) => {
+        const db = clinicalDb(c);
         try {
             const userType = c.get('userType');
             const userId = c.get('userId');

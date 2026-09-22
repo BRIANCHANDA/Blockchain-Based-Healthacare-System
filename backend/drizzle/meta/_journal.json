@@ -29,6 +29,13 @@
       "when": 1788478338036,
       "tag": "0003_acoustic_king_cobra",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1789509338958,
+      "tag": "0004_patient_emergency_opt_in",
+      "breakpoints": true
     }
   ]
 }

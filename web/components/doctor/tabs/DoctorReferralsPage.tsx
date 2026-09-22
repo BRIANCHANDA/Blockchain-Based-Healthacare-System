@@ -447,7 +447,7 @@ export default function DoctorReferralsPage() {
       const myProfileRes = await api.get("/api/auth/session/check");
       const myId = myProfileRes.data?.data?.user?.id;
 
-      const [extRes, incomingRes, outgoingInternalRes] = await Promise.all([
+      const [extRes, incomingRes, outgoingInternalRes, handoversRes] = await Promise.all([
         // Outgoing external referrals
         api.get("/api/referrals/outgoing"),
         // Incoming internal: APT- visits assigned TO me (doctorId filter)
@@ -461,6 +461,7 @@ export default function DoctorReferralsPage() {
         // Outgoing internal: all scheduled APT- visits at institution,
         // filtered client-side for ones I created for someone else
         appointmentApi.list({ status: "scheduled", limit: 200 }),
+        appointmentApi.handovers(),
       ]);
 
       setOutgoingExternal(extRes.data?.data?.referrals ?? []);
@@ -513,8 +514,8 @@ export default function DoctorReferralsPage() {
           createdByPractitionerId: a.createdByPractitionerId,
         }));
 
-      setOutgoingInternal(myOutgoing);
-      setIncoming(myIncoming);
+      setOutgoingInternal([...(handoversRes.data?.data?.outgoing ?? []), ...myOutgoing]);
+      setIncoming([...(handoversRes.data?.data?.incoming ?? []), ...myIncoming]);
     } catch (err: any) {
       setError(
         err.response?.data?.error?.message ?? "Failed to load referrals.",

@@ -1,6 +1,6 @@
 "use client";
 import { useLiveRefresh } from "@/hooks/useLiveRefresh";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { visitApi } from "@/lib/api";
 import {
@@ -385,6 +385,8 @@ export default function DoctorVisitPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null);
   const [admitOpen, setAdmitOpen] = useState(false);
+  const [handoverPendingRefresh, setHandoverPendingRefresh] = useState(false);
+  const loadSequence = useRef(0);
 
   const showToast = (message: string, type: "success" | "error") => {
     setToast({ message, type });
@@ -404,11 +406,14 @@ export default function DoctorVisitPage() {
   useEffect(() => { checkPermission(); }, [checkPermission]);
 
   const loadVisit = useCallback(async (silent = false) => {
+    const sequence = ++loadSequence.current;
     if (!silent) setLoading(true);
     else setRefreshing(true);
     try {
       const res = await visitApi.getSummary(visitId);
+      if (sequence !== loadSequence.current) return;
       setVisitData(res.data.data);
+      setHandoverPendingRefresh(false);
       const p = res.data.data?.patient;
       if (p) setPatientName(`${p.firstName} ${p.lastName}`);
     } catch (err: any) {
@@ -532,6 +537,7 @@ export default function DoctorVisitPage() {
   }
 
   const isCompleted = visit.status === "completed";
+  const readOnly = handoverPendingRefresh || visit.canEditClinical !== true;
   const ps = getPriority(visit.priority);
   const psTone = TONES[ps.tone];
 
@@ -785,7 +791,7 @@ export default function DoctorVisitPage() {
               Refresh
             </Button>
 
-            {!isCompleted && visit?.visitType !== "inpatient" && (
+            {!readOnly && visit?.visitType !== "inpatient" && (
               <Button
                 size="sm"
                 icon={Bed}
@@ -809,6 +815,16 @@ export default function DoctorVisitPage() {
           </div>
         </div>
       </div>
+
+      {readOnly && !isCompleted && (
+        <Banner tone="info" icon={AlertCircle} title="Read-only encounter">
+          {handoverPendingRefresh
+            ? 'The patient has been handed over. Refresh to view the current doctor. '
+            : visit.assignedDoctorName ? `The responsible doctor is Dr. ${visit.assignedDoctorName}. ` : ''}
+          Only the currently assigned doctor can record clinical actions on an active visit.
+          Existing notes and results remain available for review.
+        </Banner>
+      )}
 
       {/* ══ Tab bar ═════════════════════════════════════════════════════════
           Grouped by stage of care rather than listed flat: the section labels
@@ -893,7 +909,7 @@ export default function DoctorVisitPage() {
             {activeTab === "history" && <PatientHistoryTab visitId={visitId} />}
 
             {activeTab === "medical" && visit?.patientId && (
-              <MedicalProfileTab patientId={visit.patientId} />
+              <MedicalProfileTab patientId={visit.patientId} readOnly={readOnly} />
             )}
 
             {activeTab === "consultation" && (
@@ -906,6 +922,7 @@ export default function DoctorVisitPage() {
                 onSaved={() => { showToast("Consultation saved.", "success"); loadVisit(true); }}
                 onError={(msg: string) => showToast(msg, "error")}
                 isCompleted={isCompleted}
+                readOnly={readOnly}
               />
             )}
 
@@ -917,6 +934,7 @@ export default function DoctorVisitPage() {
                 onSaved={() => { showToast("Diagnosis added.", "success"); loadVisit(true); }}
                 onError={(msg: string) => showToast(msg, "error")}
                 isCompleted={isCompleted}
+                readOnly={readOnly}
               />
             )}
 
@@ -927,6 +945,7 @@ export default function DoctorVisitPage() {
                 onSaved={() => { showToast("Lab order(s) submitted.", "success"); loadVisit(true); }}
                 onError={(msg) => showToast(msg, "error")}
                 isCompleted={isCompleted}
+                readOnly={readOnly}
               />
             )}
 
@@ -937,6 +956,7 @@ export default function DoctorVisitPage() {
                 onSaved={() => { showToast("Imaging order submitted.", "success"); loadVisit(true); }}
                 onError={(msg) => showToast(msg, "error")}
                 isCompleted={isCompleted}
+                readOnly={readOnly}
               />
             )}
 
@@ -947,22 +967,27 @@ export default function DoctorVisitPage() {
                 onSaved={() => { showToast("Prescription created.", "success"); loadVisit(true); }}
                 onError={(msg: string) => showToast(msg, "error")}
                 isCompleted={isCompleted}
+                readOnly={readOnly}
               />
             )}
 
             {activeTab === "referrals" && (
               <ReferralTab
+                referringDoctorId={visit.assignedDoctorId}
+                priority={visit.priority}
                 visitId={visitId}
                 patientId={visit.patientId}
                 patientName={visit.patientName ?? patientName}
                 chiefComplaint={visit.chiefComplaint ?? ""}
                 isCompleted={isCompleted}
-                onSuccess={(msg) => showToast(msg, "success")}
+                readOnly={readOnly}
+                onSuccess={(msg) => { showToast(msg, "success"); loadVisit(true); }}
+                onHandover={() => { ++loadSequence.current; setHandoverPendingRefresh(true); }}
                 onError={(msg) => showToast(msg, "error")}
               />
             )}
 
-            {activeTab === "discharge" && (
+            {activeTab === "discharge" && (!readOnly || isCompleted) && (
               <DischargeTab
                 visitId={visitId}
                 visit={visit}
@@ -1189,7 +1214,7 @@ export default function DoctorVisitPage() {
       </div>
 
       {/* ── Admit modal ── */}
-      {admitOpen && (
+      {admitOpen && !readOnly && (
         <AdmitModal
           visitId={visitId}
           onClose={() => setAdmitOpen(false)}

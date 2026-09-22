@@ -7,14 +7,8 @@
  *              guardian is operating the app on a dependent's behalf. Both are
  *              read from AsyncStorage rather than the zustand store, so a
  *              request issued before React has rehydrated still authenticates.
- *   response — on 401, clears the stored credentials so the next launch starts
- *              at the login screen.
- *
- * KNOWN GAP: the 401 handler clears AsyncStorage but not the zustand store, and
- * AppNavigator switches stacks on the store's isAuthenticated. An expired token
- * therefore leaves the app on the main stack, failing every request, until it is
- * restarted. Calling useAuthStore.getState().clearAuth() here would sign the
- * user out immediately.
+ *   response — on 401, expires the matching session in storage and the UI.
+ *              Responses from an older login cannot sign out a newer session.
  *
  * BASE_URL is a local address, so it must be changed to the host machine's LAN
  * IP when running on a physical device — `localhost` on a phone means the phone.
@@ -22,6 +16,7 @@
 
 import axios, { AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { expireSession, writeSession } from '../utils/session';
 
 /**
  * API host.
@@ -63,14 +58,14 @@ interface AuthHeaders extends Record<string, string | undefined> {
 
 client.interceptors.request.use(
     async (config: InternalAxiosRequestConfig): Promise<InternalAxiosRequestConfig> => {
-        const token: string | null = await AsyncStorage.getItem('auth_token');
+        const [[, token], [, activePatientId]] = await writeSession(() =>
+            AsyncStorage.multiGet(['auth_token', 'active_patient_id']));
         if (token) {
             if (!config.headers) {
                 config.headers = {} as any;
             }
             (config.headers as any).Authorization = `Bearer ${token}`;
         }
-        const activePatientId = await AsyncStorage.getItem('active_patient_id');
         if (activePatientId) {
             (config.headers as any)['X-Acting-As-Patient'] = activePatientId;
         }
@@ -83,9 +78,10 @@ client.interceptors.response.use(
     (res) => res,
     async (err) => {
         if (err.response?.status === 401) {
-            await AsyncStorage.removeItem('auth_token');
-            await AsyncStorage.removeItem('auth_user');
-            // Navigation to login is handled by AppNavigator watching auth state
+            const authorization = err.config?.headers?.Authorization;
+            if (typeof authorization === 'string' && authorization.startsWith('Bearer ')) {
+                await expireSession(authorization.slice(7));
+            }
         }
         return Promise.reject(err);
     }

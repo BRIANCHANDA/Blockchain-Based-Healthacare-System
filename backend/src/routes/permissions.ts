@@ -1,4 +1,5 @@
 import { handleError } from '../lib/errors';
+import { permittedGrant } from '../services/cross-institution';
 import { createRoute, z } from '@hono/zod-openapi';
 import { and, eq, gt, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../db';
@@ -1094,6 +1095,7 @@ export const permissionRouter = createRouter()
           eq(crossInstitutionAccess.patientId, patientId),
           eq(crossInstitutionAccess.targetInstitutionId, myInstitutionId),
           eq(crossInstitutionAccess.status, 'active'),
+          permittedGrant,
           // Nothing sweeps these rows to 'expired', so an emergency grant would
           // otherwise stay usable long past its 24 hours. A null expiry is
           // open-ended (referrals/transfers); a set one must not have lapsed.

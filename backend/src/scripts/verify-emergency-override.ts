@@ -99,6 +99,7 @@ async function main() {
 
   // ── A patient registered at BOTH hospitals ──────────────────────────────
   const [patient] = await db.insert(patients).values({
+    emergencyOverrideEnabled: true,
     blockchainAddress: `patient:emgtest${tag}`,
     firstNameEncrypted: encrypt('Override'),
     lastNameEncrypted: encrypt('TestPatient'),
@@ -285,6 +286,7 @@ async function main() {
   // a success the doctor cannot act on.
   console.log('\n5. Patient registered only at the doctor\'s own hospital');
   const [soloPatient] = await db.insert(patients).values({
+    emergencyOverrideEnabled: true,
     blockchainAddress: `patient:emgsolo${tag}`,
     firstNameEncrypted: encrypt('Solo'),
     lastNameEncrypted: encrypt('TestPatient'),

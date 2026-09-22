@@ -258,6 +258,7 @@ export function ConsultationTab({
   onSaved,
   onError,
   isCompleted,
+  readOnly = false,
 }: any) {
   const [loading, setLoading] = useState(false);
   // With no notes yet, the form is the whole point of the tab — open it.
@@ -298,7 +299,7 @@ export function ConsultationTab({
       )}
 
       {/* ── New consultation form / toggle ────────────────────────────────── */}
-      {!isCompleted &&
+      {!isCompleted && !readOnly &&
         (!showForm ? (
           <button
             onClick={() => setShowForm(true)}

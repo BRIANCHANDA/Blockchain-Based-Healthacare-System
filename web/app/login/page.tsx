@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
@@ -59,6 +59,7 @@ export default function LoginPage() {
     maskedEmail: string;
   } | null>(null);
   const [resending, setResending] = useState(false);
+  const otpInFlight = useRef(false);
   const [resendMsg, setResendMsg] = useState("");
 
   const licenseForm = useForm<LicenseForm>({
@@ -102,7 +103,8 @@ export default function LoginPage() {
   };
 
   const onSubmitOTP = async (data: OTPForm) => {
-    if (!otpData) return;
+    if (!otpData || otpInFlight.current || resending) return;
+    otpInFlight.current = true;
     setLoading(true);
     setError("");
     try {
@@ -123,13 +125,13 @@ export default function LoginPage() {
         err.response?.data?.error?.message ??
           "Invalid or expired code. Please try again.",
       );
-    } finally {
+      otpInFlight.current = false;
       setLoading(false);
     }
   };
 
   const handleResend = async () => {
-    if (!otpData) return;
+    if (!otpData || otpInFlight.current || resending) return;
     setResending(true);
     setResendMsg("");
     try {
@@ -514,6 +516,7 @@ export default function LoginPage() {
             /* OTP step */
             <>
               <button
+                disabled={loading || resending}
                 onClick={() => {
                   setOtpStep(false);
                   setError("");
@@ -594,6 +597,7 @@ export default function LoginPage() {
                       },
                     })}
                     className="otp-input"
+                    disabled={loading || resending}
                     placeholder="000000"
                     maxLength={6}
                     inputMode="numeric"
@@ -648,7 +652,7 @@ export default function LoginPage() {
                   </p>
                 )}
 
-                <button type="submit" disabled={loading} className="submit-btn">
+                <button type="submit" disabled={loading || resending} aria-busy={loading} className="submit-btn">
                   {loading ? (
                     <>
                       <Loader2 size={15} className="animate-spin" /> Verifying…
@@ -670,7 +674,7 @@ export default function LoginPage() {
                   <button
                     type="button"
                     onClick={handleResend}
-                    disabled={resending}
+                    disabled={resending || loading}
                     style={{
                       background: "none",
                       border: "none",

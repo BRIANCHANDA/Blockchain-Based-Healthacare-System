@@ -592,6 +592,10 @@ export default function PharmacyDispensePage() {
               >
                 {prescription.visit_number}
               </p>
+              <p style={{ margin: '8px 0 0', color: 'var(--text-primary)', fontSize: 18, fontWeight: 700, overflowWrap: 'anywhere' }}>
+                <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--text-secondary)' }}>Patient: </span>
+                {prescription.patient_name || 'Patient name unavailable'}
+              </p>
             </div>
           </div>
 

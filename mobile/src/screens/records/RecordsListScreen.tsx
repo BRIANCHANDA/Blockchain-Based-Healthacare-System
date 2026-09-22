@@ -20,6 +20,7 @@ import { getMyDependents } from "../../api/patient";
 import { useAuthStore } from "../../store/authStore";
 import { Visit, Dependent, RecordsStackParamList } from "../../types";
 import LoadingSpinner from "../../components/common/LoadingSpinner";
+import { usePatientResource } from "../../hooks/usePatientResource";
 
 type Props = NativeStackScreenProps<RecordsStackParamList, "RecordsList">;
 
@@ -130,10 +131,6 @@ export default function RecordsListScreen({ navigation }: Props) {
   const { dependents, activePatientId, activeDependentName, setDependents, setActivePatient, clearActivePatient } = useAuthStore();
   const insets = useSafeAreaInsets();
 
-  const [visits, setVisits] = useState<Visit[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState("");
   const [bannerDismissed, setBannerDismissed] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -150,6 +147,7 @@ export default function RecordsListScreen({ navigation }: Props) {
   // Load dependents once on mount
   useEffect(() => {
     if (!user) return;
+    let cancelled = false;
     getMyDependents(user.id)
       .then((res) => {
         const deps: Dependent[] = (res.data?.data ?? []).map((d: any) => ({
@@ -161,35 +159,22 @@ export default function RecordsListScreen({ navigation }: Props) {
           endsAt: d.endsAt,
           dateOfBirth: d.dateOfBirth,
         }));
-        setDependents(deps);
+        if (!cancelled) setDependents(deps);
       })
-      .catch(() => setDependents([]));
+      .catch(() => { if (!cancelled) setDependents([]); });
+    return () => { cancelled = true; };
   }, [user?.id]);
 
   // Resolve which patient ID to fetch records for
   const effectivePatientId = activePatientId ?? user?.id ?? "";
 
   const fetchVisits = useCallback(async () => {
-    if (!effectivePatientId) return;
-    try {
-      const res = await getMyVisits(effectivePatientId);
-      setVisits(res.data.visits);
-      setError("");
-    } catch {
-      setError("Could not load records. Pull down to retry.");
-    }
+    if (!effectivePatientId) return [];
+    const res = await getMyVisits(effectivePatientId);
+    return res.data.visits as Visit[];
   }, [effectivePatientId]);
-
-  useEffect(() => {
-    setLoading(true);
-    fetchVisits().finally(() => setLoading(false));
-  }, [fetchVisits]);
-
-  const onRefresh = async () => {
-    setRefreshing(true);
-    await fetchVisits();
-    setRefreshing(false);
-  };
+  const { data: visits, loading, refreshing, error: failed, refresh: onRefresh } = usePatientResource(fetchVisits, [] as Visit[]);
+  const error = failed ? "Could not load records. Pull down to retry." : "";
 
   const handleSelectSelf = async () => {
     await clearActivePatient();
@@ -227,7 +212,7 @@ export default function RecordsListScreen({ navigation }: Props) {
                   {activePatientId ? "Viewing as guardian" : "Your medical records"}
                 </Text>
               </View>
-              <TouchableOpacity style={styles.avatarBtn} activeOpacity={0.7} onPress={() => navigation.navigate("Profile")}>
+              <TouchableOpacity accessibilityRole="button" accessibilityLabel="Open your profile" style={styles.avatarBtn} activeOpacity={0.7} onPress={() => navigation.navigate("Profile")}>
                 <Text style={styles.avatarText}>{user?.firstName?.[0]}{user?.lastName?.[0]}</Text>
               </TouchableOpacity>
             </View>
@@ -275,7 +260,7 @@ export default function RecordsListScreen({ navigation }: Props) {
                 <Text style={styles.viewingText}>
                   Viewing records for <Text style={styles.viewingName}>{activeDependentName}</Text>
                 </Text>
-                <TouchableOpacity onPress={clearActivePatient} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <TouchableOpacity accessibilityRole="button" accessibilityLabel="Switch to your own records" onPress={clearActivePatient} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                   <MaterialIcons name="close" size={16} color={C.amberInk} />
                 </TouchableOpacity>
               </View>
@@ -336,7 +321,7 @@ export default function RecordsListScreen({ navigation }: Props) {
             ) : null}
           </>
         }
-        ListEmptyComponent={
+        ListEmptyComponent={error ? null :
           <View style={styles.empty}>
             <View style={styles.emptyIcon}>
               <MaterialIcons name="folder-open" size={32} color={C.brand} />
@@ -344,7 +329,7 @@ export default function RecordsListScreen({ navigation }: Props) {
             <Text style={styles.emptyTitle}>No visits yet</Text>
             <Text style={styles.emptyBody}>
               {activePatientId
-                ? "No medical records found for this child."
+                ? "No medical records found for this dependent."
                 : "Your medical records will appear here once your healthcare provider creates them."}
             </Text>
           </View>

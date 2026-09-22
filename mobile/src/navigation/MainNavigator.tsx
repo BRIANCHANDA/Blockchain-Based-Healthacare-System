@@ -6,7 +6,7 @@ import {
   Platform,
   TouchableOpacity,
   Pressable,
-  Dimensions,
+  useWindowDimensions,
 } from "react-native";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -48,7 +48,6 @@ const C = {
 };
 
 // ── Layout constants ──────────────────────────────────────────────────────────
-const { width: SCREEN_W } = Dimensions.get("window");
 const TAB_HEIGHT  = 64;
 const FAB_SIZE    = 56;
 const FAB_PROTRUDE = 22; // DS: `top: -22` above the tab bar
@@ -144,6 +143,7 @@ function AppointmentsNavigator() {
 // FAB protrudes FAB_PROTRUDE px above the bar, centered, always brand green.
 function CustomTabBar({ state, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const { width: screenWidth } = useWindowDimensions();
 
   const handlePress = useCallback(
     (routeName: string, routeKey: string, isFocused: boolean) => {
@@ -171,7 +171,7 @@ function CustomTabBar({ state, navigation }: BottomTabBarProps) {
 
   // FAB vertical position: bottom of FAB aligns tabBarActualH + FAB_PROTRUDE - FAB_SIZE above wrapper bottom
   const fabBottom = tabBarActualH + FAB_PROTRUDE - FAB_SIZE;
-  const fabLeft   = (SCREEN_W - FAB_SIZE) / 2;
+  const fabLeft   = (screenWidth - FAB_SIZE) / 2;
 
   const renderTab = (route: (typeof visible)[0]) => {
     const realIndex = state.routes.findIndex((r) => r.key === route.key);

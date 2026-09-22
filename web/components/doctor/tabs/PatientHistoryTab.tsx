@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { patientApi, permissionApi } from "@/lib/api";
+import { groupHistoryRecords, historyVisibility } from "@/lib/history-access";
 import EmergencyOverrideModal from "@/components/EmergencyOverrideModal";
 import {
   AlertCircle,
@@ -44,13 +45,14 @@ import {
 
    The patient's full record across every visit — including visits at OTHER
    institutions, which is what AwayInstitutionSection handles. Those are
-   locked behind a per-institution consent request, so each away institution
-   carries its own permission state machine rather than one global one.
+   grouped by institution after authorization. Patient consent is patient-wide;
+   referral and emergency grants retain their existing source restrictions.
    ========================================================================== */
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 interface PatientDemographics {
+  emergencyOverrideEnabled?: boolean;
   id: string;
   firstName: string;
   lastName: string;
@@ -799,15 +801,22 @@ function AwayInstitutionSection({
   institution,
   patientId,
   onPermissionGranted,
+  patientWide = false,
+  directAccess = false,
+  emergencyOverrideEnabled = false,
 }: {
   institution: AwayInstitution;
   patientId: string;
   onPermissionGranted: () => void;
+  patientWide?: boolean;
+  directAccess?: boolean;
+  emergencyOverrideEnabled?: boolean;
 }) {
   const [permState, setPermState] = useState<PermState>({ phase: "idle" });
   const [reason, setReason] = useState("");
   const [selectedPerms, setSelectedPerms] = useState<string[]>([
     "visits",
+    "consultations",
     "vitals",
     "diagnoses",
     "prescriptions",
@@ -874,7 +883,7 @@ function AwayInstitutionSection({
     try {
       const res = await permissionApi.requestAccess({
         patientId,
-        reason: reason.trim(),
+        reason: patientWide ? `Patient history across all hospitals: ${reason.trim()}` : reason.trim(),
         requestedPermissions: selectedPerms,
       });
       const requestId = res.data.data.requestId;
@@ -894,6 +903,7 @@ function AwayInstitutionSection({
 
   const PERMISSIONS = [
     { key: "visits", label: "Visit Records" },
+    { key: "consultations", label: "Consultations" },
     { key: "vitals", label: "Vital Signs" },
     { key: "diagnoses", label: "Diagnoses" },
     { key: "prescriptions", label: "Prescriptions" },
@@ -931,12 +941,12 @@ function AwayInstitutionSection({
               {institution.visitCount !== 1 ? "s" : ""}
             </p>
           </div>
-          <div
+          {!directAccess && <div
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold"
             style={{ background: "var(--brand-tint)", color: "var(--green-800)" }}
           >
             <Unlock className="w-3 h-3" /> Access granted
-          </div>
+          </div>}
         </div>
         {/* Visits */}
         <div className="p-4 space-y-3" style={{ background: "var(--surface-app)" }}>
@@ -961,8 +971,7 @@ function AwayInstitutionSection({
             {institution.institutionName}
           </p>
           <p className="text-xs text-[var(--text-muted)]">
-            {institution.visitCount} visit
-            {institution.visitCount !== 1 ? "s" : ""} · access required
+            {patientWide ? 'All hospitals · patient approval required' : `${institution.visitCount} visits · access required`}
           </p>
         </div>
         <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-[var(--surface-sunken)] text-[var(--text-secondary)]">
@@ -980,20 +989,19 @@ function AwayInstitutionSection({
           <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
             <div className="flex-1">
               <p className="text-sm font-semibold text-[var(--text-secondary)]">
-                Records from this institution are protected
+                {patientWide ? 'Patient history is protected' : 'Records from this institution are protected'}
               </p>
               <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                Request consent from the patient to view their history from{" "}
-                {institution.institutionName}.
+                {patientWide ? 'Request consent once to view the patient’s full history across all hospitals. After approval, records are grouped by institution.' : `Request consent to view records from ${institution.institutionName}.`}
               </p>
             </div>
             <div className="flex-shrink-0 flex items-center gap-2">
-              <button
+              {emergencyOverrideEnabled === true && <button
                 onClick={() => setShowOverride(true)}
                 className="flex items-center gap-2 px-4 py-2 rounded-[var(--r-sm)] text-xs font-semibold border border-[var(--coral-100)] text-[var(--critical-ink)] bg-[var(--coral-050)] hover:bg-[var(--coral-100)] transition-all"
               >
                 <ShieldAlert className="w-3.5 h-3.5" /> Emergency
-              </button>
+              </button>}
               <button
                 onClick={() => setPermState({ phase: "form" })}
                 className="flex items-center gap-2 px-4 py-2 rounded-[var(--r-sm)] text-[var(--white)] text-xs font-semibold shadow-[var(--elev-1)] hover:shadow-[var(--elev-2)] transition-all"
@@ -1014,7 +1022,7 @@ function AwayInstitutionSection({
               <ShieldX className="w-4 h-4 text-[var(--urgent-ink)] flex-shrink-0 mt-0.5" />
               <p className="text-xs text-[var(--urgent-ink)]">
                 The patient will receive a notification on their mobile app and
-                must approve your request.
+                must approve your request. {patientWide && 'This request covers the full patient history across all hospitals, not just one institution.'}
               </p>
             </div>
             <div className="space-y-2">
@@ -1028,6 +1036,7 @@ function AwayInstitutionSection({
                     <button
                       key={key}
                       type="button"
+                      disabled={patientWide}
                       onClick={() => togglePerm(key)}
                       className="px-2.5 py-1 rounded-[var(--r-xs)] text-xs font-semibold border transition-all"
                       style={
@@ -1198,7 +1207,7 @@ function AwayInstitutionSection({
 
       {/* Emergency override — 24h access without patient approval, heavily logged */}
       <EmergencyOverrideModal
-        open={showOverride}
+        open={emergencyOverrideEnabled === true && showOverride}
         patientId={patientId}
         onClose={() => setShowOverride(false)}
         onGranted={() => {
@@ -1223,6 +1232,8 @@ export default function PatientHistoryTab({
   const [error, setError] = useState<string | null>(null);
   const [patient, setPatient] = useState<PatientDemographics | null>(null);
   const [ownVisits, setOwnVisits] = useState<VisitRecord[]>([]);
+  const [hasHistoryPermission, setHasHistoryPermission] = useState(false);
+  const [institutionNames, setInstitutionNames] = useState<Record<string, string>>({});
   const [awayInstitutions, setAwayInstitutions] = useState<AwayInstitution[]>(
     [],
   );
@@ -1264,6 +1275,8 @@ export default function PatientHistoryTab({
       const res = await patientApi.getHistory(pid);
       const data = res.data.data;
       setPatient(data.patient);
+      setHasHistoryPermission(data.hasHistoryPermission === true);
+      setInstitutionNames(data.institutionNames ?? {});
       setOwnVisits(data.ownVisits ?? []);
       setAwayInstitutions(data.awayInstitutions ?? []);
     } catch (err: any) {
@@ -1307,8 +1320,22 @@ export default function PatientHistoryTab({
 
   if (!patient) return null;
 
+  const { accessibleInstitutions, needsPatientConsent } = historyVisibility(hasHistoryPermission, awayInstitutions);
+  const historyRequest = (
+    <AwayInstitutionSection
+      key={patient.id}
+      patientWide
+      emergencyOverrideEnabled={patient.emergencyOverrideEnabled}
+      patientId={patient.id}
+      institution={{ institutionId: 'patient-history', institutionName: 'Patient history', visitCount: 0, hasPermission: false, visits: [] }}
+      onPermissionGranted={handlePermissionGranted}
+    />
+  );
+  // Home-institution records are directly readable. Consent only gates
+  // records from other institutions, never the whole history page.
+
   const totalVisits =
-    ownVisits.length + awayInstitutions.reduce((a, i) => a + i.visitCount, 0);
+    ownVisits.length + accessibleInstitutions.reduce((a, i) => a + i.visits.length, 0);
   const totalDiagnoses =
     ownVisits.reduce((a, v) => a + v.diagnoses.length, 0) +
     awayInstitutions
@@ -1328,6 +1355,7 @@ export default function PatientHistoryTab({
 
   return (
     <div className="space-y-5">
+      <h2 className="text-lg font-bold text-[var(--text-primary)]">Patient history</h2>
       {/* Patient demographics card */}
       <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] overflow-hidden">
         <div
@@ -1419,59 +1447,44 @@ export default function PatientHistoryTab({
         ))}
       </div>
 
-      {/* ── OWN INSTITUTION RECORDS ─────────────────────────────────────────── */}
-      <div className="space-y-3">
-        <div className="flex items-center gap-2 px-1">
-          <ShieldCheck className="w-4 h-4 text-[var(--green-700)]" />
-          <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
-            Own Institution Records
-          </p>
-          <span className="ml-auto text-xs font-semibold text-[var(--text-muted)]">
-            {ownVisits.length} visit{ownVisits.length !== 1 ? "s" : ""}
-          </span>
-        </div>
+      {/* Authorized history, grouped by the actual institution of each visit. */}
+      {groupHistoryRecords(ownVisits, institutionNames).map(group => (
+        <AwayInstitutionSection
+          directAccess
+          key={group.institutionId}
+          institution={{ ...group, visitCount: group.visits.length, hasPermission: true }}
+          patientId={patient.id}
+          onPermissionGranted={handlePermissionGranted}
+        />
+      ))}
+      {totalVisits === 0 && <p className="text-sm text-[var(--text-secondary)]">No accessible visit records to display.</p>}
 
-        {ownVisits.length === 0 ? (
-          <div className="bg-[var(--surface-card)] rounded-[var(--r-lg)] border border-[var(--border-faint)] shadow-[var(--elev-1)] p-8 text-center">
-            <FileText className="w-7 h-7 text-[var(--text-disabled)] mx-auto mb-2" />
-            <p className="text-sm text-[var(--text-secondary)]">
-              No visits at your institution yet.
-            </p>
-          </div>
-        ) : (
-          ownVisits.map((record, i) => (
-            <VisitCard key={record.visit.id} record={record} index={i} />
-          ))
-        )}
-      </div>
+      {needsPatientConsent && historyRequest}
 
       {/* ── AWAY INSTITUTION RECORDS ────────────────────────────────────────── */}
-      {awayInstitutions.length > 0 && (
+      {accessibleInstitutions.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center gap-2 px-1">
             <Building2 className="w-4 h-4 text-[var(--text-muted)]" />
             <p className="text-xs font-bold text-[var(--text-secondary)] uppercase tracking-wider">
-              Away Institution Records
+              Other institutions
             </p>
             <span className="ml-auto text-xs font-semibold text-[var(--text-muted)]">
-              {awayInstitutions.length} institution
-              {awayInstitutions.length !== 1 ? "s" : ""}
+              {accessibleInstitutions.length} institution
+              {accessibleInstitutions.length !== 1 ? "s" : ""}
             </span>
           </div>
 
           <div className="bg-[var(--amber-050)] border border-[var(--amber-100)] rounded-[var(--r-sm)] px-4 py-3 flex items-start gap-2.5">
             <ShieldX className="w-4 h-4 text-[var(--urgent-ink)] flex-shrink-0 mt-0.5" />
             <p className="text-xs text-[var(--urgent-ink)]">
-              Records from other institutions are protected by blockchain
-              consent. Click <strong>Request Access</strong> on each institution
-              — the patient will approve or deny from their mobile app. In a
-              genuine emergency, <strong>Emergency</strong> grants immediate
-              24-hour access that is permanently logged and visible to the
-              patient.
+              {hasHistoryPermission
+                ? 'Patient-approved access covers the history across all hospitals. Records are grouped below by institution.'
+                : 'Showing records covered by existing access grants. Any remaining protected records require patient-wide consent.'}
             </p>
           </div>
 
-          {awayInstitutions.map((inst) => (
+          {accessibleInstitutions.map((inst) => (
             <AwayInstitutionSection
               key={inst.institutionId}
               institution={inst}

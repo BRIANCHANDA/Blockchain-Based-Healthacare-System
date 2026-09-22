@@ -1467,6 +1467,7 @@ export function PrescriptionsTab({
   onSaved,
   onError,
   isCompleted,
+  readOnly = false,
 }: any) {
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(
@@ -1577,7 +1578,7 @@ export function PrescriptionsTab({
       )}
 
       {/* ── New prescription form ──────────────────────────────────────── */}
-      {!isCompleted &&
+      {!isCompleted && !readOnly &&
         (!showForm ? (
           <button
             onClick={() => setShowForm(true)}

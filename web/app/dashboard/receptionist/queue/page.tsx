@@ -3,6 +3,7 @@ import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { api, practitionersApi, visitApi } from "@/lib/api";
+import { receptionistQueueItem, queueWaitLabel } from '@/lib/receptionist-queue';
 import {
   Clock,
   Users,
@@ -54,11 +55,11 @@ interface QueueItem {
   id: string;
   ticket: string;
   name: string;
-  age: number;
+  age?: number;
   reason: string;
   priority: string;
-  doctor: string | null;
-  waitMins: number;
+  doctor?: string | null;
+  waitMins: number | null;
   status: string;
   assignedNurseId?: string;
   assignedNurseName?: string;
@@ -86,11 +87,8 @@ const PRIORITY: Record<string, { tone: Tone; label: string }> = {
 const getP = (p: string) => PRIORITY[p] ?? { tone: "neutral" as Tone, label: p || "—" };
 
 /* Waits only earn colour once they are worth acting on. */
-const waitInk = (m: number) =>
-  m > 60 ? "var(--critical-ink)" : m > 30 ? "var(--urgent-ink)" : "var(--text-secondary)";
-
-const waitLabel = (m: number) =>
-  m > 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
+const waitInk = (m: number | null) =>
+  (m ?? 0) > 60 ? "var(--critical-ink)" : (m ?? 0) > 30 ? "var(--urgent-ink)" : "var(--text-secondary)";
 
 function StatusPill({ status }: { status: string }) {
   if (status === "in-progress") return <Pill tone="success" dot>In care</Pill>;
@@ -136,7 +134,7 @@ export default function QueuePage() {
       const res = await api.get("/api/dashboard/receptionist");
       // Handle both { data: { queue: [] } } and { queue: [] } shapes
       const q = res.data?.data?.queue ?? res.data?.queue ?? [];
-      setQueue(q);
+      setQueue(q.map((row: Parameters<typeof receptionistQueueItem>[0]) => receptionistQueueItem(row)));
       setLastRefresh(new Date());
     } catch (err: any) {
       setError(
@@ -491,16 +489,6 @@ export default function QueuePage() {
                   </div>
 
                   <div className="flex items-center min-w-0" style={{ gap: 10 }}>
-                    <p
-                      className="truncate"
-                      style={{
-                        margin: 0,
-                        font: "400 12.5px/1.2 var(--font-sans)",
-                        color: "var(--text-secondary)",
-                      }}
-                    >
-                      {item.reason || "No reason recorded"}
-                    </p>
                     {item.doctor && (
                       <span
                         className="flex-shrink-0"
@@ -527,9 +515,9 @@ export default function QueuePage() {
 
                 <div className="text-right flex flex-col" style={{ gap: 3 }}>
                   <span style={{ font: "600 13px/1 var(--font-mono)", color: waitInk(item.waitMins) }}>
-                    {waitLabel(item.waitMins)}
+                    {queueWaitLabel(item.waitMins)}
                   </span>
-                  {item.waitMins > 45 && !isDone && (
+                  {item.waitMins !== null && item.waitMins > 45 && !isDone && (
                     <span
                       style={{ font: "500 10.5px/1 var(--font-sans)", color: "var(--critical-ink)" }}
                     >
@@ -660,7 +648,7 @@ export default function QueuePage() {
                       variant="primary"
                       size="sm"
                       icon={Play}
-                      onClick={() => router.push(`/dashboard/visits/${item.id}`)}
+                      onClick={() => router.push(`/dashboard/receptionist/visits/${item.id}`)}
                     >
                       Continue
                     </Button>

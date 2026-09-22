@@ -1,0 +1,6467 @@
+{
+  "id": "affaf5c6-3efc-4528-a3d0-6c240d821562",
+  "prevId": "ba4b4d84-b766-48a8-9d3f-c9ffb271e45a",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.access_permissions": {
+      "name": "access_permissions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_to_user_id": {
+          "name": "granted_to_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_to_user_type": {
+          "name": "granted_to_user_type",
+          "type": "user_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "permission_type": {
+          "name": "permission_type",
+          "type": "permission_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "allowed_record_types": {
+          "name": "allowed_record_types",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_at": {
+          "name": "granted_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blockchain_transaction_id": {
+          "name": "blockchain_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "is_emergency_override": {
+          "name": "is_emergency_override",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "emergency_reason": {
+          "name": "emergency_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_access_permissions_patient_id": {
+          "name": "idx_access_permissions_patient_id",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_access_permissions_granted_to": {
+          "name": "idx_access_permissions_granted_to",
+          "columns": [
+            {
+              "expression": "granted_to_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_access_permissions_expires_at": {
+          "name": "idx_access_permissions_expires_at",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_access_permissions_is_active": {
+          "name": "idx_access_permissions_is_active",
+          "columns": [
+            {
+              "expression": "is_active",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "access_permissions_patient_id_patients_id_fk": {
+          "name": "access_permissions_patient_id_patients_id_fk",
+          "tableFrom": "access_permissions",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.access_requests": {
+      "name": "access_requests",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "requested_by_user_id": {
+          "name": "requested_by_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "requested_by_user_type": {
+          "name": "requested_by_user_type",
+          "type": "user_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "visit_id": {
+          "name": "visit_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "requested_permissions": {
+          "name": "requested_permissions",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "request_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "responded_at": {
+          "name": "responded_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "response_note": {
+          "name": "response_note",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_by_guardian_id": {
+          "name": "approved_by_guardian_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_access_requests_patient_id": {
+          "name": "idx_access_requests_patient_id",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_access_requests_requested_by": {
+          "name": "idx_access_requests_requested_by",
+          "columns": [
+            {
+              "expression": "requested_by_user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_access_requests_status": {
+          "name": "idx_access_requests_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_access_requests_visit_id": {
+          "name": "idx_access_requests_visit_id",
+          "columns": [
+            {
+              "expression": "visit_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "access_requests_patient_id_patients_id_fk": {
+          "name": "access_requests_patient_id_patients_id_fk",
+          "tableFrom": "access_requests",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "access_requests_visit_id_visits_id_fk": {
+          "name": "access_requests_visit_id_visits_id_fk",
+          "tableFrom": "access_requests",
+          "tableTo": "visits",
+          "columnsFrom": [
+            "visit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "access_requests_approved_by_guardian_id_patients_id_fk": {
+          "name": "access_requests_approved_by_guardian_id_patients_id_fk",
+          "tableFrom": "access_requests",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "approved_by_guardian_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.allergies": {
+      "name": "allergies",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "allergen": {
+          "name": "allergen",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "allergy_type": {
+          "name": "allergy_type",
+          "type": "allergy_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "severity": {
+          "name": "severity",
+          "type": "allergy_severity",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reaction": {
+          "name": "reaction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "onset_date": {
+          "name": "onset_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recorded_by_practitioner_id": {
+          "name": "recorded_by_practitioner_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "blockchain_hash": {
+          "name": "blockchain_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blockchain_transaction_id": {
+          "name": "blockchain_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_allergies_patient_id": {
+          "name": "idx_allergies_patient_id",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_allergies_is_active": {
+          "name": "idx_allergies_is_active",
+          "columns": [
+            {
+              "expression": "is_active",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "allergies_patient_id_patients_id_fk": {
+          "name": "allergies_patient_id_patients_id_fk",
+          "tableFrom": "allergies",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "allergies_recorded_by_practitioner_id_practitioners_id_fk": {
+          "name": "allergies_recorded_by_practitioner_id_practitioners_id_fk",
+          "tableFrom": "allergies",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "recorded_by_practitioner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.audit_logs": {
+      "name": "audit_logs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_type": {
+          "name": "user_type",
+          "type": "user_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "action_type": {
+          "name": "action_type",
+          "type": "action_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resource_type": {
+          "name": "resource_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "resource_id": {
+          "name": "resource_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "timestamp": {
+          "name": "timestamp",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "blockchain_transaction_id": {
+          "name": "blockchain_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_emergency_override": {
+          "name": "is_emergency_override",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "access_reason": {
+          "name": "access_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ip_address": {
+          "name": "ip_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_agent": {
+          "name": "user_agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_audit_logs_patient_id": {
+          "name": "idx_audit_logs_patient_id",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_audit_logs_user_id": {
+          "name": "idx_audit_logs_user_id",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_audit_logs_timestamp": {
+          "name": "idx_audit_logs_timestamp",
+          "columns": [
+            {
+              "expression": "timestamp",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_audit_logs_action_type": {
+          "name": "idx_audit_logs_action_type",
+          "columns": [
+            {
+              "expression": "action_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "audit_logs_patient_id_patients_id_fk": {
+          "name": "audit_logs_patient_id_patients_id_fk",
+          "tableFrom": "audit_logs",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.auth_sessions": {
+      "name": "auth_sessions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_type": {
+          "name": "user_type",
+          "type": "user_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "jwt_token": {
+          "name": "jwt_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "refresh_token": {
+          "name": "refresh_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "two_fa_verified": {
+          "name": "two_fa_verified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "ip_address": {
+          "name": "ip_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_agent": {
+          "name": "user_agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "idx_auth_sessions_user_id": {
+          "name": "idx_auth_sessions_user_id",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_auth_sessions_is_active": {
+          "name": "idx_auth_sessions_is_active",
+          "columns": [
+            {
+              "expression": "is_active",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_auth_sessions_jwt_token": {
+          "name": "idx_auth_sessions_jwt_token",
+          "columns": [
+            {
+              "expression": "jwt_token",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.consultations": {
+      "name": "consultations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "visit_id": {
+          "name": "visit_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "practitioner_id": {
+          "name": "practitioner_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chief_complaint": {
+          "name": "chief_complaint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "history_of_present_illness": {
+          "name": "history_of_present_illness",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "review_of_systems": {
+          "name": "review_of_systems",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "physical_examination": {
+          "name": "physical_examination",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "clinical_findings": {
+          "name": "clinical_findings",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "assessment": {
+          "name": "assessment",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "plan": {
+          "name": "plan",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "follow_up_instructions": {
+          "name": "follow_up_instructions",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "next_appointment_date": {
+          "name": "next_appointment_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consultation_date": {
+          "name": "consultation_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "blockchain_hash": {
+          "name": "blockchain_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blockchain_transaction_id": {
+          "name": "blockchain_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_consultations_visit_id": {
+          "name": "idx_consultations_visit_id",
+          "columns": [
+            {
+              "expression": "visit_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_consultations_patient_id": {
+          "name": "idx_consultations_patient_id",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_consultations_practitioner_id": {
+          "name": "idx_consultations_practitioner_id",
+          "columns": [
+            {
+              "expression": "practitioner_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_consultations_consultation_date": {
+          "name": "idx_consultations_consultation_date",
+          "columns": [
+            {
+              "expression": "consultation_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "consultations_visit_id_visits_id_fk": {
+          "name": "consultations_visit_id_visits_id_fk",
+          "tableFrom": "consultations",
+          "tableTo": "visits",
+          "columnsFrom": [
+            "visit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "consultations_patient_id_patients_id_fk": {
+          "name": "consultations_patient_id_patients_id_fk",
+          "tableFrom": "consultations",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "consultations_practitioner_id_practitioners_id_fk": {
+          "name": "consultations_practitioner_id_practitioners_id_fk",
+          "tableFrom": "consultations",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "practitioner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.cross_institution_access": {
+      "name": "cross_institution_access",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "source_institution_id": {
+          "name": "source_institution_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "target_institution_id": {
+          "name": "target_institution_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "access_type": {
+          "name": "access_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_by": {
+          "name": "granted_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "granted_at": {
+          "name": "granted_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "blockchain_hash": {
+          "name": "blockchain_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blockchain_transaction_id": {
+          "name": "blockchain_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_cross_access_patient": {
+          "name": "idx_cross_access_patient",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_cross_access_source": {
+          "name": "idx_cross_access_source",
+          "columns": [
+            {
+              "expression": "source_institution_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_cross_access_target": {
+          "name": "idx_cross_access_target",
+          "columns": [
+            {
+              "expression": "target_institution_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_cross_access_status": {
+          "name": "idx_cross_access_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "cross_institution_access_patient_id_patients_id_fk": {
+          "name": "cross_institution_access_patient_id_patients_id_fk",
+          "tableFrom": "cross_institution_access",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "cross_institution_access_source_institution_id_institutions_id_fk": {
+          "name": "cross_institution_access_source_institution_id_institutions_id_fk",
+          "tableFrom": "cross_institution_access",
+          "tableTo": "institutions",
+          "columnsFrom": [
+            "source_institution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "cross_institution_access_target_institution_id_institutions_id_fk": {
+          "name": "cross_institution_access_target_institution_id_institutions_id_fk",
+          "tableFrom": "cross_institution_access",
+          "tableTo": "institutions",
+          "columnsFrom": [
+            "target_institution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "unique_cross_access": {
+          "name": "unique_cross_access",
+          "nullsNotDistinct": false,
+          "columns": [
+            "patient_id",
+            "source_institution_id",
+            "target_institution_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.departments": {
+      "name": "departments",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "institution_id": {
+          "name": "institution_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "department_code": {
+          "name": "department_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "department_name": {
+          "name": "department_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "department_type": {
+          "name": "department_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "location": {
+          "name": "location",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "phone": {
+          "name": "phone",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_departments_institution_id": {
+          "name": "idx_departments_institution_id",
+          "columns": [
+            {
+              "expression": "institution_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "departments_institution_id_institutions_id_fk": {
+          "name": "departments_institution_id_institutions_id_fk",
+          "tableFrom": "departments",
+          "tableTo": "institutions",
+          "columnsFrom": [
+            "institution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "unique_dept_code": {
+          "name": "unique_dept_code",
+          "nullsNotDistinct": false,
+          "columns": [
+            "institution_id",
+            "department_code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.device_tokens": {
+      "name": "device_tokens",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_type": {
+          "name": "user_type",
+          "type": "user_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token": {
+          "name": "token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "platform": {
+          "name": "platform",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_device_tokens_user_id": {
+          "name": "idx_device_tokens_user_id",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_device_tokens_token": {
+          "name": "idx_device_tokens_token",
+          "columns": [
+            {
+              "expression": "token",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "device_tokens_token_unique": {
+          "name": "device_tokens_token_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "token"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.diagnoses": {
+      "name": "diagnoses",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "consultation_id": {
+          "name": "consultation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "visit_id": {
+          "name": "visit_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "practitioner_id": {
+          "name": "practitioner_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "icd_code": {
+          "name": "icd_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "diagnosis_name": {
+          "name": "diagnosis_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "diagnosis_type": {
+          "name": "diagnosis_type",
+          "type": "diagnosis_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "severity": {
+          "name": "severity",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "diagnosed_at": {
+          "name": "diagnosed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "blockchain_hash": {
+          "name": "blockchain_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blockchain_transaction_id": {
+          "name": "blockchain_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_diagnoses_consultation_id": {
+          "name": "idx_diagnoses_consultation_id",
+          "columns": [
+            {
+              "expression": "consultation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_diagnoses_visit_id": {
+          "name": "idx_diagnoses_visit_id",
+          "columns": [
+            {
+              "expression": "visit_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_diagnoses_patient_id": {
+          "name": "idx_diagnoses_patient_id",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "diagnoses_consultation_id_consultations_id_fk": {
+          "name": "diagnoses_consultation_id_consultations_id_fk",
+          "tableFrom": "diagnoses",
+          "tableTo": "consultations",
+          "columnsFrom": [
+            "consultation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "diagnoses_visit_id_visits_id_fk": {
+          "name": "diagnoses_visit_id_visits_id_fk",
+          "tableFrom": "diagnoses",
+          "tableTo": "visits",
+          "columnsFrom": [
+            "visit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "diagnoses_patient_id_patients_id_fk": {
+          "name": "diagnoses_patient_id_patients_id_fk",
+          "tableFrom": "diagnoses",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "diagnoses_practitioner_id_practitioners_id_fk": {
+          "name": "diagnoses_practitioner_id_practitioners_id_fk",
+          "tableFrom": "diagnoses",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "practitioner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.emergency_access_logs": {
+      "name": "emergency_access_logs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "accessed_by": {
+          "name": "accessed_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "accessed_by_institution_id": {
+          "name": "accessed_by_institution_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "accessed_at": {
+          "name": "accessed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blockchain_hash": {
+          "name": "blockchain_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blockchain_transaction_id": {
+          "name": "blockchain_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_emergency_patient": {
+          "name": "idx_emergency_patient",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_emergency_accessed_by": {
+          "name": "idx_emergency_accessed_by",
+          "columns": [
+            {
+              "expression": "accessed_by",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "emergency_access_logs_patient_id_patients_id_fk": {
+          "name": "emergency_access_logs_patient_id_patients_id_fk",
+          "tableFrom": "emergency_access_logs",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "emergency_access_logs_accessed_by_institution_id_institutions_id_fk": {
+          "name": "emergency_access_logs_accessed_by_institution_id_institutions_id_fk",
+          "tableFrom": "emergency_access_logs",
+          "tableTo": "institutions",
+          "columnsFrom": [
+            "accessed_by_institution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.family_medical_history": {
+      "name": "family_medical_history",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "relationship": {
+          "name": "relationship",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "condition": {
+          "name": "condition",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "age_at_diagnosis": {
+          "name": "age_at_diagnosis",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_deceased": {
+          "name": "is_deceased",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_family_medical_history_patient_id": {
+          "name": "idx_family_medical_history_patient_id",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "family_medical_history_patient_id_patients_id_fk": {
+          "name": "family_medical_history_patient_id_patients_id_fk",
+          "tableFrom": "family_medical_history",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.imaging_orders": {
+      "name": "imaging_orders",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "order_number": {
+          "name": "order_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "visit_id": {
+          "name": "visit_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ordered_by_practitioner_id": {
+          "name": "ordered_by_practitioner_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "modality": {
+          "name": "modality",
+          "type": "imaging_modality",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body_part": {
+          "name": "body_part",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "indication": {
+          "name": "indication",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "urgency": {
+          "name": "urgency",
+          "type": "priority_level",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'routine'"
+        },
+        "status": {
+          "name": "status",
+          "type": "imaging_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ordered'"
+        },
+        "scheduled_date_time": {
+          "name": "scheduled_date_time",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ordered_at": {
+          "name": "ordered_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "assigned_to": {
+          "name": "assigned_to",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blockchain_hash": {
+          "name": "blockchain_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blockchain_transaction_id": {
+          "name": "blockchain_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_imaging_orders_order_number": {
+          "name": "idx_imaging_orders_order_number",
+          "columns": [
+            {
+              "expression": "order_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_imaging_orders_visit_id": {
+          "name": "idx_imaging_orders_visit_id",
+          "columns": [
+            {
+              "expression": "visit_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_imaging_orders_patient_id": {
+          "name": "idx_imaging_orders_patient_id",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_imaging_orders_status": {
+          "name": "idx_imaging_orders_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "imaging_orders_visit_id_visits_id_fk": {
+          "name": "imaging_orders_visit_id_visits_id_fk",
+          "tableFrom": "imaging_orders",
+          "tableTo": "visits",
+          "columnsFrom": [
+            "visit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "imaging_orders_patient_id_patients_id_fk": {
+          "name": "imaging_orders_patient_id_patients_id_fk",
+          "tableFrom": "imaging_orders",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "imaging_orders_ordered_by_practitioner_id_practitioners_id_fk": {
+          "name": "imaging_orders_ordered_by_practitioner_id_practitioners_id_fk",
+          "tableFrom": "imaging_orders",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "ordered_by_practitioner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "imaging_orders_assigned_to_practitioners_id_fk": {
+          "name": "imaging_orders_assigned_to_practitioners_id_fk",
+          "tableFrom": "imaging_orders",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "assigned_to"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "imaging_orders_order_number_unique": {
+          "name": "imaging_orders_order_number_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "order_number"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.imaging_reports": {
+      "name": "imaging_reports",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "imaging_order_id": {
+          "name": "imaging_order_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "performed_by_radiologist_id": {
+          "name": "performed_by_radiologist_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "findings": {
+          "name": "findings",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "impression": {
+          "name": "impression",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recommendations": {
+          "name": "recommendations",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "image_urls": {
+          "name": "image_urls",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "performed_at": {
+          "name": "performed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "reported_at": {
+          "name": "reported_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "blockchain_hash": {
+          "name": "blockchain_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blockchain_transaction_id": {
+          "name": "blockchain_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_imaging_reports_order_id": {
+          "name": "idx_imaging_reports_order_id",
+          "columns": [
+            {
+              "expression": "imaging_order_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "imaging_reports_imaging_order_id_imaging_orders_id_fk": {
+          "name": "imaging_reports_imaging_order_id_imaging_orders_id_fk",
+          "tableFrom": "imaging_reports",
+          "tableTo": "imaging_orders",
+          "columnsFrom": [
+            "imaging_order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "imaging_reports_performed_by_radiologist_id_practitioners_id_fk": {
+          "name": "imaging_reports_performed_by_radiologist_id_practitioners_id_fk",
+          "tableFrom": "imaging_reports",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "performed_by_radiologist_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.institutions": {
+      "name": "institutions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "institution_code": {
+          "name": "institution_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "institution_name": {
+          "name": "institution_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "institution_type": {
+          "name": "institution_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blockchain_address": {
+          "name": "blockchain_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "address_encrypted": {
+          "name": "address_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "phone_encrypted": {
+          "name": "phone_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_encrypted": {
+          "name": "email_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "license_number": {
+          "name": "license_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "accreditation_status": {
+          "name": "accreditation_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "accreditation_expiry": {
+          "name": "accreditation_expiry",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bed_capacity": {
+          "name": "bed_capacity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "specialties": {
+          "name": "specialties",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "services": {
+          "name": "services",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "admin_user_id": {
+          "name": "admin_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_institutions_code": {
+          "name": "idx_institutions_code",
+          "columns": [
+            {
+              "expression": "institution_code",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_institutions_blockchain_address": {
+          "name": "idx_institutions_blockchain_address",
+          "columns": [
+            {
+              "expression": "blockchain_address",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_institutions_is_active": {
+          "name": "idx_institutions_is_active",
+          "columns": [
+            {
+              "expression": "is_active",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "institutions_institution_code_unique": {
+          "name": "institutions_institution_code_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "institution_code"
+          ]
+        },
+        "institutions_blockchain_address_unique": {
+          "name": "institutions_blockchain_address_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "blockchain_address"
+          ]
+        },
+        "institutions_license_number_unique": {
+          "name": "institutions_license_number_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "license_number"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.lab_test_orders": {
+      "name": "lab_test_orders",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "order_number": {
+          "name": "order_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "visit_id": {
+          "name": "visit_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ordered_by_practitioner_id": {
+          "name": "ordered_by_practitioner_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "test_name": {
+          "name": "test_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "test_code": {
+          "name": "test_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "test_category": {
+          "name": "test_category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "specimen_type": {
+          "name": "specimen_type",
+          "type": "specimen_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "clinical_notes": {
+          "name": "clinical_notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "urgency": {
+          "name": "urgency",
+          "type": "priority_level",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'routine'"
+        },
+        "status": {
+          "name": "status",
+          "type": "lab_test_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'ordered'"
+        },
+        "ordered_at": {
+          "name": "ordered_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "sample_collected_at": {
+          "name": "sample_collected_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "collected_by_nurse_id": {
+          "name": "collected_by_nurse_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "assigned_to": {
+          "name": "assigned_to",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blockchain_hash": {
+          "name": "blockchain_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blockchain_transaction_id": {
+          "name": "blockchain_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_lab_test_orders_order_number": {
+          "name": "idx_lab_test_orders_order_number",
+          "columns": [
+            {
+              "expression": "order_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_lab_test_orders_visit_id": {
+          "name": "idx_lab_test_orders_visit_id",
+          "columns": [
+            {
+              "expression": "visit_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_lab_test_orders_patient_id": {
+          "name": "idx_lab_test_orders_patient_id",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_lab_test_orders_status": {
+          "name": "idx_lab_test_orders_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "lab_test_orders_visit_id_visits_id_fk": {
+          "name": "lab_test_orders_visit_id_visits_id_fk",
+          "tableFrom": "lab_test_orders",
+          "tableTo": "visits",
+          "columnsFrom": [
+            "visit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "lab_test_orders_patient_id_patients_id_fk": {
+          "name": "lab_test_orders_patient_id_patients_id_fk",
+          "tableFrom": "lab_test_orders",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "lab_test_orders_ordered_by_practitioner_id_practitioners_id_fk": {
+          "name": "lab_test_orders_ordered_by_practitioner_id_practitioners_id_fk",
+          "tableFrom": "lab_test_orders",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "ordered_by_practitioner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "lab_test_orders_collected_by_nurse_id_practitioners_id_fk": {
+          "name": "lab_test_orders_collected_by_nurse_id_practitioners_id_fk",
+          "tableFrom": "lab_test_orders",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "collected_by_nurse_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "lab_test_orders_assigned_to_practitioners_id_fk": {
+          "name": "lab_test_orders_assigned_to_practitioners_id_fk",
+          "tableFrom": "lab_test_orders",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "assigned_to"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "lab_test_orders_order_number_unique": {
+          "name": "lab_test_orders_order_number_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "order_number"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.lab_test_results": {
+      "name": "lab_test_results",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "lab_test_order_id": {
+          "name": "lab_test_order_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "performed_by_lab_tech_id": {
+          "name": "performed_by_lab_tech_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "results_data": {
+          "name": "results_data",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "interpretation": {
+          "name": "interpretation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "abnormal_findings": {
+          "name": "abnormal_findings",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reference_ranges": {
+          "name": "reference_ranges",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attachment_urls": {
+          "name": "attachment_urls",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resulted_at": {
+          "name": "resulted_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "verified_at": {
+          "name": "verified_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blockchain_hash": {
+          "name": "blockchain_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blockchain_transaction_id": {
+          "name": "blockchain_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_lab_test_results_order_id": {
+          "name": "idx_lab_test_results_order_id",
+          "columns": [
+            {
+              "expression": "lab_test_order_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "lab_test_results_lab_test_order_id_lab_test_orders_id_fk": {
+          "name": "lab_test_results_lab_test_order_id_lab_test_orders_id_fk",
+          "tableFrom": "lab_test_results",
+          "tableTo": "lab_test_orders",
+          "columnsFrom": [
+            "lab_test_order_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "lab_test_results_performed_by_lab_tech_id_practitioners_id_fk": {
+          "name": "lab_test_results_performed_by_lab_tech_id_practitioners_id_fk",
+          "tableFrom": "lab_test_results",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "performed_by_lab_tech_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.medical_history": {
+      "name": "medical_history",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "condition": {
+          "name": "condition",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "diagnosed_date": {
+          "name": "diagnosed_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recorded_by_practitioner_id": {
+          "name": "recorded_by_practitioner_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blockchain_hash": {
+          "name": "blockchain_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blockchain_transaction_id": {
+          "name": "blockchain_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_medical_history_patient_id": {
+          "name": "idx_medical_history_patient_id",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "medical_history_patient_id_patients_id_fk": {
+          "name": "medical_history_patient_id_patients_id_fk",
+          "tableFrom": "medical_history",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "medical_history_recorded_by_practitioner_id_practitioners_id_fk": {
+          "name": "medical_history_recorded_by_practitioner_id_practitioners_id_fk",
+          "tableFrom": "medical_history",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "recorded_by_practitioner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.medication_administration": {
+      "name": "medication_administration",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "prescription_item_id": {
+          "name": "prescription_item_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "visit_id": {
+          "name": "visit_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "administered_by_nurse_id": {
+          "name": "administered_by_nurse_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dose_given": {
+          "name": "dose_given",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "route": {
+          "name": "route",
+          "type": "medication_route",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scheduled_time": {
+          "name": "scheduled_time",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "administered_time": {
+          "name": "administered_time",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "adverse_reaction": {
+          "name": "adverse_reaction",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blockchain_hash": {
+          "name": "blockchain_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blockchain_transaction_id": {
+          "name": "blockchain_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_medication_administration_visit_id": {
+          "name": "idx_medication_administration_visit_id",
+          "columns": [
+            {
+              "expression": "visit_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_medication_administration_patient_id": {
+          "name": "idx_medication_administration_patient_id",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "medication_administration_prescription_item_id_prescription_items_id_fk": {
+          "name": "medication_administration_prescription_item_id_prescription_items_id_fk",
+          "tableFrom": "medication_administration",
+          "tableTo": "prescription_items",
+          "columnsFrom": [
+            "prescription_item_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "medication_administration_visit_id_visits_id_fk": {
+          "name": "medication_administration_visit_id_visits_id_fk",
+          "tableFrom": "medication_administration",
+          "tableTo": "visits",
+          "columnsFrom": [
+            "visit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "medication_administration_patient_id_patients_id_fk": {
+          "name": "medication_administration_patient_id_patients_id_fk",
+          "tableFrom": "medication_administration",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "medication_administration_administered_by_nurse_id_practitioners_id_fk": {
+          "name": "medication_administration_administered_by_nurse_id_practitioners_id_fk",
+          "tableFrom": "medication_administration",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "administered_by_nurse_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.medication_stock": {
+      "name": "medication_stock",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "institution_id": {
+          "name": "institution_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "medication_name": {
+          "name": "medication_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generic_name": {
+          "name": "generic_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "strength": {
+          "name": "strength",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dosage_form": {
+          "name": "dosage_form",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "unit": {
+          "name": "unit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'units'"
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "reorder_level": {
+          "name": "reorder_level",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 10
+        },
+        "batch_number": {
+          "name": "batch_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expiry_date": {
+          "name": "expiry_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "supplier": {
+          "name": "supplier",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.otp_codes": {
+      "name": "otp_codes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_type": {
+          "name": "user_type",
+          "type": "varchar(20)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "code": {
+          "name": "code",
+          "type": "varchar(6)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "used": {
+          "name": "used",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.patient_guardians": {
+      "name": "patient_guardians",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "guardian_patient_id": {
+          "name": "guardian_patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "relationship": {
+          "name": "relationship",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_primary": {
+          "name": "is_primary",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "can_consent": {
+          "name": "can_consent",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "starts_at": {
+          "name": "starts_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "ends_at": {
+          "name": "ends_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "document_reference": {
+          "name": "document_reference",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verified_by_staff_id": {
+          "name": "verified_by_staff_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_patient_guardians_patient_id": {
+          "name": "idx_patient_guardians_patient_id",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_patient_guardians_guardian_patient_id": {
+          "name": "idx_patient_guardians_guardian_patient_id",
+          "columns": [
+            {
+              "expression": "guardian_patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "patient_guardians_patient_id_patients_id_fk": {
+          "name": "patient_guardians_patient_id_patients_id_fk",
+          "tableFrom": "patient_guardians",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "patient_guardians_guardian_patient_id_patients_id_fk": {
+          "name": "patient_guardians_guardian_patient_id_patients_id_fk",
+          "tableFrom": "patient_guardians",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "guardian_patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "patient_guardians_verified_by_staff_id_practitioners_id_fk": {
+          "name": "patient_guardians_verified_by_staff_id_practitioners_id_fk",
+          "tableFrom": "patient_guardians",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "verified_by_staff_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.patient_institution_registrations": {
+      "name": "patient_institution_registrations",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "institution_id": {
+          "name": "institution_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hospital_patient_number": {
+          "name": "hospital_patient_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "registered_at": {
+          "name": "registered_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_visit_at": {
+          "name": "last_visit_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "is_home_institution": {
+          "name": "is_home_institution",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_patient_inst_reg_patient_id": {
+          "name": "idx_patient_inst_reg_patient_id",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_patient_inst_reg_institution_id": {
+          "name": "idx_patient_inst_reg_institution_id",
+          "columns": [
+            {
+              "expression": "institution_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_patient_inst_reg_hospital_number": {
+          "name": "idx_patient_inst_reg_hospital_number",
+          "columns": [
+            {
+              "expression": "hospital_patient_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_patient_inst_reg_is_home": {
+          "name": "idx_patient_inst_reg_is_home",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "is_home_institution",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "patient_institution_registrations_patient_id_patients_id_fk": {
+          "name": "patient_institution_registrations_patient_id_patients_id_fk",
+          "tableFrom": "patient_institution_registrations",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "patient_institution_registrations_institution_id_institutions_id_fk": {
+          "name": "patient_institution_registrations_institution_id_institutions_id_fk",
+          "tableFrom": "patient_institution_registrations",
+          "tableTo": "institutions",
+          "columnsFrom": [
+            "institution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "unique_patient_institution": {
+          "name": "unique_patient_institution",
+          "nullsNotDistinct": false,
+          "columns": [
+            "patient_id",
+            "institution_id"
+          ]
+        },
+        "unique_institution_number": {
+          "name": "unique_institution_number",
+          "nullsNotDistinct": false,
+          "columns": [
+            "institution_id",
+            "hospital_patient_number"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.patient_sensitive_records": {
+      "name": "patient_sensitive_records",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "category": {
+          "name": "category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "condition": {
+          "name": "condition",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "diagnosed_date": {
+          "name": "diagnosed_date",
+          "type": "date",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recorded_by_practitioner_id": {
+          "name": "recorded_by_practitioner_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_sensitive_records_patient_id": {
+          "name": "idx_sensitive_records_patient_id",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_sensitive_records_category": {
+          "name": "idx_sensitive_records_category",
+          "columns": [
+            {
+              "expression": "category",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_sensitive_records_is_active": {
+          "name": "idx_sensitive_records_is_active",
+          "columns": [
+            {
+              "expression": "is_active",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "patient_sensitive_records_patient_id_patients_id_fk": {
+          "name": "patient_sensitive_records_patient_id_patients_id_fk",
+          "tableFrom": "patient_sensitive_records",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "patient_sensitive_records_recorded_by_practitioner_id_practitioners_id_fk": {
+          "name": "patient_sensitive_records_recorded_by_practitioner_id_practitioners_id_fk",
+          "tableFrom": "patient_sensitive_records",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "recorded_by_practitioner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.patients": {
+      "name": "patients",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "blockchain_address": {
+          "name": "blockchain_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "first_name_encrypted": {
+          "name": "first_name_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_name_encrypted": {
+          "name": "last_name_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "middle_name_encrypted": {
+          "name": "middle_name_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "date_of_birth_encrypted": {
+          "name": "date_of_birth_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gender": {
+          "name": "gender",
+          "type": "gender",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blood_type": {
+          "name": "blood_type",
+          "type": "blood_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'unknown'"
+        },
+        "phone_number_encrypted": {
+          "name": "phone_number_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_encrypted": {
+          "name": "email_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "address_encrypted": {
+          "name": "address_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "emergency_contact_encrypted": {
+          "name": "emergency_contact_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "emergency_override_enabled": {
+          "name": "emergency_override_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "national_id_encrypted": {
+          "name": "national_id_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "marital_status": {
+          "name": "marital_status",
+          "type": "marital_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "occupation": {
+          "name": "occupation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "profile_photo_url": {
+          "name": "profile_photo_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_minor": {
+          "name": "is_minor",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "temporary_patient_id": {
+          "name": "temporary_patient_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "must_change_password": {
+          "name": "must_change_password",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "is_deceased": {
+          "name": "is_deceased",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "deceased_date": {
+          "name": "deceased_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_patients_blockchain_address": {
+          "name": "idx_patients_blockchain_address",
+          "columns": [
+            {
+              "expression": "blockchain_address",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_patients_national_id": {
+          "name": "idx_patients_national_id",
+          "columns": [
+            {
+              "expression": "national_id_encrypted",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_patients_temporary_id": {
+          "name": "idx_patients_temporary_id",
+          "columns": [
+            {
+              "expression": "temporary_patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_patients_is_active": {
+          "name": "idx_patients_is_active",
+          "columns": [
+            {
+              "expression": "is_active",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_patients_is_minor": {
+          "name": "idx_patients_is_minor",
+          "columns": [
+            {
+              "expression": "is_minor",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "patients_blockchain_address_unique": {
+          "name": "patients_blockchain_address_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "blockchain_address"
+          ]
+        },
+        "patients_national_id_encrypted_unique": {
+          "name": "patients_national_id_encrypted_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "national_id_encrypted"
+          ]
+        },
+        "patients_temporary_patient_id_unique": {
+          "name": "patients_temporary_patient_id_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "temporary_patient_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.practitioners": {
+      "name": "practitioners",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "blockchain_address": {
+          "name": "blockchain_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "institution_id": {
+          "name": "institution_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "first_name_encrypted": {
+          "name": "first_name_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_name_encrypted": {
+          "name": "last_name_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "license_number": {
+          "name": "license_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "institutional_id": {
+          "name": "institutional_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "specialization": {
+          "name": "specialization",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "department": {
+          "name": "department",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "shift": {
+          "name": "shift",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "phone_number_encrypted": {
+          "name": "phone_number_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_encrypted": {
+          "name": "email_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "credentials_encrypted": {
+          "name": "credentials_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "qualifications": {
+          "name": "qualifications",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "role": {
+          "name": "role",
+          "type": "user_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_verified": {
+          "name": "is_verified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "must_change_password": {
+          "name": "must_change_password",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_practitioners_blockchain_address": {
+          "name": "idx_practitioners_blockchain_address",
+          "columns": [
+            {
+              "expression": "blockchain_address",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_practitioners_license_number": {
+          "name": "idx_practitioners_license_number",
+          "columns": [
+            {
+              "expression": "license_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_practitioners_institution_id": {
+          "name": "idx_practitioners_institution_id",
+          "columns": [
+            {
+              "expression": "institution_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_practitioners_department": {
+          "name": "idx_practitioners_department",
+          "columns": [
+            {
+              "expression": "department",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_practitioners_is_active": {
+          "name": "idx_practitioners_is_active",
+          "columns": [
+            {
+              "expression": "is_active",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_practitioners_role": {
+          "name": "idx_practitioners_role",
+          "columns": [
+            {
+              "expression": "role",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "practitioners_institution_id_institutions_id_fk": {
+          "name": "practitioners_institution_id_institutions_id_fk",
+          "tableFrom": "practitioners",
+          "tableTo": "institutions",
+          "columnsFrom": [
+            "institution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "practitioners_blockchain_address_unique": {
+          "name": "practitioners_blockchain_address_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "blockchain_address"
+          ]
+        },
+        "practitioners_license_number_unique": {
+          "name": "practitioners_license_number_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "license_number"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.prescription_items": {
+      "name": "prescription_items",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "prescription_id": {
+          "name": "prescription_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "medication_name": {
+          "name": "medication_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generic_name": {
+          "name": "generic_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "strength": {
+          "name": "strength",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dosage_form": {
+          "name": "dosage_form",
+          "type": "dosage_form",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "dose": {
+          "name": "dose",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "frequency": {
+          "name": "frequency",
+          "type": "frequency",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "route": {
+          "name": "route",
+          "type": "medication_route",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "duration": {
+          "name": "duration",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity": {
+          "name": "quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "refills_allowed": {
+          "name": "refills_allowed",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 0
+        },
+        "instructions": {
+          "name": "instructions",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "is_dispensed": {
+          "name": "is_dispensed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "dispensed_by_pharmacist_id": {
+          "name": "dispensed_by_pharmacist_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dispensed_at": {
+          "name": "dispensed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "dispensed_quantity": {
+          "name": "dispensed_quantity",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blockchain_hash": {
+          "name": "blockchain_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_prescription_items_prescription_id": {
+          "name": "idx_prescription_items_prescription_id",
+          "columns": [
+            {
+              "expression": "prescription_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_prescription_items_is_dispensed": {
+          "name": "idx_prescription_items_is_dispensed",
+          "columns": [
+            {
+              "expression": "is_dispensed",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "prescription_items_prescription_id_prescriptions_id_fk": {
+          "name": "prescription_items_prescription_id_prescriptions_id_fk",
+          "tableFrom": "prescription_items",
+          "tableTo": "prescriptions",
+          "columnsFrom": [
+            "prescription_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "prescription_items_dispensed_by_pharmacist_id_practitioners_id_fk": {
+          "name": "prescription_items_dispensed_by_pharmacist_id_practitioners_id_fk",
+          "tableFrom": "prescription_items",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "dispensed_by_pharmacist_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.prescriptions": {
+      "name": "prescriptions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "prescription_number": {
+          "name": "prescription_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "visit_id": {
+          "name": "visit_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "prescribed_by_practitioner_id": {
+          "name": "prescribed_by_practitioner_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "prescription_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'prescribed'"
+        },
+        "prescribed_at": {
+          "name": "prescribed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "blockchain_hash": {
+          "name": "blockchain_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blockchain_transaction_id": {
+          "name": "blockchain_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_prescriptions_number": {
+          "name": "idx_prescriptions_number",
+          "columns": [
+            {
+              "expression": "prescription_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_prescriptions_visit_id": {
+          "name": "idx_prescriptions_visit_id",
+          "columns": [
+            {
+              "expression": "visit_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_prescriptions_patient_id": {
+          "name": "idx_prescriptions_patient_id",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_prescriptions_status": {
+          "name": "idx_prescriptions_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "prescriptions_visit_id_visits_id_fk": {
+          "name": "prescriptions_visit_id_visits_id_fk",
+          "tableFrom": "prescriptions",
+          "tableTo": "visits",
+          "columnsFrom": [
+            "visit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "prescriptions_patient_id_patients_id_fk": {
+          "name": "prescriptions_patient_id_patients_id_fk",
+          "tableFrom": "prescriptions",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "prescriptions_prescribed_by_practitioner_id_practitioners_id_fk": {
+          "name": "prescriptions_prescribed_by_practitioner_id_practitioners_id_fk",
+          "tableFrom": "prescriptions",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "prescribed_by_practitioner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "prescriptions_prescription_number_unique": {
+          "name": "prescriptions_prescription_number_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "prescription_number"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.referrals": {
+      "name": "referrals",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "referral_number": {
+          "name": "referral_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "visit_id": {
+          "name": "visit_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "referring_institution_id": {
+          "name": "referring_institution_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "referring_practitioner_id": {
+          "name": "referring_practitioner_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "receiving_institution_id": {
+          "name": "receiving_institution_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "receiving_department_id": {
+          "name": "receiving_department_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "receiving_practitioner_id": {
+          "name": "receiving_practitioner_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "clinical_summary": {
+          "name": "clinical_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "urgency": {
+          "name": "urgency",
+          "type": "priority_level",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'routine'"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "referred_at": {
+          "name": "referred_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "accepted_at": {
+          "name": "accepted_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "response_notes": {
+          "name": "response_notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blockchain_hash": {
+          "name": "blockchain_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blockchain_transaction_id": {
+          "name": "blockchain_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_referrals_patient_id": {
+          "name": "idx_referrals_patient_id",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_referrals_referring_inst": {
+          "name": "idx_referrals_referring_inst",
+          "columns": [
+            {
+              "expression": "referring_institution_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_referrals_receiving_inst": {
+          "name": "idx_referrals_receiving_inst",
+          "columns": [
+            {
+              "expression": "receiving_institution_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_referrals_status": {
+          "name": "idx_referrals_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "referrals_patient_id_patients_id_fk": {
+          "name": "referrals_patient_id_patients_id_fk",
+          "tableFrom": "referrals",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "referrals_visit_id_visits_id_fk": {
+          "name": "referrals_visit_id_visits_id_fk",
+          "tableFrom": "referrals",
+          "tableTo": "visits",
+          "columnsFrom": [
+            "visit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "referrals_referring_institution_id_institutions_id_fk": {
+          "name": "referrals_referring_institution_id_institutions_id_fk",
+          "tableFrom": "referrals",
+          "tableTo": "institutions",
+          "columnsFrom": [
+            "referring_institution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "referrals_referring_practitioner_id_practitioners_id_fk": {
+          "name": "referrals_referring_practitioner_id_practitioners_id_fk",
+          "tableFrom": "referrals",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "referring_practitioner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "referrals_receiving_institution_id_institutions_id_fk": {
+          "name": "referrals_receiving_institution_id_institutions_id_fk",
+          "tableFrom": "referrals",
+          "tableTo": "institutions",
+          "columnsFrom": [
+            "receiving_institution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "referrals_receiving_department_id_departments_id_fk": {
+          "name": "referrals_receiving_department_id_departments_id_fk",
+          "tableFrom": "referrals",
+          "tableTo": "departments",
+          "columnsFrom": [
+            "receiving_department_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "referrals_receiving_practitioner_id_practitioners_id_fk": {
+          "name": "referrals_receiving_practitioner_id_practitioners_id_fk",
+          "tableFrom": "referrals",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "receiving_practitioner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "referrals_referral_number_unique": {
+          "name": "referrals_referral_number_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "referral_number"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.stock_movements": {
+      "name": "stock_movements",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "stock_id": {
+          "name": "stock_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "institution_id": {
+          "name": "institution_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "change_type": {
+          "name": "change_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity_change": {
+          "name": "quantity_change",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "quantity_after": {
+          "name": "quantity_after",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reference_id": {
+          "name": "reference_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "performed_by": {
+          "name": "performed_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.two_fa_secrets": {
+      "name": "two_fa_secrets",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_type": {
+          "name": "user_type",
+          "type": "user_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "secret_encrypted": {
+          "name": "secret_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "backup_codes_encrypted": {
+          "name": "backup_codes_encrypted",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_enabled": {
+          "name": "is_enabled",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_two_fa_secrets_user_id": {
+          "name": "idx_two_fa_secrets_user_id",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.visits": {
+      "name": "visits",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "institution_id": {
+          "name": "institution_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "department_id": {
+          "name": "department_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ward_id": {
+          "name": "ward_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "visit_number": {
+          "name": "visit_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "visit_type": {
+          "name": "visit_type",
+          "type": "visit_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "admission_date": {
+          "name": "admission_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "discharge_date": {
+          "name": "discharge_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "chief_complaint": {
+          "name": "chief_complaint",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "admitting_diagnosis": {
+          "name": "admitting_diagnosis",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "discharge_diagnosis": {
+          "name": "discharge_diagnosis",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ward_or_room": {
+          "name": "ward_or_room",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bed_number": {
+          "name": "bed_number",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "status": {
+          "name": "status",
+          "type": "encounter_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'in-progress'"
+        },
+        "priority": {
+          "name": "priority",
+          "type": "priority_level",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'routine'"
+        },
+        "discharge_summary": {
+          "name": "discharge_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "discharge_instructions": {
+          "name": "discharge_instructions",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "follow_up_date": {
+          "name": "follow_up_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blockchain_hash": {
+          "name": "blockchain_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "discharge_blockchain_hash": {
+          "name": "discharge_blockchain_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "assigned_nurse_id": {
+          "name": "assigned_nurse_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "assigned_doctor_id": {
+          "name": "assigned_doctor_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_by_practitioner_id": {
+          "name": "created_by_practitioner_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_visits_patient_id": {
+          "name": "idx_visits_patient_id",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_visits_institution_id": {
+          "name": "idx_visits_institution_id",
+          "columns": [
+            {
+              "expression": "institution_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_visits_visit_number": {
+          "name": "idx_visits_visit_number",
+          "columns": [
+            {
+              "expression": "visit_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_visits_status": {
+          "name": "idx_visits_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_visits_admission_date": {
+          "name": "idx_visits_admission_date",
+          "columns": [
+            {
+              "expression": "admission_date",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_visits_assigned_nurse": {
+          "name": "idx_visits_assigned_nurse",
+          "columns": [
+            {
+              "expression": "assigned_nurse_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_visits_assigned_doctor": {
+          "name": "idx_visits_assigned_doctor",
+          "columns": [
+            {
+              "expression": "assigned_doctor_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "visits_patient_id_patients_id_fk": {
+          "name": "visits_patient_id_patients_id_fk",
+          "tableFrom": "visits",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "visits_institution_id_institutions_id_fk": {
+          "name": "visits_institution_id_institutions_id_fk",
+          "tableFrom": "visits",
+          "tableTo": "institutions",
+          "columnsFrom": [
+            "institution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "visits_department_id_departments_id_fk": {
+          "name": "visits_department_id_departments_id_fk",
+          "tableFrom": "visits",
+          "tableTo": "departments",
+          "columnsFrom": [
+            "department_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "visits_ward_id_wards_id_fk": {
+          "name": "visits_ward_id_wards_id_fk",
+          "tableFrom": "visits",
+          "tableTo": "wards",
+          "columnsFrom": [
+            "ward_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "visits_assigned_nurse_id_practitioners_id_fk": {
+          "name": "visits_assigned_nurse_id_practitioners_id_fk",
+          "tableFrom": "visits",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "assigned_nurse_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "visits_assigned_doctor_id_practitioners_id_fk": {
+          "name": "visits_assigned_doctor_id_practitioners_id_fk",
+          "tableFrom": "visits",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "assigned_doctor_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "visits_created_by_practitioner_id_practitioners_id_fk": {
+          "name": "visits_created_by_practitioner_id_practitioners_id_fk",
+          "tableFrom": "visits",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "created_by_practitioner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "visits_visit_number_unique": {
+          "name": "visits_visit_number_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "visit_number"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.vital_signs": {
+      "name": "vital_signs",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "visit_id": {
+          "name": "visit_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "patient_id": {
+          "name": "patient_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "recorded_by_nurse_id": {
+          "name": "recorded_by_nurse_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "temperature": {
+          "name": "temperature",
+          "type": "numeric(4, 1)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blood_pressure_systolic": {
+          "name": "blood_pressure_systolic",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blood_pressure_diastolic": {
+          "name": "blood_pressure_diastolic",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pulse_rate": {
+          "name": "pulse_rate",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "respiratory_rate": {
+          "name": "respiratory_rate",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "oxygen_saturation": {
+          "name": "oxygen_saturation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "weight": {
+          "name": "weight",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "height": {
+          "name": "height",
+          "type": "numeric(5, 2)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bmi": {
+          "name": "bmi",
+          "type": "numeric(4, 1)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pain_level": {
+          "name": "pain_level",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "nurse_notes": {
+          "name": "nurse_notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "blockchain_hash": {
+          "name": "blockchain_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blockchain_transaction_id": {
+          "name": "blockchain_transaction_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "recorded_at": {
+          "name": "recorded_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_vital_signs_visit_id": {
+          "name": "idx_vital_signs_visit_id",
+          "columns": [
+            {
+              "expression": "visit_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_vital_signs_patient_id": {
+          "name": "idx_vital_signs_patient_id",
+          "columns": [
+            {
+              "expression": "patient_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_vital_signs_recorded_at": {
+          "name": "idx_vital_signs_recorded_at",
+          "columns": [
+            {
+              "expression": "recorded_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "vital_signs_visit_id_visits_id_fk": {
+          "name": "vital_signs_visit_id_visits_id_fk",
+          "tableFrom": "vital_signs",
+          "tableTo": "visits",
+          "columnsFrom": [
+            "visit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "vital_signs_patient_id_patients_id_fk": {
+          "name": "vital_signs_patient_id_patients_id_fk",
+          "tableFrom": "vital_signs",
+          "tableTo": "patients",
+          "columnsFrom": [
+            "patient_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "vital_signs_recorded_by_nurse_id_practitioners_id_fk": {
+          "name": "vital_signs_recorded_by_nurse_id_practitioners_id_fk",
+          "tableFrom": "vital_signs",
+          "tableTo": "practitioners",
+          "columnsFrom": [
+            "recorded_by_nurse_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.ward_beds": {
+      "name": "ward_beds",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "ward_id": {
+          "name": "ward_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "institution_id": {
+          "name": "institution_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bed_code": {
+          "name": "bed_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bed_type": {
+          "name": "bed_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'general'"
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'available'"
+        },
+        "current_visit_id": {
+          "name": "current_visit_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "notes": {
+          "name": "notes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_ward_beds_ward_id": {
+          "name": "idx_ward_beds_ward_id",
+          "columns": [
+            {
+              "expression": "ward_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_ward_beds_institution_id": {
+          "name": "idx_ward_beds_institution_id",
+          "columns": [
+            {
+              "expression": "institution_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_ward_beds_status": {
+          "name": "idx_ward_beds_status",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_ward_beds_visit_id": {
+          "name": "idx_ward_beds_visit_id",
+          "columns": [
+            {
+              "expression": "current_visit_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "ward_beds_ward_id_wards_id_fk": {
+          "name": "ward_beds_ward_id_wards_id_fk",
+          "tableFrom": "ward_beds",
+          "tableTo": "wards",
+          "columnsFrom": [
+            "ward_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "ward_beds_institution_id_institutions_id_fk": {
+          "name": "ward_beds_institution_id_institutions_id_fk",
+          "tableFrom": "ward_beds",
+          "tableTo": "institutions",
+          "columnsFrom": [
+            "institution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "ward_beds_current_visit_id_visits_id_fk": {
+          "name": "ward_beds_current_visit_id_visits_id_fk",
+          "tableFrom": "ward_beds",
+          "tableTo": "visits",
+          "columnsFrom": [
+            "current_visit_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "unique_bed_code": {
+          "name": "unique_bed_code",
+          "nullsNotDistinct": false,
+          "columns": [
+            "ward_id",
+            "bed_code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.wards": {
+      "name": "wards",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "department_id": {
+          "name": "department_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "institution_id": {
+          "name": "institution_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ward_code": {
+          "name": "ward_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ward_name": {
+          "name": "ward_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ward_type": {
+          "name": "ward_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "bed_count": {
+          "name": "bed_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "available_beds": {
+          "name": "available_beds",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_active": {
+          "name": "is_active",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_wards_department_id": {
+          "name": "idx_wards_department_id",
+          "columns": [
+            {
+              "expression": "department_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "idx_wards_institution_id": {
+          "name": "idx_wards_institution_id",
+          "columns": [
+            {
+              "expression": "institution_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "wards_department_id_departments_id_fk": {
+          "name": "wards_department_id_departments_id_fk",
+          "tableFrom": "wards",
+          "tableTo": "departments",
+          "columnsFrom": [
+            "department_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "wards_institution_id_institutions_id_fk": {
+          "name": "wards_institution_id_institutions_id_fk",
+          "tableFrom": "wards",
+          "tableTo": "institutions",
+          "columnsFrom": [
+            "institution_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "unique_ward_code": {
+          "name": "unique_ward_code",
+          "nullsNotDistinct": false,
+          "columns": [
+            "institution_id",
+            "ward_code"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.action_type": {
+      "name": "action_type",
+      "schema": "public",
+      "values": [
+        "view",
+        "create",
+        "update",
+        "delete",
+        "permission_grant",
+        "permission_revoke",
+        "emergency_override"
+      ]
+    },
+    "public.allergy_severity": {
+      "name": "allergy_severity",
+      "schema": "public",
+      "values": [
+        "mild",
+        "moderate",
+        "severe",
+        "life_threatening"
+      ]
+    },
+    "public.allergy_type": {
+      "name": "allergy_type",
+      "schema": "public",
+      "values": [
+        "drug",
+        "food",
+        "environmental",
+        "other"
+      ]
+    },
+    "public.blood_type": {
+      "name": "blood_type",
+      "schema": "public",
+      "values": [
+        "A+",
+        "A-",
+        "B+",
+        "B-",
+        "AB+",
+        "AB-",
+        "O+",
+        "O-",
+        "unknown"
+      ]
+    },
+    "public.diagnosis_status": {
+      "name": "diagnosis_status",
+      "schema": "public",
+      "values": [
+        "provisional",
+        "confirmed",
+        "ruled_out",
+        "differential"
+      ]
+    },
+    "public.dosage_form": {
+      "name": "dosage_form",
+      "schema": "public",
+      "values": [
+        "tablet",
+        "capsule",
+        "syrup",
+        "injection",
+        "cream",
+        "ointment",
+        "drops",
+        "inhaler",
+        "suppository"
+      ]
+    },
+    "public.encounter_status": {
+      "name": "encounter_status",
+      "schema": "public",
+      "values": [
+        "scheduled",
+        "in-progress",
+        "completed",
+        "cancelled"
+      ]
+    },
+    "public.frequency": {
+      "name": "frequency",
+      "schema": "public",
+      "values": [
+        "once_daily",
+        "twice_daily",
+        "three_times_daily",
+        "four_times_daily",
+        "every_4_hours",
+        "every_6_hours",
+        "every_8_hours",
+        "as_needed",
+        "stat"
+      ]
+    },
+    "public.gender": {
+      "name": "gender",
+      "schema": "public",
+      "values": [
+        "male",
+        "female",
+        "other"
+      ]
+    },
+    "public.imaging_modality": {
+      "name": "imaging_modality",
+      "schema": "public",
+      "values": [
+        "x-ray",
+        "ct_scan",
+        "mri",
+        "ultrasound",
+        "pet_scan",
+        "mammogram",
+        "fluoroscopy"
+      ]
+    },
+    "public.imaging_status": {
+      "name": "imaging_status",
+      "schema": "public",
+      "values": [
+        "ordered",
+        "scheduled",
+        "in_progress",
+        "completed",
+        "reported",
+        "cancelled"
+      ]
+    },
+    "public.lab_test_status": {
+      "name": "lab_test_status",
+      "schema": "public",
+      "values": [
+        "ordered",
+        "sample_collected",
+        "in_progress",
+        "completed",
+        "resulted",
+        "cancelled"
+      ]
+    },
+    "public.marital_status": {
+      "name": "marital_status",
+      "schema": "public",
+      "values": [
+        "single",
+        "married",
+        "divorced",
+        "widowed"
+      ]
+    },
+    "public.medication_route": {
+      "name": "medication_route",
+      "schema": "public",
+      "values": [
+        "oral",
+        "intravenous",
+        "intramuscular",
+        "subcutaneous",
+        "topical",
+        "inhalation",
+        "rectal",
+        "sublingual"
+      ]
+    },
+    "public.permission_type": {
+      "name": "permission_type",
+      "schema": "public",
+      "values": [
+        "read",
+        "write",
+        "full"
+      ]
+    },
+    "public.prescription_status": {
+      "name": "prescription_status",
+      "schema": "public",
+      "values": [
+        "prescribed",
+        "dispensing",
+        "dispensed",
+        "administered",
+        "discontinued",
+        "cancelled"
+      ]
+    },
+    "public.priority_level": {
+      "name": "priority_level",
+      "schema": "public",
+      "values": [
+        "routine",
+        "urgent",
+        "emergency",
+        "critical"
+      ]
+    },
+    "public.request_status": {
+      "name": "request_status",
+      "schema": "public",
+      "values": [
+        "pending",
+        "approved",
+        "rejected",
+        "expired"
+      ]
+    },
+    "public.specimen_type": {
+      "name": "specimen_type",
+      "schema": "public",
+      "values": [
+        "blood",
+        "urine",
+        "stool",
+        "sputum",
+        "csf",
+        "tissue",
+        "swab",
+        "other"
+      ]
+    },
+    "public.user_type": {
+      "name": "user_type",
+      "schema": "public",
+      "values": [
+        "patient",
+        "practitioner",
+        "nurse",
+        "lab_technician",
+        "radiologist",
+        "pharmacist",
+        "admin",
+        "receptionist"
+      ]
+    },
+    "public.visit_type": {
+      "name": "visit_type",
+      "schema": "public",
+      "values": [
+        "outpatient",
+        "inpatient",
+        "emergency",
+        "consultation"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

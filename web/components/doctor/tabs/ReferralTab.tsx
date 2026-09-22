@@ -193,7 +193,11 @@ interface ReferralTabProps {
   patientId: string;
   patientName: string;
   chiefComplaint: string;
+  referringDoctorId?: string;
+  priority?: string;
   isCompleted: boolean;
+  readOnly?: boolean;
+  onHandover?: () => void;
   onSuccess: (msg: string) => void;
   onError: (msg: string) => void;
 }
@@ -203,7 +207,11 @@ export function ReferralTab({
   patientId,
   patientName,
   chiefComplaint,
+  referringDoctorId,
+  priority,
   isCompleted,
+  readOnly = false,
+  onHandover,
   onSuccess,
   onError,
 }: ReferralTabProps) {
@@ -261,7 +269,7 @@ export function ReferralTab({
           )}
         </div>
 
-        {!isCompleted && (
+        {!isCompleted && !readOnly && (
           <div className="flex items-center" style={{ gap: 10 }}>
             {actions}
           </div>
@@ -289,7 +297,7 @@ export function ReferralTab({
             tone="info"
             pad={40}
             action={
-              !isCompleted ? (
+              !isCompleted && !readOnly ? (
                 <div className="flex items-center" style={{ gap: 10 }}>
                   {actions}
                 </div>
@@ -306,7 +314,7 @@ export function ReferralTab({
       )}
 
       {/* ── External referral modal (cross-institution, blockchain) ─────── */}
-      {showExternal && (
+      {showExternal && !readOnly && (
         <CreateReferralModal
           visitId={visitId}
           patientId={patientId}
@@ -322,8 +330,10 @@ export function ReferralTab({
       )}
 
       {/* ── Internal referral modal (same institution, specialist) ──────── */}
-      {showInternal && (
+      {showInternal && !readOnly && (
         <InternalReferralModal
+          referringDoctorId={referringDoctorId}
+          priority={priority}
           visitId={visitId}
           patientId={patientId}
           patientName={patientName}
@@ -331,6 +341,7 @@ export function ReferralTab({
           onClose={() => setShowInternal(false)}
           onSuccess={(msg) => {
             setShowInternal(false);
+            onHandover?.();
             onSuccess(msg);
           }}
         />

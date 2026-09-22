@@ -347,12 +347,14 @@ export function LabOrdersTab({
   onSaved,
   onError,
   isCompleted,
+  readOnly = false,
 }: {
   visitId: string;
   labOrders: any[];
   onSaved: () => void;
   onError: (m: string) => void;
   isCompleted: boolean;
+  readOnly?: boolean;
 }) {
   const [submitting, setSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -452,7 +454,7 @@ export function LabOrdersTab({
         </div>
       )}
 
-      {!isCompleted &&
+      {!isCompleted && !readOnly &&
         (!showForm ? (
           <button
             onClick={() => setShowForm(true)}

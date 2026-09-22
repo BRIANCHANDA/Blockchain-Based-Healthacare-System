@@ -30,7 +30,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 function RootNavigator() {
   const { isAuthenticated, isLoading, loadFromStorage } = useAuthStore();
 
-  // Wire up polling notifications
+  // Wire up push registration and notification navigation.
   useNotifications();
 
   useEffect(() => {

@@ -1,6 +1,15 @@
 // mobile/src/api/patients.ts
 import client from './client';
 
+export const getEmergencyAccessPreference = async (): Promise<boolean> => {
+    const response = await client.get('/patients/me/emergency-access');
+    return response.data.data.enabled === true;
+};
+export const setEmergencyAccessPreference = async (enabled: boolean): Promise<boolean> => {
+    const response = await client.patch('/patients/me/emergency-access', { enabled });
+    return response.data.data.enabled === true;
+};
+
 // BASE_URL already includes /api — don't prefix with /api again
 export const updatePatientProfile = async (data: {
     password?: string;

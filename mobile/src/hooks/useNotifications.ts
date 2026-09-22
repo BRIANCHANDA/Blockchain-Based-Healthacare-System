@@ -28,8 +28,8 @@
  * EventSource client — so a request produces exactly one notification here.
  */
 
-import { useEffect, useRef } from 'react';
-import { AppState, AppStateStatus, Platform } from 'react-native';
+import { useEffect } from 'react';
+import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { useNavigation } from '@react-navigation/native';
 
@@ -38,14 +38,14 @@ import { useAuthStore } from '../store/authStore';
 import {
     requestNotificationPermission,
     getExpoPushToken,
-    clearBadge,
 } from '../utils/notifications';
 
 export function useNotifications() {
     const isAuthenticated = useAuthStore(s => s.isAuthenticated);
+    const sessionToken = useAuthStore(s => s.token);
+    const isLoading = useAuthStore(s => s.isLoading);
     const navigation = useNavigation<any>();
 
-    const appStateRef = useRef<AppStateStatus>(AppState.currentState);
 
     // ── Register this device for push ────────────────────────────────────────
     //
@@ -64,7 +64,7 @@ export function useNotifications() {
             const token = await getExpoPushToken();
             // null is ordinary here: an emulator, a declined prompt, or Expo Go
             // on Android since SDK 53. The app works without push.
-            if (!token || cancelled) return;
+            if (!token || cancelled || useAuthStore.getState().token !== sessionToken) return;
 
             try {
                 await registerPushToken(token, Platform.OS === 'ios' ? 'ios' : 'android');
@@ -72,42 +72,33 @@ export function useNotifications() {
                 // A failed registration must not break sign-in. The next launch
                 // retries, and in-app consent screens still work meanwhile.
             }
-        })();
+        })().catch(() => { /* Permission services may be unavailable offline. */ });
 
         return () => { cancelled = true; };
-    }, [isAuthenticated]);
+    }, [isAuthenticated, sessionToken]);
 
-    // ── Clear the badge when the user comes back to the app ──────────────────
-    //
-    // No polling here any more. The badge is cleared on foreground because by
-    // then the user is looking at the app; the Access screens load their own
-    // data when they mount and on pull-to-refresh.
-    useEffect(() => {
-        const subscription = AppState.addEventListener('change', (nextState: AppStateStatus) => {
-            const cameForward =
-                appStateRef.current.match(/inactive|background/) && nextState === 'active';
-
-            if (cameForward && isAuthenticated) {
-                clearBadge();
-            }
-            appStateRef.current = nextState;
-        });
-
-        return () => subscription.remove();
-    }, [isAuthenticated]);
+    // Focused resource screens refresh themselves on foreground and push.
+    // Do not clear unread badges merely because the app was opened.
 
     // ── Handle a tapped notification ─────────────────────────────────────────
     //
     // `screen` is set by the backend in the push payload (routes/permissions.ts)
     // and by any local notification, so both route the same way.
     useEffect(() => {
-        const sub = Notifications.addNotificationResponseReceivedListener(response => {
+        if (!isAuthenticated || isLoading) return;
+        let cancelled = false;
+        const handleResponse = (response: Notifications.NotificationResponse | null) => {
+            if (!response || cancelled || useAuthStore.getState().token !== sessionToken) return;
             const screen = response.notification.request.content.data?.screen;
             if (screen === 'Access') {
-                navigation.navigate('Main', { screen: 'Access' });
+                navigation.navigate('Main', { screen: 'Access', params: { screen: 'AccessRequests' } });
+                void Notifications.clearLastNotificationResponseAsync().catch(() => {});
             }
-        });
+        };
+        const sub = Notifications.addNotificationResponseReceivedListener(handleResponse);
+        // A cold-start tap can precede navigation and session hydration.
+        void Notifications.getLastNotificationResponseAsync().then(handleResponse).catch(() => {});
 
-        return () => sub.remove();
-    }, [navigation]);
+        return () => { cancelled = true; sub.remove(); };
+    }, [navigation, isAuthenticated, isLoading, sessionToken]);
 }

@@ -1,4 +1,6 @@
 import { handleError } from '../lib/errors';
+import { emergencyPreferenceRouter } from './emergency-preference';
+import { permittedGrant } from '../services/cross-institution';
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and, desc, ne, or, isNull, sql, inArray, gt } from 'drizzle-orm';
 import { db } from '../db';
@@ -77,6 +79,14 @@ async function getStaffInstitution(userId: string): Promise<string | null> {
   return row[0]?.institutionId ?? null;
 }
 
+async function historyInstitutionNames(rows: Array<{ institutionId: string | null }>) {
+  const ids = [...new Set(rows.map(v => v.institutionId).filter((id): id is string => !!id))];
+  if (!ids.length) return {};
+  const names = await db.select({ id: institutions.id, name: institutions.institutionName })
+    .from(institutions).where(inArray(institutions.id, ids));
+  return Object.fromEntries(names.map(i => [i.id, i.name]));
+}
+
 async function getInstitutionPatientIds(institutionId: string): Promise<string[]> {
   const rows = await db.select({ patientId: patientInstitutionRegistrations.patientId })
     .from(patientInstitutionRegistrations)
@@ -117,6 +127,7 @@ async function buildVisitPayload(visitId: string) {
 // ── Router ────────────────────────────────────────────────────────────────────
 
 export const patientRouter = createRouter()
+  .route('/me/emergency-access', emergencyPreferenceRouter)
 
   // ── REGISTER ─────────────────────────────────────────────────────────────
   .openapi(createRoute({
@@ -750,20 +761,21 @@ export const patientRouter = createRouter()
       if (!patientRow.length) return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
       const p = patientRow[0];
 
-      const patient = { id: p.id, firstName: decrypt(p.firstNameEncrypted), lastName: decrypt(p.lastNameEncrypted), middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : null, gender: p.gender, dateOfBirth: decrypt(p.dateOfBirthEncrypted), phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : null, bloodType: p.bloodType, maritalStatus: p.maritalStatus, occupation: p.occupation, blockchainAddress: p.blockchainAddress };
+      const patient = { id: p.id, emergencyOverrideEnabled: p.emergencyOverrideEnabled, firstName: decrypt(p.firstNameEncrypted), lastName: decrypt(p.lastNameEncrypted), middleName: p.middleNameEncrypted ? decrypt(p.middleNameEncrypted) : null, gender: p.gender, dateOfBirth: decrypt(p.dateOfBirthEncrypted), phoneNumber: decrypt(p.phoneNumberEncrypted), email: p.emailEncrypted ? decrypt(p.emailEncrypted) : null, bloodType: p.bloodType, maritalStatus: p.maritalStatus, occupation: p.occupation, blockchainAddress: p.blockchainAddress };
 
       // Patient self
       if (userType === 'patient') {
         if (userId !== patientId) return c.json({ success: false, error: { message: 'Access denied' } }, 403);
         const allVisits = await db.select().from(visits).where(eq(visits.patientId, patientId)).orderBy(desc(visits.admissionDate));
-        return c.json({ success: true, data: { patient, ownVisits: await Promise.all(allVisits.map(async v => ({ visit: v, ...(await buildVisitPayload(v.id)) }))), awayInstitutions: [] } });
+        return c.json({ success: true, data: { patient, hasHistoryPermission: true, institutionNames: await historyInstitutionNames(allVisits), ownVisits: await Promise.all(allVisits.map(async v => ({ visit: v, ...(await buildVisitPayload(v.id)) }))), awayInstitutions: [] } });
       }
 
       const staffInstitutionId = await getStaffInstitution(userId);
 
       if (!staffInstitutionId) {
+        if (userType !== 'admin') return c.json({ success: false, error: { message: 'No institution assigned' } }, 403);
         const allVisits = await db.select().from(visits).where(eq(visits.patientId, patientId)).orderBy(desc(visits.admissionDate));
-        return c.json({ success: true, data: { patient, ownVisits: await Promise.all(allVisits.map(async v => ({ visit: v, ...(await buildVisitPayload(v.id)) }))), awayInstitutions: [] } });
+        return c.json({ success: true, data: { patient, hasHistoryPermission: true, institutionNames: await historyInstitutionNames(allVisits), ownVisits: await Promise.all(allVisits.map(async v => ({ visit: v, ...(await buildVisitPayload(v.id)) }))), awayInstitutions: [] } });
       }
 
       const ownVisitRows = await db.select().from(visits).where(and(eq(visits.patientId, patientId), or(eq(visits.institutionId, staffInstitutionId), isNull(visits.institutionId)))).orderBy(desc(visits.admissionDate));
@@ -792,6 +804,7 @@ export const patientRouter = createRouter()
           eq(crossInstitutionAccess.patientId, patientId),
           eq(crossInstitutionAccess.targetInstitutionId, staffInstitutionId),
           eq(crossInstitutionAccess.status, 'active'),
+          permittedGrant,
           // A grant with no expiry is open-ended; otherwise it must not have lapsed.
           or(isNull(crossInstitutionAccess.expiresAt), gt(crossInstitutionAccess.expiresAt, now)),
         ));
@@ -810,7 +823,8 @@ export const patientRouter = createRouter()
       }));
 
       awayInstitutions.sort((a, b) => (a.hasPermission === b.hasPermission ? 0 : a.hasPermission ? -1 : 1));
-      return c.json({ success: true, data: { patient, ownVisits, awayInstitutions } });
+      const [ownInstitution] = await db.select({ name: institutions.institutionName }).from(institutions).where(eq(institutions.id, staffInstitutionId)).limit(1);
+      return c.json({ success: true, data: { patient, hasHistoryPermission: blockchainConsent, institutionNames: { [staffInstitutionId]: ownInstitution?.name ?? 'Current institution' }, ownVisits, awayInstitutions } });
     } catch (err: any) { console.error('[HISTORY]', err); return c.json({ success: false, error: { message: 'Internal server error' } }, 500); }
   })
 

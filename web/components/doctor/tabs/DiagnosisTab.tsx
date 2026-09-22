@@ -175,6 +175,7 @@ export function DiagnosisTab({
   onSaved,
   onError,
   isCompleted,
+  readOnly = false,
 }: any) {
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -253,7 +254,7 @@ export function DiagnosisTab({
       )}
 
       {/* ── Add button / form ──────────────────────────────────────────────── */}
-      {!isCompleted &&
+      {!isCompleted && !readOnly &&
         !noConsultation &&
         (!showForm ? (
           <button

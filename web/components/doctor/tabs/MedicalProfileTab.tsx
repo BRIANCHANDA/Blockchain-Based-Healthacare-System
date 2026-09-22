@@ -787,7 +787,7 @@ function SectionTab({
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export function MedicalProfileTab({ patientId }: { patientId: string }) {
+export function MedicalProfileTab({ patientId, readOnly = false }: { patientId: string; readOnly?: boolean }) {
   const [section, setSection] = useState<Section>("allergies");
   const [allergiesList,  setAllergies]  = useState<Allergy[]>([]);
   const [conditions,     setConditions] = useState<Condition[]>([]);
@@ -908,12 +908,12 @@ export function MedicalProfileTab({ patientId }: { patientId: string }) {
         <>
           {/* ── ALLERGIES ── */}
           {section === "allergies" && (
-            <Section label="Allergies" tone="critical" onAdd={() => setAddAllergy(true)}>
+            <Section label="Allergies" tone="critical" onAdd={readOnly ? undefined : () => setAddAllergy(true)}>
               {allergiesList.length === 0 ? (
                 <Empty label="No known allergies recorded" />
               ) : (
                 allergiesList.map((a) => (
-                  <RecordCard key={a.id} onRemove={() => removeAllergy(a.id)}>
+                  <RecordCard key={a.id} onRemove={readOnly ? undefined : () => removeAllergy(a.id)}>
                     <div className="flex flex-col" style={{ gap: 6, paddingRight: 30 }}>
                       <Line>
                         <Title>{a.allergen}</Title>
@@ -944,7 +944,7 @@ export function MedicalProfileTab({ patientId }: { patientId: string }) {
             <Section
               label="Medical conditions"
               tone="info"
-              onAdd={() => setAddCondition(true)}
+              onAdd={readOnly ? undefined : () => setAddCondition(true)}
             >
               {conditions.length === 0 ? (
                 <Empty label="No medical conditions recorded" />
@@ -970,13 +970,13 @@ export function MedicalProfileTab({ patientId }: { patientId: string }) {
             <Section
               label="Family medical history"
               tone="accent"
-              onAdd={() => setAddFamily(true)}
+              onAdd={readOnly ? undefined : () => setAddFamily(true)}
             >
               {familyHistory.length === 0 ? (
                 <Empty label="No family history recorded" />
               ) : (
                 familyHistory.map((f) => (
-                  <RecordCard key={f.id} onRemove={() => removeFamilyEntry(f.id)}>
+                  <RecordCard key={f.id} onRemove={readOnly ? undefined : () => removeFamilyEntry(f.id)}>
                     <div className="flex flex-col" style={{ gap: 6, paddingRight: 30 }}>
                       <Line>
                         <Title>{f.condition}</Title>
@@ -1006,13 +1006,13 @@ export function MedicalProfileTab({ patientId }: { patientId: string }) {
               <Section
                 label="Sensitive records"
                 tone="urgent"
-                onAdd={() => setAddSensitive(true)}
+                onAdd={readOnly ? undefined : () => setAddSensitive(true)}
               >
                 {sensitive.length === 0 ? (
                   <Empty label="No sensitive records on file" />
                 ) : (
                   sensitive.map((sr) => (
-                    <RecordCard key={sr.id} onRemove={() => removeSensitive(sr.id)}>
+                    <RecordCard key={sr.id} onRemove={readOnly ? undefined : () => removeSensitive(sr.id)}>
                       <div
                         className="flex flex-col"
                         style={{ gap: 6, paddingRight: 30 }}
@@ -1038,28 +1038,28 @@ export function MedicalProfileTab({ patientId }: { patientId: string }) {
       )}
 
       {/* ── Forms ── */}
-      {addAllergy && (
+      {addAllergy && !readOnly && (
         <AllergyForm
           patientId={patientId}
           onSaved={saved}
           onClose={() => setAddAllergy(false)}
         />
       )}
-      {addCondition && (
+      {addCondition && !readOnly && (
         <ConditionForm
           patientId={patientId}
           onSaved={saved}
           onClose={() => setAddCondition(false)}
         />
       )}
-      {addFamily && (
+      {addFamily && !readOnly && (
         <FamilyForm
           patientId={patientId}
           onSaved={saved}
           onClose={() => setAddFamily(false)}
         />
       )}
-      {addSensitive && (
+      {addSensitive && !readOnly && (
         <SensitiveForm
           patientId={patientId}
           onSaved={saved}
@@ -1079,7 +1079,7 @@ function Section({
 }: {
   label: string;
   tone: Tone;
-  onAdd: () => void;
+  onAdd?: () => void;
   children: React.ReactNode;
 }) {
   const t = TONES[tone];
@@ -1102,6 +1102,7 @@ function Section({
           size="sm"
           icon={Plus}
           onClick={onAdd}
+          disabled={!onAdd}
           style={{
             background: t.tint,
             borderColor: t.ink,

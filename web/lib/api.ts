@@ -334,6 +334,8 @@ export const institutionApi = {
 
 // ── Appointments ─────────────────────────────────────────
 export const appointmentApi = {
+    handover: (body: { visitId: string; patientId: string; doctorId: string; reason: string; priority: string }) => api.post('/api/appointments/handovers', body),
+    handovers: () => api.get('/api/appointments/handovers'),
     list: (params?: { status?: string; doctorId?: string; from?: string; to?: string; limit?: number; offset?: number }) => {
         const p = new URLSearchParams();
         if (params?.status) p.set("status", params.status);

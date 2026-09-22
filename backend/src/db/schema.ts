@@ -271,6 +271,7 @@ export const patients = pgTable('patients', {
     emailEncrypted: text('email_encrypted'),
     addressEncrypted: text('address_encrypted').notNull(),
     emergencyContactEncrypted: text('emergency_contact_encrypted').notNull(),
+    emergencyOverrideEnabled: boolean('emergency_override_enabled').default(false).notNull(),
     nationalIdEncrypted: text('national_id_encrypted').unique(),
     maritalStatus: maritalStatusEnum('marital_status'),
     occupation: text('occupation'),

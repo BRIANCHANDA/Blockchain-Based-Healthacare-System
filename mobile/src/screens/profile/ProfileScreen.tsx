@@ -21,6 +21,7 @@ import { logout, changePassword } from "../../api/auth";
 import { getMyReferrals } from "../../api/records";
 import { getMyHealth, getPatientProfile } from "../../api/patient";
 import { useAuthStore } from "../../store/authStore";
+import EmergencyAccessSetting from '../../components/EmergencyAccessSetting';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 const C = {
@@ -395,6 +396,7 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        <EmergencyAccessSetting />
         {/* ── Health summary — DS safety-critical pattern ──────────────── */}
         <View style={styles.sectionOuter}>
           <Text style={styles.sectionLabel}>Health Summary</Text>

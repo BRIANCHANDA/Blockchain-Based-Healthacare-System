@@ -2,6 +2,7 @@ import { handleError } from '../lib/errors';
 import { createRoute, z } from '@hono/zod-openapi';
 import { eq, and, desc, or, inArray } from 'drizzle-orm';
 import { db } from '../db';
+import { clinicalDb, clinicalWriteGuard } from '../middleware/clinical-write';
 import {
     referrals,
     patients,
@@ -79,7 +80,7 @@ export const referralRouter = createRouter()
         method: 'post',
         path: '/',
         security: [{ bearerAuth: [] }],
-        middleware: [authMiddleware],
+        middleware: [authMiddleware, clinicalWriteGuard],
         request: {
             body: { content: { 'application/json': { schema: createReferralSchema } } },
         },
@@ -100,6 +101,7 @@ export const referralRouter = createRouter()
             500: { content: { 'application/json': { schema: errorSchema } }, description: 'Server error' },
         },
     }), async (c) => {
+        const db = clinicalDb(c);
         try {
             const userType = c.get('userType');
             if (userType !== 'practitioner')

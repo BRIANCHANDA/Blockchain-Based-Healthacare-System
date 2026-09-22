@@ -301,13 +301,28 @@ export const crossInstitutionRouter = createRouter<AppContext>()
                 return c.json({ success: false, error: { message: 'Patient not found' } }, 404);
             }
 
-            // Grant emergency access (24 hours)
+            if (!staffInstitutionId) {
+                return c.json({ success: false, error: { message: 'No institution associated with your account' } }, 403);
+            }
+            // Grant emergency access (24 hours); audit logs alone never confer access.
             const accessId = await createEmergencyAccess(
                 patientId,
                 userId,
                 staffInstitutionId!,
                 reason
             );
+
+            const sources = await db.select({ id: patientInstitutionRegistrations.institutionId })
+                .from(patientInstitutionRegistrations).where(and(
+                    eq(patientInstitutionRegistrations.patientId, patientId),
+                    eq(patientInstitutionRegistrations.isActive, true)
+                ));
+            for (const source of sources) {
+                if (source.id === staffInstitutionId) continue;
+                await grantCrossInstitutionAccess({ patientId, sourceInstitutionId: source.id,
+                    targetInstitutionId: staffInstitutionId, accessType: 'emergency',
+                    grantedBy: userId, durationHours: 24, reason });
+            }
 
             // Log to audit with emergency flag
             await db.insert(auditLogs).values({

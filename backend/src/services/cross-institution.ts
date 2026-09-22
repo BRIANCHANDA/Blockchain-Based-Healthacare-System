@@ -24,6 +24,10 @@ import { eq, and, or, gte, lt, sql } from 'drizzle-orm';
 import { crossInstitutionAccess, emergencyAccessLogs, patients, visits, consultations } from '../db/schema';
 import { storeRecordHash } from './fabric';
 import crypto from 'crypto';
+import { requireEmergencyOptIn } from '../lib/emergency-access';
+
+// Also used in record-reading queries: historical logs are never authority.
+export const permittedGrant = sql`(${crossInstitutionAccess.accessType} <> 'emergency' OR EXISTS (SELECT 1 FROM ${patients} WHERE ${patients.id} = ${crossInstitutionAccess.patientId} AND ${patients.emergencyOverrideEnabled} = true))`;
 
 function generateRecordHash(data: object): string {
     return crypto.createHash('sha256').update(JSON.stringify(data)).digest('hex');
@@ -65,7 +69,13 @@ export async function grantCrossInstitutionAccess(grant: AccessGrant): Promise<s
         timestamp: new Date().toISOString(),
     });
 
-    const result = await db.insert(crossInstitutionAccess).values({
+    const result = await db.transaction(async tx => {
+        if (grant.accessType === 'emergency') {
+            const [patient] = await tx.select({ enabled: patients.emergencyOverrideEnabled })
+                .from(patients).where(eq(patients.id, grant.patientId)).for('update');
+            requireEmergencyOptIn(patient?.enabled);
+        }
+        return tx.insert(crossInstitutionAccess).values({
         patientId: grant.patientId,
         sourceInstitutionId: grant.sourceInstitutionId,
         targetInstitutionId: grant.targetInstitutionId,
@@ -89,6 +99,7 @@ export async function grantCrossInstitutionAccess(grant: AccessGrant): Promise<s
         },
     })
     .returning({ id: crossInstitutionAccess.id });
+    });
 
     /* Same anchoring as an emergency override: tamper-evidence for the grant
        row, not authorisation of it. */
@@ -136,6 +147,7 @@ export async function canAccessPatient(
             eq(crossInstitutionAccess.patientId, patientId),
             eq(crossInstitutionAccess.targetInstitutionId, staffInstitutionId),
             eq(crossInstitutionAccess.status, 'active'),
+            permittedGrant,
             or(
                 sql`${crossInstitutionAccess.expiresAt} IS NULL`,
                 gte(crossInstitutionAccess.expiresAt, new Date())
@@ -151,23 +163,7 @@ export async function canAccessPatient(
         };
     }
 
-    // 3. Check for emergency access (active within last 24 hours)
-    const emergencyAccess = await db.select()
-        .from(emergencyAccessLogs)
-        .where(and(
-            eq(emergencyAccessLogs.patientId, patientId),
-            eq(emergencyAccessLogs.accessedByInstitutionId, staffInstitutionId),
-            gte(emergencyAccessLogs.expiresAt, new Date())
-        ))
-        .limit(1);
-
-    if (emergencyAccess.length) {
-        return {
-            allowed: true,
-            reason: 'Emergency access granted',
-            accessGrant: emergencyAccess[0]
-        };
-    }
+    // Emergency logs are audit history, not grants: revocation must remain effective.
 
     return { allowed: false, reason: 'No access permission. Please request access or create a referral.' };
 }
@@ -191,9 +187,8 @@ export async function revokeAccess(accessId: string, revokedBy: string): Promise
  * what actually opens them.
  *
  * The reason string is mandatory and is surfaced to the patient afterwards.
- * That is the accountability model here: the override is not prevented, it is
- * made undeniable — logged in PostgreSQL, flagged in the audit trail, and
- * anchored on-chain by the storeRecordHash call below.
+ * Overrides require the patient's current opt-in. Use is logged in PostgreSQL,
+ * flagged in the audit trail, and anchored on-chain below.
  */
 export async function createEmergencyAccess(
     patientId: string,
@@ -212,7 +207,11 @@ export async function createEmergencyAccess(
         timestamp: new Date().toISOString(),
     });
 
-    const result = await db.insert(emergencyAccessLogs).values({
+    const result = await db.transaction(async tx => {
+        const [patient] = await tx.select({ enabled: patients.emergencyOverrideEnabled })
+            .from(patients).where(eq(patients.id, patientId)).for('update');
+        requireEmergencyOptIn(patient?.enabled);
+        return tx.insert(emergencyAccessLogs).values({
         patientId,
         accessedBy,
         accessedByInstitutionId,
@@ -220,6 +219,7 @@ export async function createEmergencyAccess(
         expiresAt,
         blockchainHash: hash,
     }).returning({ id: emergencyAccessLogs.id });
+    });
 
     /* Anchor the override on the ledger so the log row cannot later be edited
        undetectably. Fails soft — if the network is down the override still

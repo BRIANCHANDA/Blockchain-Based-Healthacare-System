@@ -5,7 +5,8 @@ import { TextArea } from "../shared/TextArea";
 import { SelectField } from "../shared/SelectField";
 import { StaffDropdown } from "../shared/StaffDropdown";
 import { SubmitBtn } from "../shared/SubmitBtn";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { practitionersApi, visitApi } from "@/lib/api";
 import { safeFormatDate, safeDistanceToNow } from "../utils/dateHelpers";
 import {
@@ -153,14 +154,14 @@ function ImagingOrderCard({
             <MonoTag style={{ height: 17, fontSize: 10 }}>
               {order.orderNumber}
             </MonoTag>
-            {order.assignedToName && (
+            {(order.assignedToName || !order.assignedTo) && (
               <span
                 style={{
                   font: "400 11.5px/1 var(--font-sans)",
                   color: "var(--text-muted)",
                 }}
               >
-                {order.assignedToName}
+                {order.assignedToName ?? 'Shared hospital radiology queue'}
               </span>
             )}
           </span>
@@ -406,17 +407,20 @@ export function ImagingTab({
   onSaved,
   onError,
   isCompleted,
+  readOnly = false,
 }: {
   visitId: string;
   imagingOrders: any[];
   onSaved: () => void;
   onError: (m: string) => void;
   isCompleted: boolean;
+  readOnly?: boolean;
 }) {
   const [submitting, setSubmitting] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [radiologists, setRadiologists] = useState<StaffMember[]>([]);
   const [radiosLoading, setRadiosLoading] = useState(true);
+  const [radiosError, setRadiosError] = useState(false);
   const [form, setForm] = useState({
     modality: "x-ray",
     bodyPart: "",
@@ -427,13 +431,17 @@ export function ImagingTab({
   const [reports, setReports] = useState<Record<string, any>>({});
   const [loadingReports, setLoadingReports] = useState<Record<string, boolean>>({});
 
-  useEffect(() => {
-    practitionersApi
-      .getOnlineStaff("radiologist")
-      .then((res) => setRadiologists(res.data.data?.staff ?? []))
-      .catch(() => setRadiologists([]))
-      .finally(() => setRadiosLoading(false));
+  const loadRadiologists = useCallback(async () => {
+    try {
+      const res = await practitionersApi.getOnlineStaff("radiologist");
+      setRadiologists(res.data.data?.staff ?? []);
+      setRadiosError(false);
+    } catch {
+      setRadiosError(true);
+    } finally { setRadiosLoading(false); }
   }, []);
+  useEffect(() => { void loadRadiologists(); }, [loadRadiologists]);
+  useLiveRefresh(loadRadiologists);
 
   // Seed any report already embedded in the order props, so expanding those
   // cards costs nothing. `null` is a real value here — "no report yet".
@@ -473,13 +481,9 @@ export function ImagingTab({
       onError("Body part and indication are required.");
       return;
     }
-    if (!form.assignedTo) {
-      onError("Please assign a radiologist.");
-      return;
-    }
     setSubmitting(true);
     try {
-      await visitApi.orderImaging(visitId, form);
+      await visitApi.orderImaging(visitId, { ...form, assignedTo: form.assignedTo || undefined });
       setForm({
         modality: "x-ray",
         bodyPart: "",
@@ -515,7 +519,7 @@ export function ImagingTab({
         </div>
       )}
 
-      {!isCompleted &&
+      {!isCompleted && !readOnly &&
         (!showForm ? (
           <button
             onClick={() => setShowForm(true)}
@@ -550,7 +554,7 @@ export function ImagingTab({
             <CardHeader
               icon={Scan}
               title="Order imaging study"
-              subtitle="Select modality and assign a radiologist"
+              subtitle="Assign an online radiologist, or share the order with hospital radiology"
               tone="accent"
               right={
                 <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}>
@@ -635,14 +639,24 @@ export function ImagingTab({
                 />
               </FieldGroup>
 
-              <FieldGroup label="Assign radiologist *">
+              <FieldGroup label="Assign radiologist (optional)">
+                {radiosError && (
+                  <p role="status" style={{ fontSize: 12, color: "var(--urgent-ink)" }}>
+                    Could not refresh online radiologists. Leave the assignment blank to send to the shared hospital queue.
+                  </p>
+                )}
                 <StaffDropdown
                   value={form.assignedTo}
                   onChange={f("assignedTo")}
                   staff={radiologists}
                   loading={radiosLoading}
-                  placeholder="Select a radiologist…"
+                  placeholder={radiologists.length ? "Select a radiologist…" : "No radiologist online — shared hospital queue"}
                 />
+                {!form.assignedTo && (
+                  <p style={{ margin: "6px 0 0", fontSize: 12, color: "var(--text-secondary)" }}>
+                    This order will appear in the queue of every radiologist at this hospital.
+                  </p>
+                )}
                 {selectedRadio?.lastSeenAt && (
                   <p
                     className="inline-flex items-center"

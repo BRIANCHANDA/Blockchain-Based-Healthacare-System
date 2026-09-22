@@ -3,6 +3,7 @@ import { useLiveRefresh } from "@/hooks/useLiveRefresh";
 import { use, useEffect, useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { visitApi, practitionersApi } from "@/lib/api";
+import { patientDisplayName } from '@/lib/patient-display';
 import {
   ArrowLeft,
   ClipboardList,
@@ -419,7 +420,7 @@ export default function ReceptionistVisitDetailPage({
   const st =
     STATUS[visit?.status] ?? { tone: "neutral" as Tone, label: visit?.status ?? "—" };
 
-  const patientName = patient ? `${patient.firstName} ${patient.lastName}` : "Unknown Patient";
+  const patientName = patientDisplayName(patient);
   const age = patient?.dateOfBirth ? ageFromDob(patient.dateOfBirth) : null;
   const hasNurse = !!visit?.assignedNurseId;
   const isCompleted = visit?.status === "completed";
